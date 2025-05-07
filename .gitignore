@@ -1,0 +1,35 @@
+# editors
+.idea/
+.vscode/
+
+# python
+*.egg-info/
+*.py[cod]
+.venv/
+.venvs/
+/build/
+/dist/
+*.env
+
+# Logs
+*.jsonl
+**.log
+**logs/
+
+# tools
+.coverage*
+/.pdm-build/
+/htmlcov/
+/site/
+uv.lock
+**mcp/
+
+# devenv
+.devenv/
+
+# cache
+.cache/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+__pycache__/
