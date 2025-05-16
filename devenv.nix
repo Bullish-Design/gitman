@@ -38,10 +38,18 @@
   scripts = {
     # Default Commands:
 
+    hello.exec = ''devenv-startup $PROJ''; 
+    local-editable-install.exec = ''uv pip install -e .''; 
+    uv-freeze.exec = ''uv pip freeze > requirements.txt && echo && echo && uv pip uninstall . && uv pip freeze > requirements.txt && echo && echo 'Requirements.txt frozen' && echo && local-editable-install''; 
+    db-reset.exec = ''echo && alembic revision -m 'reset' && echo && reset_db && echo && alembic upgrade head && echo ''; 
+    db-init.exec = ''echo && alembic revision --autogenerate -m 'reinit' && echo && alembic upgrade head && echo''; 
+    model-update.exec = ''echo && db-reset && echo && db-init && echo''; 
 
 
     # Project Commands:
 
+    default.exec = ''echo''; 
+    default2.exec = ''echo''; 
 
     };
 

@@ -7,16 +7,19 @@ load_dotenv()
 # Constants: --------------------------------------------
 ENV_LOC = ".env"
 ROOT = os.getenv("ROOT")
-MARKDOWN_DIR = os.getenv("MARKDOWN_DIR")
-SHELL_DIR = os.getenv("SHELL_DIR")
-PYTHON_DIR = os.getenv("PYTHON_DIR")
-LOGDIR = os.getenv("LOGDIR")
-POSTGRES_DB = os.getenv("POSTGRES_DB")
-POSTGRES_USER = os.getenv("POSTGRES_USER")
-POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD")
+# MARKDOWN_DIR = os.getenv("MARKDOWN_DIR")
+# SHELL_DIR = os.getenv("SHELL_DIR")
+# PYTHON_DIR = os.getenv("PYTHON_DIR")
+# LOGDIR = os.getenv("LOGDIR")
+# POSTGRES_DB = os.getenv("POSTGRES_DB")
+# POSTGRES_USER = os.getenv("POSTGRES_USER")
+# POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD")
 PGHOST = os.getenv("PGHOST")
-
-db_url = "postgresql://" + POSTGRES_USER + ":" + POSTGRES_PASSWORD + "@localhost/" + POSTGRES_DB
+GITHUB_OWNER = os.getenv("GITHUB_OWNER")
+GITHUB_REPO = os.getenv("GITHUB_REPO")
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
+DATABASE_URL = os.getenv("DATABASE_URL")
+# db_url = "postgresql://" + POSTGRES_USER + ":" + POSTGRES_PASSWORD + "@localhost/" + POSTGRES_DB
 
 # Functions: --------------------------------------------
 
@@ -55,7 +58,14 @@ def init_envs():
     os.environ["POSTGRES_USER"] = os.getenv("POSTGRES_USER")
     os.environ["POSTGRES_PASSWORD"] = os.getenv("POSTGRES_PASSWORD")
 
-    db_url = "postgresql://" + POSTGRES_USER + ":" + POSTGRES_PASSWORD + "@localhost/" + POSTGRES_DB
+    db_url = (
+        "postgresql://"
+        + POSTGRES_USER
+        + ":"
+        + POSTGRES_PASSWORD
+        + "@localhost/"
+        + POSTGRES_DB
+    )
     print(f"\nImported DB URL: {db_url}\n")
 
 

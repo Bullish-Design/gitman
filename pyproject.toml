@@ -30,8 +30,13 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
+    "datamodel-code-generator[graphql]>=0.30.1",
     "githubkit>=0.12.12",
-    "sqlmodel>=0.0.24",
+    "pydantic>=2.11.4",
+    "python-dotenv>=1.1.0",
+    "sqlalchemy>=2.0.40",
+    "typer>=0.15.3",
+    "watchfiles>=1.0.5",
 ]
 
 [project.urls]
@@ -46,6 +51,10 @@ Funding = "https://github.com/sponsors/Bullish-Design"
 
 [project.scripts]
 gitman = "gitman.cli:main"
+main = "gitman.main:main"
+mvp = "gitman.mvp.base:main"
+graphql_main = "gitman.archive.graphql.test:main"
+graphql_post = "gitman.archive.graphql.create:main"
 reset_db = "gitman._internal.user_scripts.alembic_utils:insert_delete_table_commands"
 
 [tool.pdm.version]

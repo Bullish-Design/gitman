@@ -15,6 +15,7 @@
 *.jsonl
 **.log
 **logs/
+*.db
 
 # tools
 .coverage*
