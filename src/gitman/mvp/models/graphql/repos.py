@@ -1,18 +1,34 @@
 # Imports
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 from typing import Any, Dict, List, Optional
 from enum import Enum
+# from githubkit import GitHub
 
-from ....archive.graphql.test import GithubClient
+
+from pprint import pprint as pp
+# from ....archive.graphql.test import GitHubClient
 
 
 # Query Strings
 GET_REPOSITORIES_QUERY = """
 query GetViewerRepos($first:Int=100,$after:String){
   viewer{
-    repositories(first:$first,after:$after,affiliations:[OWNER,COLLABORATOR,ORGANIZATION_MEMBER]){
-      pageInfo{hasNextPage endCursor}
-      nodes{ name owner{ login } isPrivate url }
+    repositories(
+        first:$first, 
+        after:$after, 
+        affiliations:[OWNER,COLLABORATOR,ORGANIZATION_MEMBER]
+    ){
+      pageInfo{
+        hasNextPage 
+        endCursor
+        }
+      nodes{ 
+        id
+        name 
+        owner{ login } 
+        isPrivate 
+        url 
+        }
     }
   }
 }
@@ -24,7 +40,7 @@ CREATE_REPOSITORY_MUTATION = """
 mutation CreateRepository(
   $name: String!
   $visibility: RepositoryVisibility!
-  #$ownerId: ID           # optional – defaults to the authenticated user
+  $ownerId: ID           # optional – defaults to the authenticated user
 ) {
   createRepository(
     input: { name: $name, visibility: $visibility, ownerId: $ownerId }
@@ -32,6 +48,7 @@ mutation CreateRepository(
     repository {
       id
       name
+      owner { login }
       url
       isPrivate
     }
@@ -66,6 +83,7 @@ mutation UpdateRepository(
       name
       description
       url
+      owner { login }
       isPrivate
       hasIssuesEnabled
       hasDiscussionsEnabled
@@ -75,6 +93,7 @@ mutation UpdateRepository(
 }
 """
 
+
 # Pydantic Models
 
 
@@ -83,6 +102,7 @@ class _Owner(BaseModel):
 
 
 class RepoNode(BaseModel):
+    id: str
     name: str
     owner: _Owner
     isPrivate: bool
@@ -119,7 +139,7 @@ class RepoManager(BaseModel):
         """Return every repository visible to the token."""
         nodes: List[RepoNode] = []
         for page in self.client.client.graphql.paginate(
-            _GET_REPOS_Q, variables={"first": first}
+            GET_REPOSITORIES_QUERY, variables={"first": first}
         ):
             page_nodes = page["viewer"]["repositories"]["nodes"]
             nodes.extend(RepoNode.model_validate(n) for n in page_nodes)
@@ -141,44 +161,75 @@ class RepoManager(BaseModel):
         vars_ = {k: v for k, v in vars_.items() if v is not None}
         data = self.client.graphql(CREATE_REPOSITORY_MUTATION, vars_)
         repo_json = data["createRepository"]["repository"]
+        print(f"\n\nCreated Repo Node:\n")
+        pp(repo_json)
+        print(f"\n")
         return RepoNode.model_validate(repo_json)
 
     # 3. update -----------------------------------------------------------------
     def update_repo(self, repository_id: str, **updates: Any) -> RepoNode:
         vars_ = {"repositoryId": repository_id, **updates}
+        print(f"\n\nUpdate Vars:\n")
+        pp(vars_)
         data = self.client.graphql(UPDATE_REPOSITORY_MUTATION, vars_)
+        print(f"\n\nUpdated repo:\n\n")
+        pp(data)
         repo_json = data["updateRepository"]["repository"]
+        print(f"\n\n")
         return RepoNode.model_validate(repo_json)
 
+    # 4. delete ----------------------------------------------------------------
+    def delete_repo(self, owner: str, repository_name: str) -> dict | None:
+        """
+        Permanently delete a repository by its node-ID.
 
-def create_repository(
-    self,
-    name: str,
-    visibility: RepoVisibility = RepoVisibility.PRIVATE,
-    owner_id: Optional[str] = None,
-) -> Dict[str, Any]:
-    """Create a new repository and return the repo object."""
-    vars_ = {
-        "name": name,
-        "visibility": visibility.value,
-        "ownerId": owner_id,
-    }
-    # remove None values so we don't send them
-    vars_ = {k: v for k, v in vars_.items() if v is not None}
-    data = self.graphql(CREATE_REPOSITORY_MUTATION, vars_)
-    return data["createRepository"]["repository"]
+        Returns the deleted repository’s basic data when GitHub can still
+        show it (usually public repos). For private repos you may get `None`.
+        """
+        print(f"\nDeleting repo: {repository_name}")
+        client = self.client.client
+        result = client.rest.repos.delete(owner, repository_name)
+
+        print(f"\nDelete Repo Response:\n")
+        pp(result)
+
+        return
 
 
-def update_repository(
-    self,
-    repository_id: str,
-    **updates: Any,
-) -> Dict[str, Any]:
+def delete_repos_exact_confirm(manager: RepoManager, target: str) -> List[str]:
     """
-    Update repo metadata. Pass any combination of:
-      name, description, homepageUrl,
-      hasIssuesEnabled, hasDiscussionsEnabled, hasWikiEnabled
+    Prompt user for each repository whose name == `target` before deleting.
+
+    Args:
+        manager: RepoManager instance with list/delete helpers.
+        target:  Exact repo name (case-sensitive) to purge.
+
+    Returns:
+        List of repository IDs that were deleted.
     """
-    vars_ = {"repositoryId": repository_id, **updates}
-    data = self.graphql(UPDATE_REPOSITORY_MUTATION, vars_)
-    return data["updateRepository"]["repository"]
+    deleted: List[str] = []
+    looping = True
+
+    while looping:
+        matches = [repo for repo in manager.list_repos() if target in repo.name]
+        [print(f"    {repo.name}") for repo in matches]
+        if not matches:
+            break
+
+        for repo in matches:
+            prompt = (
+                f"\nDelete repository '{repo.owner.login}/{repo.name}' "
+                f"({repo.url})? [y/N]: "
+            )
+            answer = input(prompt).strip().lower()
+            if answer == "y":
+                manager.delete_repo(repo.owner.login, repo.name)
+                deleted.append(repo.name)
+                print("  ✔ deleted")
+            else:
+                print("  ✖ skipped")
+                looping = False
+                break
+
+    print(f"\nDone. Removed {len(deleted)} repositories.")
+    return deleted

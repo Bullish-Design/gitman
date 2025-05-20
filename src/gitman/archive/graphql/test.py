@@ -12,7 +12,7 @@ from pprint import pprint as pp
 import githubkit
 from pydantic import BaseModel, Field
 from ...config import GITHUB_TOKEN, GITHUB_OWNER, GITHUB_REPO, DATABASE_URL
-from ...mvp.models.graphql.repos import parse_repo_response, GET_REPOSITORIES_QUERY
+# from ...mvp.models.graphql.repos import parse_repo_response, GET_REPOSITORIES_QUERY
 # from ...mvp.models.graphql.issues import IssueSchema
 
 
