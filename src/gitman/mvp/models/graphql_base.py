@@ -4,36 +4,32 @@ from pprint import pprint as pp
 
 
 from ...archive.graphql.test import GitHubClient
+
+from .graphql.projects import ProjectManager, ProjectNode, ProjectState
 from .graphql.repos import (
     RepoManager,
     RepoNode,
     RepoVisibility,
     delete_repos_exact_confirm,
 )
-from .graphql.issues import IssueManager, IssueState
+from .graphql.issues import IssueManager, IssueState, IssueNode
 from .graphql.discussions import DiscussionManager, DiscussionNode
 from .graphql.issue_comments import IssueCommentManager, IssueCommentNode
 from .graphql.discussion_comments import DiscussionCommentManager, DiscussionCommentNode
 
 # Common:
 gh = GitHubClient()
+OWNER = "Bullish-Design"
+REPO = "demo"
 
 
 # Repos:
 def test_repos():
-    """Test the GitHub Client."""
-    # client = GitHubClient(token=GITHUB_TOKEN, owner=GITHUB_OWNER)
-    # repos = client.fetch_repos(include_private=True)
-    # pp(repos)
-    # return repos
     repos = RepoManager(client=gh)
-    OWNER = "Bullish-Design"
-    REPO = "demo"
 
     all_repos = repos.list_repos()
 
     print(f"\n\nGitHub Repos:\n")
-    # pp(all_repos)
     [print(f"   {repo}") for repo in all_repos]
 
     new_repo = repos.create_repo(REPO, RepoVisibility.PRIVATE)
@@ -55,7 +51,7 @@ def test_repos():
     print(f"\n\nDeleted Repo:\n\n{result}\n\n")
 
 
-def test_issues(new_repo):
+def test_issues(new_repo: RepoNode):
     print(f"\nTesting Issues:\n")
     issues = IssueManager(client=gh)
 
@@ -74,7 +70,7 @@ def test_issues(new_repo):
     pp(closed)
 
 
-def test_discussions(new_repo):
+def test_discussions(new_repo: RepoNode):
     print(f"\nDiscussions:\n\n")
     discussions = DiscussionManager(client=gh)
 
@@ -123,8 +119,10 @@ def test_discussions(new_repo):
         )
         dnum = d.number
 
+    return dnum
 
-def test_discussion_comments(new_disc, new_repo, dnum):
+
+def test_discussion_comments(new_disc: DiscussionNode, new_repo: RepoNode, dnum: int):
     # gh = GitHubClient()  # PAT needs discussions:write
     c_mgr = DiscussionCommentManager(client=gh)
 
@@ -156,7 +154,7 @@ def test_discussion_comments(new_disc, new_repo, dnum):
     # pp(deleted_stub)  # GitHub echoes back {id, number, title}
 
 
-def test_issue_comments(new_repo, new_one):
+def test_issue_comments(new_repo: RepoNode, new_one: IssueNode):
     cmnt = IssueCommentManager(client=gh)
 
     # add new comment
@@ -175,13 +173,60 @@ def test_issue_comments(new_repo, new_one):
     result = delete_repos_exact_confirm(repos, "demo")
 
 
+def test_projects():
+    gh = GitHubClient()  # PAT needs “projects:write”
+    p_mgr = ProjectManager(client=gh)
+    repos = RepoManager(client=gh)
+    issues = IssueManager(client=gh)
+
+    repo_name = "demo1"
+
+    all_repos = repos.list_repos()
+    repo_match = [repo for repo in all_repos if repo.name == repo_name][0]
+    print(f"\nRepo: {repo_match}\n")
+
+    new_issue = issues.create_issue(
+        repo_match.id, "Test: Testing issues api", "Steps …"
+    )
+    print(f"\nNew Issue: \n    {new_issue}")
+
+    all_open = issues.list_issues(OWNER, repo_match.name, state=IssueState.OPEN)
+    print(f"\n\nOpen Issues: ")
+    [print(f"    {issue}") for issue in all_open]
+
+    linked_issue = all_open[0]
+
+    # 1. list
+    projects = p_mgr.list_projects(OWNER)
+    print("\n\nOpen projects:", [p.title for p in projects])
+
+    # 2. create
+    new_proj = p_mgr.create_project(owner_login=OWNER, title="Automation Roadmap")
+    print("\n\nCreated:", new_proj.id, new_proj.createdAt)
+
+    # 2.5 Add issue:
+    proj_issue = p_mgr.add_issue(new_proj.id, linked_issue.id)
+    print(f"\n\nLinked Issue: \n{proj_issue}\n\n")
+
+    ## 3. update (close it)
+    # closed = p_mgr.update_project(
+    #    new_proj.id, closed=True, short_description="Archived"
+    # )
+    # print("State:", closed.state, closed.updatedAt)
+
+    ## 4. delete
+    # deleted_id = p_mgr.delete_project(closed.id)
+    # print("Deleted:", deleted_id)
+
+
 def test_github_api():
-    pass
+    test_projects()
 
 
 def main():
     """Main function to run the tests."""
-    test_repos()
+    # test_repos()
+    test_github_api()
 
 
 if __name__ == "__main__":

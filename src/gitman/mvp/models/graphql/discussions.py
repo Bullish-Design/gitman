@@ -1,4 +1,5 @@
-# Query Strings
+## Query Strings
+# Old:
 query = """
         query GetDiscussions($owner: String!, $name: String!) {
           repository(owner: $owner, name: $name) {

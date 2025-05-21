@@ -57,6 +57,8 @@ graphql_main = "gitman.archive.graphql.test:main"
 graphql_post = "gitman.archive.graphql.create:main"
 reset_db = "gitman._internal.user_scripts.alembic_utils:insert_delete_table_commands"
 gql = "gitman.mvp.models.graphql_base:main"
+api = "gitman.mvp.api_testing:main"
+cli = "gitman.mvp.cli:app"
 
 
 [tool.pdm.version]
