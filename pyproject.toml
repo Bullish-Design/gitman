@@ -8,10 +8,10 @@ version = "0.2.0"
 description = "Personal GitHub manager: Smee forwarder, repo hook sync, and local FastAPI sink"
 readme = "README.md"
 requires-python = ">=3.11"
-authors = [{ name = "Andrew", email = "andrew@example.com" }]
+authors = [{ name = "Bullish-Design", email = "BullishDesignEngineering@gmail.com" }]
 dependencies = [
   "requests>=2.32",
-  "requests-sse>=1.0.0",
+  "requests-sse>=0.5.0",
   "rich>=13.7",
   "fastapi>=0.111",
   "uvicorn[standard]",
