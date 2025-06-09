@@ -3,6 +3,13 @@
 
 import os, sys, logging, json, datetime, requests
 from gitman import ensure_gitman_dir, GITMAN_DIR
+from dotenv import load_dotenv
+from pathlib import Path
+
+load_dotenv()
+
+smee_path = Path(__file__).parent / "smee_url.env"
+load_dotenv(dotenv_path=smee_path)  # , override=True)
 
 TOKEN = os.getenv("GITHUB_TOKEN")
 SMEE = os.getenv("SMEE_URL")
@@ -12,6 +19,9 @@ HDRS = {
     "Accept": "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
 }
+
+print(f"\nToken: {TOKEN[:4]}...{TOKEN[-4:]}")
+print(f"Smee URL: {SMEE}\n")
 
 if not (TOKEN and SMEE):
     sys.exit("Set GITHUB_TOKEN and SMEE_URL")
@@ -41,7 +51,11 @@ def main():
     for repo in repos:
         o, n = repo["owner"]["login"], repo["name"]
         hooks_url = f"{API}/repos/{o}/{n}/hooks"
-        hooks = _gh("GET", hooks_url).json()
+        try:
+            hooks = _gh("GET", hooks_url).json()
+        except requests.HTTPError as exc:
+            print(f"Error fetching hooks for {o}/{n}: {exc}")
+            continue
         for h in hooks:
             url = h["config"].get("url", "")
             if "smee.io" in url and url != SMEE:
@@ -62,6 +76,8 @@ def main():
                 json={"has_issues": True, "has_discussions": True},
             )
             logging.info("Enabled Issues+Discussions on %s/%s", o, n)
+
+    print(f"\nDone! Synced {len(repos)} repositories.\n")
 
 
 if __name__ == "__main__":

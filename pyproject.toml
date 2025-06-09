@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gitman"
-version = "0.2.0"
+version = "0.2.3"
 description = "Personal GitHub manager: Smee forwarder, repo hook sync, and local FastAPI sink"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -23,9 +23,10 @@ gitman-smee   = "gitman.smee_runner:main"
 gitman-sync   = "gitman.sync_repos:main"
 gitman-server = "gitman.api_server:main"
 gitman-launch = "gitman.launch_tmuxp:main"
+#get-smee      = "gitman.new_smee_channel:main"
 
-[tool.setuptools.package-dir]
-"" = "gitman"
+#[tool.setuptools.package-dir]
+#"" = "gitman"
 
 [tool.setuptools.packages.find]
-where = ["gitman"]
+where = ["src"]

@@ -1,7 +1,7 @@
 from pathlib import Path
 
 __all__ = ["ensure_gitman_dir", "EVENT_LOG"]
-__version__ = "0.2.0"
+__version__ = "0.2.4"
 
 ROOT = Path.cwd()
 GITMAN_DIR = (ROOT / ".gitman").resolve()

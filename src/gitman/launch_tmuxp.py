@@ -3,6 +3,14 @@
 
 import os, subprocess, sys, json, tempfile, shutil
 from gitman import ensure_gitman_dir
+from dotenv import load_dotenv
+from pathlib import Path
+
+load_dotenv()
+
+smee_path = Path(__file__).parent / "smee_url.env"
+load_dotenv(dotenv_path=smee_path)  # , override=True)
+
 
 ensure_gitman_dir()
 
@@ -15,7 +23,7 @@ CFG = {
     "session_name": SESSION,
     "windows": [
         {
-            "window_name": "server",
+            "window_name": "gitman_server",
             "panes": [
                 {"shell_command": "gitman-server"},
                 {

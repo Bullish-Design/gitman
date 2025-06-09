@@ -50,7 +50,7 @@
     db-reset.exec = ''echo && alembic revision -m 'reset' && echo && reset_db && echo && alembic upgrade head && echo ''; 
     db-init.exec = ''echo && alembic revision --autogenerate -m 'reinit' && echo && alembic upgrade head && echo''; 
     model-update.exec = ''echo && db-reset && echo && db-init && echo''; 
-
+    new-smee.exec = ''./new_smee_channel.sh'';
 
     # Project Commands:
 
