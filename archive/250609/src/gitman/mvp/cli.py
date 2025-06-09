@@ -16,10 +16,13 @@ from pydantic import BaseModel
 # Import the GitHub API
 from .api import GitHubAPI, RepoVisibility, IssueState, ProjectState
 
+# Default environment variables
+DEFAULT_OWNER = os.environ.get("GITHUB_OWNER")
+
 # Create typer app
 app = typer.Typer(
     help="GitHub CLI using GraphQL API",
-    add_completion=True,
+    add_completion=False,
 )
 
 # Create subcommands
@@ -56,6 +59,19 @@ def get_github_api(token: Optional[str] = None) -> GitHubAPI:
     except Exception as e:
         console.print(f"[bold red]Error:[/] Failed to create GitHub API: {e}")
         raise typer.Exit(code=1)
+
+
+def get_owner(owner: Optional[str] = None) -> str:
+    """Get owner from parameter or environment variable."""
+    result = owner or DEFAULT_OWNER
+    if not result:
+        console.print(
+            "[bold red]Error:[/] GitHub owner is required. "
+            "Please provide it as an argument or set the GITHUB_OWNER "
+            "environment variable."
+        )
+        raise typer.Exit(code=1)
+    return result
 
 
 class VisibilityOption(str, Enum):
@@ -166,8 +182,10 @@ def create_repo(
 
 @repo_app.command("delete")
 def delete_repo(
-    owner: str = typer.Argument(..., help="Repository owner"),
-    name: str = typer.Argument(..., help="Repository name"),
+    repo_name: str = typer.Argument(..., help="Repository name"),
+    owner: Optional[str] = typer.Option(
+        None, "--owner", "-o", help="Repository owner (defaults to GITHUB_OWNER)"
+    ),
     confirm: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
     token: Optional[str] = typer.Option(
         None, "--token", "-t", help="GitHub token or use GITHUB_TOKEN env var"
@@ -175,18 +193,21 @@ def delete_repo(
 ):
     """Delete a repository."""
     github = get_github_api(token)
+    owner = get_owner(owner)
 
     if not confirm:
         confirm = typer.confirm(
-            f"Are you sure you want to delete repository {owner}/{name}?"
+            f"Are you sure you want to delete repository {owner}/{repo_name}?"
         )
         if not confirm:
             console.print("Operation cancelled.")
             return
 
     try:
-        github.repos.delete_repo(owner, name)
-        console.print(f"[bold green]Repository deleted successfully:[/] {owner}/{name}")
+        github.repos.delete_repo(owner, repo_name)
+        console.print(
+            f"[bold green]Repository deleted successfully:[/] {owner}/{repo_name}"
+        )
     except Exception as e:
         console.print(f"[bold red]Error deleting repository:[/] {e}")
         raise typer.Exit(code=1)
@@ -195,8 +216,10 @@ def delete_repo(
 # Issue commands
 @issue_app.command("list")
 def list_issues(
-    owner: str = typer.Argument(..., help="Repository owner"),
     repo: str = typer.Argument(..., help="Repository name"),
+    owner: Optional[str] = typer.Option(
+        None, "--owner", "-o", help="Repository owner (defaults to GITHUB_OWNER)"
+    ),
     state: Optional[IssueStateOption] = typer.Option(
         None, "--state", "-s", help="Filter by issue state"
     ),
@@ -207,6 +230,7 @@ def list_issues(
 ):
     """List issues in a repository."""
     github = get_github_api(token)
+    owner = get_owner(owner)
 
     issue_state = state.to_issue_state() if state else None
     issues = github.issues.list_issues(owner, repo, state=issue_state, first=limit)
@@ -239,9 +263,11 @@ def list_issues(
 
 @issue_app.command("create")
 def create_issue(
-    owner: str = typer.Argument(..., help="Repository owner"),
     repo: str = typer.Argument(..., help="Repository name"),
     title: str = typer.Option(..., "--title", "-t", help="Issue title"),
+    owner: Optional[str] = typer.Option(
+        None, "--owner", "-o", help="Repository owner (defaults to GITHUB_OWNER)"
+    ),
     body: Optional[str] = typer.Option(None, "--body", "-b", help="Issue body content"),
     token: Optional[str] = typer.Option(
         None, "--token", help="GitHub token or use GITHUB_TOKEN env var"
@@ -249,6 +275,7 @@ def create_issue(
 ):
     """Create a new issue in a repository."""
     github = get_github_api(token)
+    owner = get_owner(owner)
 
     try:
         issue = github.create_issue_in_repo(owner, repo, title, body)
@@ -267,15 +294,18 @@ def create_issue(
 
 @issue_app.command("close")
 def close_issue(
-    owner: str = typer.Argument(..., help="Repository owner"),
     repo: str = typer.Argument(..., help="Repository name"),
     number: int = typer.Argument(..., help="Issue number"),
+    owner: Optional[str] = typer.Option(
+        None, "--owner", "-o", help="Repository owner (defaults to GITHUB_OWNER)"
+    ),
     token: Optional[str] = typer.Option(
         None, "--token", help="GitHub token or use GITHUB_TOKEN env var"
     ),
 ):
     """Close an issue in a repository."""
     github = get_github_api(token)
+    owner = get_owner(owner)
 
     try:
         issue = github.get_issue_by_number(owner, repo, number)
@@ -298,8 +328,10 @@ def close_issue(
 # Discussion commands
 @discussion_app.command("list")
 def list_discussions(
-    owner: str = typer.Argument(..., help="Repository owner"),
     repo: str = typer.Argument(..., help="Repository name"),
+    owner: Optional[str] = typer.Option(
+        None, "--owner", "-o", help="Repository owner (defaults to GITHUB_OWNER)"
+    ),
     limit: int = typer.Option(
         100, "--limit", "-l", help="Limit the number of discussions"
     ),
@@ -309,6 +341,7 @@ def list_discussions(
 ):
     """List discussions in a repository."""
     github = get_github_api(token)
+    owner = get_owner(owner)
 
     discussions = github.discussions.list_discussions(owner, repo, first=limit)
 
@@ -337,14 +370,17 @@ def list_discussions(
 
 @discussion_app.command("categories")
 def list_discussion_categories(
-    owner: str = typer.Argument(..., help="Repository owner"),
     repo: str = typer.Argument(..., help="Repository name"),
+    owner: Optional[str] = typer.Option(
+        None, "--owner", "-o", help="Repository owner (defaults to GITHUB_OWNER)"
+    ),
     token: Optional[str] = typer.Option(
         None, "--token", "-t", help="GitHub token or use GITHUB_TOKEN env var"
     ),
 ):
     """List discussion categories in a repository."""
     github = get_github_api(token)
+    owner = get_owner(owner)
 
     categories = github.discussions.list_categories(owner, repo)
 
@@ -371,11 +407,13 @@ def list_discussion_categories(
 
 @discussion_app.command("create")
 def create_discussion(
-    owner: str = typer.Argument(..., help="Repository owner"),
     repo: str = typer.Argument(..., help="Repository name"),
     title: str = typer.Option(..., "--title", "-t", help="Discussion title"),
     category: str = typer.Option(
         ..., "--category", "-c", help="Discussion category name"
+    ),
+    owner: Optional[str] = typer.Option(
+        None, "--owner", "-o", help="Repository owner (defaults to GITHUB_OWNER)"
     ),
     body: Optional[str] = typer.Option(
         None, "--body", "-b", help="Discussion body content"
@@ -386,6 +424,7 @@ def create_discussion(
 ):
     """Create a new discussion in a repository."""
     github = get_github_api(token)
+    owner = get_owner(owner)
 
     try:
         discussion = github.create_discussion_in_repo(
@@ -410,7 +449,9 @@ def create_discussion(
 # Project commands
 @project_app.command("list")
 def list_projects(
-    owner: str = typer.Argument(..., help="Project owner"),
+    owner: Optional[str] = typer.Option(
+        None, "--owner", "-o", help="Project owner (defaults to GITHUB_OWNER)"
+    ),
     state: Optional[ProjectStateOption] = typer.Option(
         None, "--state", "-s", help="Filter by project state"
     ),
@@ -421,6 +462,7 @@ def list_projects(
 ):
     """List projects for an owner."""
     github = get_github_api(token)
+    owner = get_owner(owner)
 
     project_state = state.to_project_state() if state else None
     projects = github.projects.list_projects(owner, first=limit, state=project_state)
@@ -451,14 +493,17 @@ def list_projects(
 
 @project_app.command("create")
 def create_project(
-    owner: str = typer.Argument(..., help="Project owner"),
     title: str = typer.Option(..., "--title", "-t", help="Project title"),
+    owner: Optional[str] = typer.Option(
+        None, "--owner", "-o", help="Project owner (defaults to GITHUB_OWNER)"
+    ),
     token: Optional[str] = typer.Option(
         None, "--token", help="GitHub token or use GITHUB_TOKEN env var"
     ),
 ):
     """Create a new project."""
     github = get_github_api(token)
+    owner = get_owner(owner)
 
     try:
         project = github.projects.create_project(owner, title)
@@ -473,14 +518,17 @@ def create_project(
 
 @project_app.command("close")
 def close_project(
-    owner: str = typer.Argument(..., help="Project owner"),
     project_title: str = typer.Argument(..., help="Project title"),
+    owner: Optional[str] = typer.Option(
+        None, "--owner", "-o", help="Project owner (defaults to GITHUB_OWNER)"
+    ),
     token: Optional[str] = typer.Option(
         None, "--token", help="GitHub token or use GITHUB_TOKEN env var"
     ),
 ):
     """Close a project."""
     github = get_github_api(token)
+    owner = get_owner(owner)
 
     try:
         project = github.get_project_by_title(owner, project_title)
@@ -503,16 +551,19 @@ def close_project(
 # Comment commands
 @comment_app.command("issue")
 def add_issue_comment(
-    owner: str = typer.Argument(..., help="Repository owner"),
     repo: str = typer.Argument(..., help="Repository name"),
     issue_number: int = typer.Argument(..., help="Issue number"),
     body: str = typer.Option(..., "--body", "-b", help="Comment content"),
+    owner: Optional[str] = typer.Option(
+        None, "--owner", "-o", help="Repository owner (defaults to GITHUB_OWNER)"
+    ),
     token: Optional[str] = typer.Option(
         None, "--token", help="GitHub token or use GITHUB_TOKEN env var"
     ),
 ):
     """Add a comment to an issue."""
     github = get_github_api(token)
+    owner = get_owner(owner)
 
     try:
         comment = github.add_comment_to_issue(owner, repo, issue_number, body)
@@ -532,16 +583,19 @@ def add_issue_comment(
 
 @comment_app.command("discussion")
 def add_discussion_comment(
-    owner: str = typer.Argument(..., help="Repository owner"),
     repo: str = typer.Argument(..., help="Repository name"),
     discussion_number: int = typer.Argument(..., help="Discussion number"),
     body: str = typer.Option(..., "--body", "-b", help="Comment content"),
+    owner: Optional[str] = typer.Option(
+        None, "--owner", "-o", help="Repository owner (defaults to GITHUB_OWNER)"
+    ),
     token: Optional[str] = typer.Option(
         None, "--token", help="GitHub token or use GITHUB_TOKEN env var"
     ),
 ):
     """Add a comment to a discussion."""
     github = get_github_api(token)
+    owner = get_owner(owner)
 
     try:
         comment = github.add_comment_to_discussion(owner, repo, discussion_number, body)
@@ -587,9 +641,11 @@ def setup_repo_with_discussions(
 
 @app.command("setup-project")
 def setup_project_with_repo(
-    owner: str = typer.Argument(..., help="Owner"),
     project_title: str = typer.Option(..., "--project", "-p", help="Project title"),
     repo_name: str = typer.Option(..., "--repo", "-r", help="Repository name"),
+    owner: Optional[str] = typer.Option(
+        None, "--owner", "-o", help="Owner (defaults to GITHUB_OWNER)"
+    ),
     visibility: VisibilityOption = typer.Option(
         VisibilityOption.PRIVATE, "--visibility", "-v", help="Repository visibility"
     ),
@@ -599,6 +655,7 @@ def setup_project_with_repo(
 ):
     """Set up a project with a new repository."""
     github = get_github_api(token)
+    owner = get_owner(owner)
 
     try:
         project, repo = github.setup_project_with_repo(

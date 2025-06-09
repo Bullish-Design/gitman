@@ -16,6 +16,7 @@
   # https://devenv.sh/packages/
   packages = [ 
     pkgs.git
+    #pkgs.nodePackages.smee-client   # or nodePackages.smee-client on older channels
     #PACKAGE_LIST
     ];
 
@@ -27,6 +28,11 @@
        uv.enable = true;
     
      };
+    #languages.javascript = {
+    #  enable = true;
+    #  npm.enable = true;
+    #  npm.install.enable = true;
+    #};
 
   # https://devenv.sh/processes/
     #PROCESSES_INIT

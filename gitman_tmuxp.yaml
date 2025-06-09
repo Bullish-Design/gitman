@@ -1,0 +1,19 @@
+session_name: gitman
+environment:
+  SMEE_PAYLOAD_URL: ${SMEE_URL}
+windows:
+  - window_name: Smee
+    panes:
+      - shell_command:
+          - echo "Starting smee-client..."
+        #- smee -u "${SMEE_URL}" -p /webhook --json > smee.log
+          - uv run src/gitman/smee_runner.py forward "${SMEE_URL}" http://localhost:8000/webhook
+  - window_name: Gitman
+    panes:
+      - shell_command:
+          - echo "Starting Gitman monitoring server..."
+          - echo
+          - dev-boot
+          - echo
+          - uvicorn src.gitman.mvp_gitman:app --reload
+
