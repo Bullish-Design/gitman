@@ -1,6 +1,13 @@
 from pathlib import Path
+from .outbound import GitManager, GitmanConfig, get_config, set_config
 
-__all__ = ["ensure_gitman_dir", "EVENT_LOG"]
+__all__ = ["ensure_gitman_dir", "EVENT_LOG",
+    "EVENT_LOG",
+    "GitManager",
+    "GitmanConfig",
+    "get_config", 
+    "set_config"]
+
 __version__ = "0.2.4"
 
 ROOT = Path.cwd()

@@ -19,10 +19,10 @@ dependencies = [
 ]
 
 [project.scripts]
-gitman-smee   = "gitman.smee_runner:main"
-gitman-sync   = "gitman.sync_repos:main"
-gitman-server = "gitman.api_server:main"
-gitman-launch = "gitman.launch_tmuxp:main"
+gitman-smee   = "gitman.outbound.smee_runner:main"
+gitman-sync   = "gitman.outbound.sync_repos:main"
+gitman-server = "gitman.outbound.api_server:main"
+gitman-launch = "gitman.outbound.launch_tmuxp:main"
 #get-smee      = "gitman.new_smee_channel:main"
 
 #[tool.setuptools.package-dir]

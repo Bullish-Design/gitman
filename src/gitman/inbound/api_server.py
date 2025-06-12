@@ -14,7 +14,7 @@ LOG_DIR = GITMAN_DIR / "logs"
 
 
 @app.post("/webhook")
-async def sink(req: Request):
+async def github_sink(req: Request):
     payload = await req.body()
     # print(f"\n📥 received event ({len(payload)} bytes)")
     # print(
@@ -26,7 +26,18 @@ async def sink(req: Request):
     event = req.headers.get("X-GitHub-Event", "unknown")
     action = json.loads(payload).get("action", "unknown")
     key = f"{event}_{action}".replace(":", "_")
-    print(f"    📥 Logging event: {key} ({len(payload)} bytes)")
+    time_str = datetime.datetime.now().strftime("%m-%dT%H:%M:%S")
+    try:
+        repo = json.loads(payload).get("repository", {})
+        repo_name = repo.get("name", "unknown_repo")
+        print(
+            f"    📥 Logging '{key}' in '{repo_name}' @ '{time_str}'  ({len(payload)} bytes)"
+        )
+    except json.JSONDecodeError:
+        repo_name = "unknown_repo"
+        print(
+            f"    📥 Logging '{key}' in '{repo_name}' @ '{time_str}' (unable to parse payload)"
+        )
     os.makedirs(LOG_DIR, exist_ok=True)
     with open(f"{LOG_DIR}/{key}.jsonl", "a") as f:
         f.write(payload.decode() + "\n")
