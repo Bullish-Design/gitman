@@ -4,8 +4,8 @@
 from __future__ import annotations
 
 from .client import GitHubClient
-from .resources import RepoResource
-from .projects import ProjectsManager
+from .resources import RepoResource, ProjectsManager
+#from .projects import ProjectsManager
 
 
 class GitManager:

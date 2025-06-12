@@ -207,14 +207,29 @@ class ProjectsGraphQLClient:
 
     def _get_owner_id(self, owner: str) -> str:
         """Get owner node ID."""
-        query = """
-        query GetOwner($login: String!) {
+        # Try user first
+        user_query = """
+        query GetUser($login: String!) {
           user(login: $login) { id }
+        }
+        """
+        
+        try:
+            result = self.query(user_query, {"login": owner})
+            if result.get("user", {}).get("id"):
+                return result["user"]["id"]
+        except:
+            pass
+        
+        # Try organization
+        org_query = """
+        query GetOrg($login: String!) {
           organization(login: $login) { id }
         }
         """
-
-        result = self.query(query, {"login": owner})
-        return result.get("user", {}).get("id") or result.get("organization", {}).get(
-            "id"
-        )
+        
+        result = self.query(org_query, {"login": owner})
+        if result.get("organization", {}).get("id"):
+            return result["organization"]["id"]
+            
+        raise ValueError(f"Could not find user or organization: {owner}")

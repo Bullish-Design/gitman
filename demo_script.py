@@ -50,7 +50,7 @@ def main() -> None:
         gm = GitManager()
         repo = "Bullish-Design/gitman"  # Your test repo
 
-        rprint("[bold blue]🚀 Starting gitman creation demo[/bold blue]")
+        rprint("\n[bold blue]🚀 Starting gitman creation demo[/bold blue]")
 
         # Create an issue
         rprint("\n[yellow]Creating issue...[/yellow]")
@@ -67,18 +67,18 @@ Bot account functionality working! 🤖""",
             labels=["enhancement", "documentation"],
         )
 
-        rprint(f"✅ Created issue #{issue.issue.number}")
-        rprint(f"🔗 {issue.issue.html_url}")
+        rprint(f"    ✅ Created issue #{issue1.issue.number}")
+        rprint(f"    🔗 {issue1.issue.html_url}")
 
         # Add a comment to the issue
         rprint("\n[yellow]Adding comment...[/yellow]")
-        comment = issue.create_comment(
+        comment = issue1.create_comment(
             body="This comment was also created by gitman! "
             "The webhook logging should capture both events automatically."
         )
 
-        rprint(f"✅ Created comment")
-        rprint(f"🔗 {comment.html_url}")
+        rprint(f"    ✅ Created comment")
+        rprint(f"    🔗 {comment.html_url}")
 
         # Create a project
 
@@ -89,9 +89,9 @@ Bot account functionality working! 🤖""",
             readme="This project was created using gitman's Projects v2 API",
         )
 
-        rprint(f"✅ Created project '{project.project.title}'")
-        rprint(f"🔗 {project.project.url}")
-        rprint(f"📊 Project #{project.project.number}")
+        rprint(f"    ✅ Created project '{project.project.title}'")
+        rprint(f"    🔗 {project.project.url}")
+        rprint(f"    📊 Project #{project.project.number}")
 
         # Create an issue
         rprint("\n[yellow]Creating issue to add to project...[/yellow]")
@@ -101,25 +101,25 @@ Bot account functionality working! 🤖""",
             labels=["enhancement"],
         )
 
-        rprint(f"✅ Created issue #{issue.issue.number}")
+        rprint(f"    ✅ Created issue #{issue.issue.number}")
 
         # Add issue to project
         rprint("\n[yellow]Adding issue to project...[/yellow]")
         project_item = project.add_issue(issue)
 
-        rprint(f"✅ Added issue to project")
-        rprint(f"📝 Item ID: {project_item.id}")
+        rprint(f"    ✅ Added issue to project")
+        rprint(f"    📝 Item ID: {project_item.id}")
 
         rprint("\n[bold green]🎉 Projects v2 demo completed![/bold green]")
 
         # Update the issue
         rprint("\n[yellow]Updating issue...[/yellow]")
         updated_issue = issue1.update(
-            body=issue.issue.body
+            body=issue1.issue.body
             + "\n\n**Update**: All features tested successfully! ✨"
         )
 
-        rprint(f"✅ Updated issue #{updated_issue.number}")
+        rprint(f"    ✅ Updated issue #{updated_issue.number}")
 
         rprint("\n[bold green]🎉 Demo completed successfully![/bold green]")
         rprint("[dim]Check your webhook logs to see all events captured.[/dim]")

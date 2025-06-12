@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from .models import *
-# from .client import ProjectsGraphQLClient
+from .client import ProjectsGraphQLClient
 
 if TYPE_CHECKING:
     from .client import GitHubClient, ProjectsGraphQLClient
