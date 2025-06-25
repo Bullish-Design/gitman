@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gitman"
-version = "0.2.3"
+version = "0.2.4"
 description = "Personal GitHub manager: Smee forwarder, repo hook sync, and local FastAPI sink"
 readme = "README.md"
 requires-python = ">=3.11"
