@@ -10,7 +10,7 @@ SMEE_URL=$(curl -sI https://smee.io/new \
   | tr -d '\r')
 export SMEE_URL
 echo "SMEE_URL=$SMEE_URL" 
-echo "SMEE_URL=$SMEE_URL" > 'src/gitman/smee_url.env'
+echo "SMEE_URL=$SMEE_URL" > 'smee_url.env'
 echo
 #echo "Launching tmuxp session 'gitman'…"
 #tmuxp load gitman_tmuxp.yaml

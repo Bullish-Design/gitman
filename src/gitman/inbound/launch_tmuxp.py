@@ -8,7 +8,9 @@ from pathlib import Path
 
 load_dotenv()
 
-smee_path = Path(__file__).parent / "smee_url.env"
+ROOT = os.environ.get("ROOT")
+smee_path = Path(ROOT) / "smee_url.env"
+
 load_dotenv(dotenv_path=smee_path)  # , override=True)
 
 
