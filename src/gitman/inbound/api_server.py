@@ -50,7 +50,7 @@ def main():
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     port = int(os.getenv("PORT", 8000))
     uvicorn.run(
-        "gitman.api_server:app",
+        "gitman.inbound.api_server:app",
         host="0.0.0.0",
         port=port,
         # reload=True,
