@@ -53,8 +53,8 @@ def main():
         "gitman.api_server:app",
         host="0.0.0.0",
         port=port,
-        reload=True,
-        reload_dirs=["src/gitman"],
+        # reload=True,
+        # reload_dirs=["src/gitman"],
     )
 
 
