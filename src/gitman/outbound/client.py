@@ -140,11 +140,10 @@ class ProjectsGraphQLClient:
     ) -> dict[str, Any]:
         """Create a new project."""
         mutation = """
-        mutation CreateProject($ownerId: ID!, $title: String!, $readme: String) {
+        mutation CreateProject($ownerId: ID!, $title: String!) {
           createProjectV2(input: {
             ownerId: $ownerId
             title: $title
-            readme: $readme
           }) {
             projectV2 {
               id
@@ -167,7 +166,7 @@ class ProjectsGraphQLClient:
         # Get owner ID first
         owner_id = self._get_owner_id(owner)
 
-        variables = {"ownerId": owner_id, "title": title, "readme": readme}
+        variables = {"ownerId": owner_id, "title": title} #, "readme": readme}
 
         result = self.query(mutation, variables)
         return result["createProjectV2"]["projectV2"]

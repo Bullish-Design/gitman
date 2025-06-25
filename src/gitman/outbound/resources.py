@@ -44,6 +44,40 @@ class ProjectResource:
 
         result = self.client.query(query, variables)
         return result["repository"]["issue"]["id"]
+    
+    def link_to_repository(self, repo: str) -> None:
+        """Link project to a repository."""
+        owner, name = repo.split("/")
+        mutation = """
+        mutation LinkProject($projectId: ID!, $repositoryId: ID!) {
+        linkProjectV2ToRepository(input: {
+            projectId: $projectId
+            repositoryId: $repositoryId
+        }) {
+            repository { nameWithOwner }
+        }
+        }
+        """
+        
+        repo_id = self._get_repo_id(owner, name)
+        self.client.query(mutation, {
+            "projectId": self.project.id,
+            "repositoryId": repo_id
+        })
+        
+    def _get_repo_id(self, owner: str, name: str) -> str:
+        """Get repository node ID."""
+        query = """
+        query GetRepo($owner: String!, $name: String!) {
+          repository(owner: $owner, name: $name) {
+            id
+          }
+        }
+        """
+        
+        variables = {"owner": owner, "name": name}
+        result = self.client.query(query, variables)
+        return result["repository"]["id"]
 
 
 class ProjectsManager:

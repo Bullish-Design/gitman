@@ -61,31 +61,10 @@ class IssueComment(BaseModel):
     body: str
     html_url: str
     user: GitHubUser
-    created_at: datetime
-    updated_at: datetime
+    created_at: datetime #= Field(alias="createdAt")
+    updated_at: datetime #= Field(alias="updatedAt")
 
 
-class CreateProjectRequest(BaseModel):
-    """Request model for creating projects."""
-
-    name: str = Field(..., min_length=1, max_length=100)
-    body: str = Field(default="", max_length=65536)
-
-
-class Project(BaseModel):
-    """GitHub project model."""
-
-    model_config = ConfigDict(extra="ignore")
-
-    id: int
-    number: int
-    name: str
-    body: str | None
-    state: str
-    html_url: str
-    creator: GitHubUser
-    created_at: datetime
-    updated_at: datetime
 
 
 class CreateProjectRequest(BaseModel):
@@ -118,8 +97,8 @@ class ProjectV2(BaseModel):
     readme: str | None
     url: str
     closed: bool
-    created_at: datetime
-    updated_at: datetime
+    created_at: datetime = Field(alias="createdAt")
+    updated_at: datetime = Field(alias="updatedAt")
     owner: dict[str, Any]
     fields: list[ProjectField] = Field(default_factory=list)
 
@@ -137,7 +116,7 @@ class ProjectItem(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     id: str
-    project: dict[str, Any]
+    #project: dict[str, Any]
     content: dict[str, Any]
-    created_at: datetime
-    updated_at: datetime
+    created_at: datetime = Field(alias="createdAt")
+    updated_at: datetime = Field(alias="updatedAt")

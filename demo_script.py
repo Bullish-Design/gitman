@@ -107,6 +107,8 @@ Bot account functionality working! 🤖""",
         rprint("\n[yellow]Adding issue to project...[/yellow]")
         project_item = project.add_issue(issue)
 
+        # Link project to repository
+        project.link_to_repository(repo)
         rprint(f"    ✅ Added issue to project")
         rprint(f"    📝 Item ID: {project_item.id}")
 
