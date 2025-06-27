@@ -51,16 +51,19 @@ def main():
     for repo in repos:
         o, n = repo["owner"]["login"], repo["name"]
         hooks_url = f"{API}/repos/{o}/{n}/hooks"
+
         try:
             hooks = _gh("GET", hooks_url).json()
         except requests.HTTPError as exc:
             print(f"Error fetching hooks for {o}/{n}: {exc}")
             continue
+
         for h in hooks:
             url = h["config"].get("url", "")
             if "smee.io" in url and url != SMEE:
                 _gh("DELETE", f"{hooks_url}/{h['id']}")
                 logging.info("Removed stale hook %s/%s", o, n)
+
         if not any(h["config"].get("url") == SMEE for h in hooks):
             payload = {
                 "config": {"url": SMEE, "content_type": "json"},
@@ -69,6 +72,7 @@ def main():
             }
             _gh("POST", hooks_url, json=payload)
             logging.info("Added hook to %s/%s", o, n)
+
         if not repo.get("has_issues", True) or not repo.get("has_discussions", True):
             _gh(
                 "PATCH",

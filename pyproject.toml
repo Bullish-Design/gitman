@@ -7,7 +7,7 @@ name = "gitman"
 version = "0.2.4"
 description = "Personal GitHub manager: Smee forwarder, repo hook sync, and local FastAPI sink"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 authors = [{ name = "Bullish-Design", email = "BullishDesignEngineering@gmail.com" }]
 dependencies = [
   "requests>=2.32",
@@ -16,6 +16,7 @@ dependencies = [
   "fastapi>=0.111",
   "uvicorn[standard]",
   "tmuxp>=1.40",
+  "eventic",
 ]
 
 [project.scripts]
@@ -30,3 +31,6 @@ gitman-launch = "gitman.inbound.launch_tmuxp:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.uv.sources]
+eventic = { git = "https://github.com/Bullish-Design/eventic.git" }

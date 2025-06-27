@@ -1,7 +1,7 @@
 {
   inputs =
     let
-      version = "1.3.1";
+      version = "1.6.1";
 system = "x86_64-linux";
 devenv_root = "/home/andrew/Documents/Projects/gitman";
 devenv_dotfile = ./.devenv;
@@ -10,10 +10,12 @@ container_name = null;
 devenv_tmpdir = "/run/user/1000";
 devenv_runtime = "/run/user/1000/devenv-d2d23df";
 devenv_istesting = false;
+devenv_direnvrc_latest_version = 1;
 
         in {
-        pre-commit-hooks.url = "github:cachix/pre-commit-hooks.nix";
-      pre-commit-hooks.inputs.nixpkgs.follows = "nixpkgs";
+        git-hooks.url = "github:cachix/git-hooks.nix";
+      git-hooks.inputs.nixpkgs.follows = "nixpkgs";
+      pre-commit-hooks.follows = "git-hooks";
       nixpkgs.url = "github:cachix/devenv-nixpkgs/rolling";
       devenv.url = "github:cachix/devenv?dir=src/modules";
       } // (if builtins.pathExists (devenv_dotfile + "/flake.json")
@@ -22,7 +24,7 @@ devenv_istesting = false;
 
       outputs = { nixpkgs, ... }@inputs:
         let
-          version = "1.3.1";
+          version = "1.6.1";
 system = "x86_64-linux";
 devenv_root = "/home/andrew/Documents/Projects/gitman";
 devenv_dotfile = ./.devenv;
@@ -31,6 +33,7 @@ container_name = null;
 devenv_tmpdir = "/run/user/1000";
 devenv_runtime = "/run/user/1000/devenv-d2d23df";
 devenv_istesting = false;
+devenv_direnvrc_latest_version = 1;
 
             devenv =
             if builtins.pathExists (devenv_dotfile + "/devenv.json")
@@ -77,8 +80,11 @@ devenv_istesting = false;
               then devenvdefaultpath
               else throw (devenvdefaultpath + " file does not exist for input ${name}.");
           project = pkgs.lib.evalModules {
-            specialArgs = inputs // { inherit inputs pkgs; };
+            specialArgs = inputs // { inherit inputs; };
             modules = [
+              ({ config, ... }: {
+                _module.args.pkgs = pkgs.appendOverlays (config.overlays or [ ]);
+              })
               (inputs.devenv.modules + /top-level.nix)
               {
                 devenv.cliVersion = version;
@@ -96,10 +102,16 @@ devenv_istesting = false;
                 container.isBuilding = pkgs.lib.mkForce true;
                 containers.${container_name}.isBuilding = true;
               })
+              ({ options, ... }: {
+                config.devenv = pkgs.lib.optionalAttrs (builtins.hasAttr "direnvrcLatestVersion" options.devenv) {
+                  direnvrcLatestVersion = devenv_direnvrc_latest_version;
+                };
+              })
             ] ++ (map importModule (devenv.imports or [ ])) ++ [
-              ./devenv.nix
+              (if builtins.pathExists ./devenv.nix then ./devenv.nix else { })
               (devenv.devenv or { })
               (if builtins.pathExists ./devenv.local.nix then ./devenv.local.nix else { })
+              (if builtins.pathExists (devenv_dotfile + "/cli-options.nix") then import (devenv_dotfile + "/cli-options.nix") else { })
             ];
           };
           config = project.config;
@@ -134,16 +146,18 @@ devenv_istesting = false;
                   } else { }
               )
               options;
+
+          systems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
         in
         {
-          packages."${system}" = {
+          devShell = lib.genAttrs systems (system: config.shell);
+          packages = lib.genAttrs systems (system: {
             optionsJSON = options.optionsJSON;
             # deprecated
             inherit (config) info procfileScript procfileEnv procfile;
             ci = config.ciDerivation;
-          };
+          });
           devenv = config;
           build = build project.options project.config;
-          devShell."${system}" = config.shell;
         };
       }

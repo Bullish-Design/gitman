@@ -1,7 +1,7 @@
 # editors
 .idea/
 .vscode/
-
+**/archive/**
 # python
 *.egg-info/
 *.py[cod]

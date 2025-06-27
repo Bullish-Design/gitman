@@ -24,7 +24,7 @@
     languages.python = {
        enable = true;
        venv.enable = true;
-    
+       version="3.13"; 
        uv.enable = true;
     
      };
@@ -36,6 +36,34 @@
 
   # https://devenv.sh/processes/
     #PROCESSES_INIT
+  services.postgres = {
+    enable = true;
+    package = pkgs.postgresql_17;
+    initialScript = ''CREATE USER postgres WITH PASSWORD 'postgres'; ALTER USER postgres WITH SUPERUSER;'';
+    initialDatabases = [
+      { 
+        name = "eventic"; 
+        user= "postgres"; 
+        pass = "postgres"; 
+        #initialSQL = "CREATE USER postgres WITH PASSWORD 'postgres'; ALTER USER postgres WITH SUPERUSER;";
+          
+      }
+    ]; # initialSQL = "CREATE USER postgres WITH PASSWORD 'postgres'; ALTER USER postgres WITH SUPERUSER;";  # initialSQL = "INSERT INTO users (postgres) VALUES ('admin');";
+    #initialScript =
+    #  ''
+    #    CREATE USER postgres WITH PASSWORD 'postgres';
+    #    ALTER USER postgres WITH SUPERUSER;
+    #    CREATE DATABASE eventic OWNER postgres;
+    #  ''
+    #;
+    listen_addresses = "127.0.0.1";
+    port = 5432;
+    #settings = {
+    #  #listen_addresses = "127.0.0.1";
+    #  #port = 5432;
+      #unix_socket_directories = "/run/user/1000/devenv-11f13c9/postgres";
+    #  };
+    };
 
   # https://devenv.sh/services/
     #SERVICES_INIT
