@@ -5,15 +5,15 @@ from fastapi import FastAPI, Request, Response
 from gitman import ensure_gitman_dir, EVENT_LOG, GITMAN_DIR
 import json, logging, datetime, os
 
-app = FastAPI(title="Gitman Webhook Sink")
-logger = logging.getLogger("gitman.api")
+# app = FastAPI(title="Gitman Webhook Sink")
+# logger = logging.getLogger("gitman.api")
 
 ensure_gitman_dir()
 
 LOG_DIR = GITMAN_DIR / "logs"
 
 
-@app.post("/webhook")
+# @app.post("/webhook")
 async def github_sink(req: Request):
     payload = await req.body()
     # print(f"\n📥 received event ({len(payload)} bytes)")
@@ -25,8 +25,10 @@ async def github_sink(req: Request):
 
     event = req.headers.get("X-GitHub-Event", "unknown")
     action = json.loads(payload).get("action", "unknown")
+
     key = f"{event}_{action}".replace(":", "_")
     time_str = datetime.datetime.now().strftime("%m-%dT%H:%M:%S")
+
     try:
         repo = json.loads(payload).get("repository", {})
         repo_name = repo.get("name", "unknown_repo")
@@ -38,9 +40,12 @@ async def github_sink(req: Request):
         print(
             f"    📥 Logging '{key}' in '{repo_name}' @ '{time_str}' (unable to parse payload)"
         )
+
     os.makedirs(LOG_DIR, exist_ok=True)
+
     with open(f"{LOG_DIR}/{key}.jsonl", "a") as f:
         f.write(payload.decode() + "\n")
+
     return Response(status_code=200)
 
 
@@ -50,7 +55,7 @@ def main():
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     port = int(os.getenv("PORT", 8000))
     uvicorn.run(
-        "gitman.inbound.api_server:app",
+        "gitman.webhook_app:app",  # Updated to new version w/ Eventic
         host="0.0.0.0",
         port=port,
         # reload=True,

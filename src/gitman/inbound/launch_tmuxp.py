@@ -40,9 +40,12 @@ CFG = {
 def main():
     if not shutil.which("tmuxp"):
         sys.exit("tmuxp not installed. pip install tmuxp")
+
     cfg_path = tempfile.NamedTemporaryFile(delete=False, suffix=".json").name
+
     with open(cfg_path, "w") as fp:
         json.dump(CFG, fp)
+
     subprocess.run(["tmuxp", "load", cfg_path])
 
 
