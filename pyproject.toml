@@ -4,33 +4,18 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gitman"
-version = "0.2.4"
-description = "Personal GitHub manager: Smee forwarder, repo hook sync, and local FastAPI sink"
+version = "0.3.0"
+description = "Sync GitHub issues and discussions to local JSON files"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.11"
 authors = [{ name = "Bullish-Design", email = "BullishDesignEngineering@gmail.com" }]
 dependencies = [
   "requests>=2.32",
-  "requests-sse>=0.5.0",
   "rich>=13.7",
-  "fastapi>=0.111",
-  "uvicorn[standard]",
-  "tmuxp>=1.40",
-  "eventic",
 ]
 
 [project.scripts]
-gitman-smee   = "gitman.inbound.smee_runner:main"
-gitman-sync   = "gitman.inbound.sync_repos:main"
-gitman-server = "gitman.inbound.api_server:main"
-gitman-launch = "gitman.inbound.launch_tmuxp:main"
-#get-smee      = "gitman.new_smee_channel:main"
-
-#[tool.setuptools.package-dir]
-#"" = "gitman"
+gitman = "gitman.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
-[tool.uv.sources]
-eventic = { git = "https://github.com/Bullish-Design/eventic.git" }
