@@ -1,0 +1,126 @@
+"""Pydantic v2 models — the typed heart of Gitman.
+
+`RepoState` is the reloadable, point-in-time view of the repo that every read renders
+from and every report is built on. The durable history is the jj op-log; these models are
+a snapshot. Mirrors Testee's `VerificationReport` discipline. See concept §9.
+"""
+
+from __future__ import annotations
+
+from enum import StrEnum
+from pathlib import Path
+
+from pydantic import BaseModel, Field
+
+
+class LaneState(StrEnum):
+    """The three states a lane is ever in (concept §5 lifecycle)."""
+
+    draft = "draft"  # being edited
+    published = "published"  # pushed / PR open
+    landed = "landed"  # terminal (folded into trunk)
+
+
+class Change(BaseModel):
+    """A single jj change. `change_id` is stable across rewrites — the agent's referent."""
+
+    change_id: str  # stable across rewrites
+    commit_id: str  # current git hash (churns on amend)
+    description: str = ""
+    empty: bool = False
+    conflict: bool = False
+    bookmarks: list[str] = Field(default_factory=list)
+    # Filled from colocated git (numstat), keyed by commit_id.
+    files_changed: int = 0
+    insertions: int = 0
+    deletions: int = 0
+
+
+class ConflictFile(BaseModel):
+    """One conflicted path within a lane (jj-style markers — see concept §10.7)."""
+
+    path: str
+    sides: int = 2
+
+
+class Conflict(BaseModel):
+    lane: str
+    files: list[ConflictFile] = Field(default_factory=list)
+
+
+class TrunkRef(BaseModel):
+    """The frozen trunk (invariant I1): resolved once at init, never re-detected."""
+
+    name: str
+    change_id: str | None = None
+    commit_id: str | None = None
+    # ahead/behind of the local trunk bookmark vs its remote tracking branch.
+    behind_remote: int = 0
+    ahead_remote: int = 0
+
+
+class PRRef(BaseModel):
+    """Populated only by the github extra (deferred)."""
+
+    number: int
+    url: str
+    state: str = "open"
+
+
+class Lane(BaseModel):
+    """A named unit of work = a jj bookmark (= git branch) on a trunk descendant."""
+
+    name: str  # = bookmark = git branch (readable)
+    state: LaneState = LaneState.draft
+    head: Change
+    workspace: str | None = None  # isolated workspace dir, if any
+    conflict: bool = False
+    ahead: int = 0  # changes vs trunk
+    behind: int = 0  # commits trunk is ahead of the lane
+    change_count: int = 1
+    # Lane-total diff numbers (summed over trunk..head), for the status report.
+    insertions: int = 0
+    deletions: int = 0
+    files_changed: int = 0
+    pr: PRRef | None = None  # github extra only
+
+
+class Op(BaseModel):
+    """An entry from the jj op-log — powers undo affordances (concept §12)."""
+
+    op_id: str
+    description: str = ""  # from op-log tags.args (the literal command)
+    timestamp: str | None = None
+    is_snapshot: bool = False
+    undoable: bool = True
+
+
+class RepoState(BaseModel):
+    """The point-in-time snapshot every read renders from (concept §9)."""
+
+    repo_root: Path
+    colocated_git: bool = True
+    canonical: bool = True  # all invariants hold
+    off_canonical: str | None = None  # reason, if not canonical
+    trunk: TrunkRef
+    current_lane: str | None = None  # the lane of this workspace's @
+    lanes: list[Lane] = Field(default_factory=list)
+    conflicts: list[Conflict] = Field(default_factory=list)
+    recent_ops: list[Op] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)  # honesty notes ("not done" / staleness)
+
+
+class IntentResult(BaseModel):
+    """The result of a mutating intent — rendered to a compact report + `--json`.
+
+    `undo_command` is the inline escape hatch every mutating report ends with (concept §12).
+    """
+
+    intent: str
+    outcome: str  # short uppercase status, e.g. "OK", "BLOCKED", "CONFLICT"
+    exit_code: int = 0
+    lane: str | None = None
+    messages: list[str] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+    undo_command: str | None = None
+    state: RepoState | None = None

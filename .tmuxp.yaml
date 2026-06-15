@@ -1,0 +1,13 @@
+session_name: gitman
+windows:
+  - window_name: gitman
+    layout: main-vertical
+    options:
+      main-pane-width: 20%
+    panes:
+      - shell_command:
+          - cd ~/Documents/Projects/gitman
+      - shell_command:
+          - cd ~/Documents/Projects/gitman
+          - devenv shell
+        focus: true

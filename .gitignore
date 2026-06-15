@@ -1,0 +1,35 @@
+# editors
+.idea/
+.vscode/
+
+# python
+*.egg-info/
+*.py[cod]
+__pycache__/
+.venv/
+/build/
+/dist/
+
+# tools
+.coverage*
+/htmlcov/
+uv.lock
+
+# devenv / direnv
+.devenv/
+.direnv/
+
+# gitman runtime state (lock, etc.)
+.gitman/
+
+# caches
+.cache/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# local working notes (untracked)
+.scratch/
+
+# retired old-gitman code, kept for reference only
+archive/

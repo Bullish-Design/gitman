@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://devenv.sh/devenv.schema.json
+inputs:
+  nixpkgs:
+    url: github:cachix/devenv-nixpkgs/rolling
+  # jujutsu is pinned to 0.38.0 (the version the RepoState-capture spike validated and
+  # that `gitman doctor` asserts). Rolling nixpkgs currently ships 0.41, whose templates
+  # we have not validated; pin from the exact nixpkgs rev that provides 0.38.0.
+  nixpkgs-jj:
+    url: github:NixOS/nixpkgs/26eaeac4e409d7b5a6bf6f90a2a2dc223c78d915
+  nixpkgs-python:
+    url: github:cachix/nixpkgs-python
+  nix2container:
+    url: github:nlewo/nix2container
+  mk-shell-bin:
+    url: github:rrbutani/nix-mk-shell-bin
