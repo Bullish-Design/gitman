@@ -50,6 +50,7 @@ def do_release(config: GitmanConfig, repo_root: Path, level: str | None, set_ver
     undo: str | None = None
 
     if new != current:
+        # Bump on the current lane; the release point is the bump commit (the lane head).
         lane = require_current_lane(repo_root, trunk)
         with transaction(repo_root, config, intent="release") as txn:
             jj.new_change(repo_root, "@")
@@ -58,8 +59,18 @@ def do_release(config: GitmanConfig, repo_root: Path, level: str | None, set_ver
             jj.bookmark_set(repo_root, lane, "@")
         undo = txn.undo_command
         messages.append(f"bumped {current} → {new}")
+        release_point = "@"
+    else:
+        # No bump: tag the trunk head (the landed release), never the empty working copy @.
+        release_point = trunk
 
-    commit = jj.capture_changes(repo_root, "@")[0].commit_id
+    head = jj.capture_changes(repo_root, release_point)[0]
+    if head.empty:
+        raise GitmanError(
+            f"nothing to release: {release_point} is an empty commit (land a change to trunk first).",
+            exit_code=1,
+        )
+    commit = head.commit_id
     created = git.create_annotated_tag(repo_root, tag, f"Release {new}", commit)
     if not created.ok:
         raise GitmanError(f"failed to create tag {tag}:\n{created.stderr.strip()}", exit_code=2)

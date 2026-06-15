@@ -31,6 +31,19 @@ def test_parse_bookmarks():
     assert all(len(b["change_id"]) == 12 for b in bms)
 
 
+def test_parse_bookmarks_keeps_only_local_present():
+    # jj emits remote-tracking entries and a present=false line for a locally-deleted
+    # bookmark; only local present ones (remote == "") are lanes.
+    out = "\n".join(
+        [
+            '{"name":"feat","remote":"","present":false,"change_id":null,"commit_id":null}',
+            '{"name":"feat","remote":"origin","present":true,"change_id":"aaaaaaaaaaaa","commit_id":"bbbbbbbbbbbb"}',
+            '{"name":"main","remote":"","present":true,"change_id":"cccccccccccc","commit_id":"dddddddddddd"}',
+        ]
+    )
+    assert [b["name"] for b in jj.parse_bookmarks(out)] == ["main"]
+
+
 def test_parse_oplog():
     ops = jj.parse_oplog(read_fixture("oplog.jsonl"))
     assert len(ops) == 5

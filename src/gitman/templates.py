@@ -24,14 +24,18 @@ CHANGE_OBJECT = (
     ' ++ "}\\n"'
 )
 
-# One JSON object per local bookmark (= lane). `present` guards deleted bookmarks;
-# normal_target() is the (non-conflicted) target commit. See concept §10.2.
+# One JSON object per bookmark entry from `jj bookmark list`. `present` guards deleted /
+# remote-only bookmarks whose local `normal_target()` is absent (calling .change_id() on it
+# errors), so the target fields are emitted only when the bookmark is present locally —
+# otherwise the line would be invalid JSON. parse_bookmarks then keeps present ones.
+# See concept §10.2.
 BOOKMARK_OBJECT = (
     '"{"'
     ' ++ "\\"name\\":" ++ json(name)'
+    ' ++ ",\\"remote\\":" ++ json(remote)'
     ' ++ ",\\"present\\":" ++ json(present)'
-    ' ++ ",\\"change_id\\":" ++ json(self.normal_target().change_id().short())'
-    ' ++ ",\\"commit_id\\":" ++ json(self.normal_target().commit_id().short())'
+    ' ++ ",\\"change_id\\":" ++ if(present, json(self.normal_target().change_id().short()), "null")'
+    ' ++ ",\\"commit_id\\":" ++ if(present, json(self.normal_target().commit_id().short()), "null")'
     ' ++ "}\\n"'
 )
 

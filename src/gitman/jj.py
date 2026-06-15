@@ -99,8 +99,14 @@ def parse_changes(stdout: str) -> list[Change]:
 
 
 def parse_bookmarks(stdout: str) -> list[dict]:
-    """Parse BOOKMARK_OBJECT output → [{name, present, change_id, commit_id}]."""
-    return [d for d in _json_lines(stdout) if d.get("present", True)]
+    """Parse BOOKMARK_OBJECT output → local present bookmarks (= lanes/trunk).
+
+    `jj bookmark list` also emits remote-tracking entries (`remote` non-empty) and, for a
+    locally-deleted-but-still-remote bookmark, a `present=false` line. Keep only entries
+    that exist locally (`remote == ""` and `present`), so a published lane that was landed
+    doesn't linger as a phantom via its remote branch.
+    """
+    return [d for d in _json_lines(stdout) if d.get("present") and not d.get("remote")]
 
 
 def parse_oplog(stdout: str) -> list[Op]:
