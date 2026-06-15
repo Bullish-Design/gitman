@@ -105,6 +105,60 @@ def test_abandon_retires_lane(tmp_path: Path):
     assert state.canonical
 
 
+def test_start_adopts_inprogress_work(tmp_path: Path):
+    _init(tmp_path)
+    # Simulate editing before `start`: @ becomes a non-empty, unbookmarked child of trunk.
+    _jj(tmp_path, "new", "main")
+    (tmp_path / "f.txt").write_text("base\nwork\n")
+
+    res = do_start(tmp_path, CFG, "adopted-lane", workspace=False)
+    assert "adopted" in res.messages[0].lower()
+    state = capture_state(tmp_path, CFG)
+    assert [lane.name for lane in state.lanes] == ["adopted-lane"]
+    assert state.canonical  # work folded into the lane, nothing orphaned
+    lane = state.lanes[0]
+    assert lane.head.empty is False and lane.change_count == 1
+
+
+def test_start_creates_fresh_lane_when_clean(tmp_path: Path):
+    _init(tmp_path)
+    do_start(tmp_path, CFG, "fresh", workspace=False)
+    state = capture_state(tmp_path, CFG)
+    assert state.lanes[0].head.empty is True  # nothing to adopt → empty new lane
+
+
+def test_land_deletes_published_remote_branch(tmp_path: Path):
+    remote = tmp_path / "remote.git"
+    subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True)
+    work = tmp_path / "work"
+    work.mkdir()
+    _jj(work, "git", "init", "--colocate")
+    _jj(work, "config", "set", "--repo", "user.name", "T")
+    _jj(work, "config", "set", "--repo", "user.email", "t@t")
+    (work / "f.txt").write_text("base\n")
+    _jj(work, "describe", "-m", "initial")
+    _jj(work, "bookmark", "create", "main", "-r", "@")
+    _jj(work, "git", "remote", "add", "origin", str(remote))
+    subprocess.run(["git", "push", "origin", "main"], cwd=work, check=True, capture_output=True)
+
+    do_start(work, CFG, "feat", workspace=False)
+    (work / "f.txt").write_text("base\nfeat\n")
+    do_save(work, CFG, "feat")
+    from gitman.core import do_publish
+
+    do_publish(work, CFG)
+
+    def remote_has_feat() -> bool:
+        out = subprocess.run(
+            ["git", "ls-remote", str(remote), "refs/heads/feat"], capture_output=True, text=True
+        ).stdout
+        return "feat" in out
+
+    assert remote_has_feat()
+    do_land(work, CFG, ["feat"])
+    assert not remote_has_feat()  # landed lane's remote branch is cleaned up
+
+
 def test_lock_is_released_after_intent(tmp_path: Path):
     _init(tmp_path)
     do_start(tmp_path, CFG, "feat", workspace=False)

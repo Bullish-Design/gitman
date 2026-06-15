@@ -93,25 +93,47 @@ def do_start(repo_root: Path, config, name: str, workspace: bool):
 
     trunk = require_trunk(config)
     notes: list[str] = []
+    messages: list[str] = []
     with transaction(repo_root, config, intent="start") as txn:
         ensure_unique(repo_root, trunk, name)
         if workspace:
             wpath = resolve_workspace_path(repo_root, config, name)
             jj.workspace_add(repo_root, str(wpath), name, trunk)
             jj.bookmark_create(wpath, name, "@")
+            messages.append(f"lane '{name}' created on {trunk}.")
             notes.append(f"workspace at {wpath} — `cd {wpath}` to work in it.")
+        elif _adoptable_work(repo_root, trunk):
+            # In-progress edits already sit on a non-empty, unbookmarked change descended
+            # from trunk — adopt that change as the lane instead of orphaning it.
+            jj.bookmark_create(repo_root, name, "@")
+            messages.append(f"adopted in-progress work into lane '{name}' on {trunk}.")
         else:
             jj.new_change(repo_root, trunk)
             jj.bookmark_create(repo_root, name, "@")
+            messages.append(f"lane '{name}' created on {trunk}.")
     return IntentResult(
         intent="start",
         outcome="STARTED",
         lane=name,
-        messages=[f"lane '{name}' created on {trunk}."],
+        messages=messages,
         notes=notes,
         undo_command=txn.undo_command,
         state=txn.state,
     )
+
+
+def _adoptable_work(repo_root: Path, trunk: str) -> bool:
+    """True if @ is in-progress work to fold into a new lane: non-empty, no bookmark, and a
+    proper descendant of trunk (i.e. you edited before running `start`)."""
+    from gitman import jj
+
+    current = jj.capture_changes(repo_root, "@")
+    if not current:
+        return False
+    head = current[0]
+    if head.empty or head.bookmarks:
+        return False
+    return bool(jj.capture_changes(repo_root, f"@ & ({trunk}..)"))
 
 
 def do_save(repo_root: Path, config, message: str | None):
@@ -191,6 +213,7 @@ def do_land(repo_root: Path, config, lane_args: list[str] | None):
     blocked: GitmanError | None = None
     for lane in targets:
         try:
+            was_published = lane in jj.remote_lane_names(repo_root)
             with transaction(repo_root, config, intent="land") as txn:
                 if lane not in jj.bookmark_names(repo_root):
                     raise GitmanError(f"no such lane '{lane}'.", exit_code=3)
@@ -208,6 +231,16 @@ def do_land(repo_root: Path, config, lane_args: list[str] | None):
                 notes += _cleanup_workspace(repo_root, config, lane)
             landed.append(lane)
             last_undo = txn.undo_command
+            # Best-effort: a landed lane's remote branch is merged, so delete it (the local
+            # bookmark is already gone, so pushing it propagates the deletion). One-way; if
+            # it fails the land still stands.
+            if was_published:
+                pushed = jj.git_push_delete(repo_root, lane)
+                notes.append(
+                    f"deleted remote branch '{lane}'."
+                    if pushed.ok
+                    else f"remote branch '{lane}' not deleted (delete it manually): {pushed.stderr.strip()}"
+                )
         except GitmanError as exc:
             blocked = exc
             break

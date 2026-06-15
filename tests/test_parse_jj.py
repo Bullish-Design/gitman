@@ -44,6 +44,12 @@ def test_parse_bookmarks_keeps_only_local_present():
     assert [b["name"] for b in jj.parse_bookmarks(out)] == ["main"]
 
 
+def test_parse_remote_lane_names():
+    # name<TAB>remote per entry; only real remotes (not "" / "git") mark a published lane.
+    out = "feat\t\nfeat\torigin\nmain\t\nmain\tgit\nmain\torigin\n"
+    assert jj.parse_remote_lane_names(out) == {"feat", "main"}
+
+
 def test_parse_oplog():
     ops = jj.parse_oplog(read_fixture("oplog.jsonl"))
     assert len(ops) == 5

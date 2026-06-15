@@ -218,16 +218,26 @@ def bookmark_names(repo_root: Path) -> set[str]:
     return {b["name"] for b in list_bookmarks(repo_root)}
 
 
-def remote_lane_names(repo_root: Path) -> set[str]:
-    """Names of bookmarks that have a remote-tracking counterpart (`name@remote`) — i.e.
-    lanes that have been published."""
-    result = run_jj(repo_root, "bookmark", "list", "--all-remotes")
+# name<TAB>remote per bookmark entry; local entries have an empty remote, the colocated git
+# backing uses "git". A real remote (e.g. "origin") means the lane has been published.
+_REMOTE_LIST_TEMPLATE = 'name ++ "\\t" ++ remote ++ "\\n"'
+
+
+def parse_remote_lane_names(stdout: str) -> set[str]:
     names: set[str] = set()
-    for line in result.stdout.splitlines():
-        head = line.split(":", 1)[0].strip()
-        if "@" in head:
-            names.add(head.split("@", 1)[0].strip())
+    for line in stdout.splitlines():
+        if "\t" not in line:
+            continue
+        name, remote = line.split("\t", 1)
+        if remote and remote != "git":
+            names.add(name)
     return names
+
+
+def remote_lane_names(repo_root: Path) -> set[str]:
+    """Names of bookmarks with a real remote-tracking counterpart — i.e. published lanes."""
+    result = run_jj(repo_root, "bookmark", "list", "--all-remotes", "-T", _REMOTE_LIST_TEMPLATE)
+    return parse_remote_lane_names(result.stdout) if result.ok else set()
 
 
 # --- thin mutating wrappers (composed by lanes.py under a transaction) ----------------
@@ -270,6 +280,12 @@ def edit(repo_root: Path, revset: str) -> ProcResult:
 
 def git_push(repo_root: Path, bookmark: str) -> ProcResult:
     return run_jj(repo_root, "git", "push", "--bookmark", bookmark, "--allow-new")
+
+
+def git_push_delete(repo_root: Path, bookmark: str) -> ProcResult:
+    """Propagate a local bookmark deletion to the remote (the local bookmark must already be
+    deleted; jj pushes the deletion)."""
+    return run_jj(repo_root, "git", "push", "--bookmark", bookmark)
 
 
 def workspace_add(repo_root: Path, path: str, name: str, revset: str) -> ProcResult:
