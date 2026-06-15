@@ -1,11 +1,5 @@
 { pkgs, lib, config, inputs, ... }:
 
-let
-  # jujutsu pinned to 0.38.0 from a dedicated nixpkgs input (see devenv.yaml). The
-  # RepoState-capture templates in src/gitman/templates.py were validated against this
-  # version; `gitman doctor` asserts it at runtime so a future bump fails loudly.
-  jjPkgs = import inputs.nixpkgs-jj { system = pkgs.stdenv.system; };
-in
 {
   # Gitman dev verification tasks (gitman:test/lint/fix) + enterTest.
   imports = [ ./nix/gitman.nix ];
@@ -17,11 +11,18 @@ in
   dotenv.disableHint = true;
 
   # https://devenv.sh/packages/
+  # No `jj` CLI: gitman talks to jj-lib in-process via pyjutsu (built from the sibling
+  # ../Pyjutsu). `git` stays for the one retained subprocess (annotated tags, tags.py).
   packages = [
     pkgs.git
     pkgs.uv
-    jjPkgs.jujutsu
+    pkgs.maturin
   ];
+
+  # Rust toolchain to compile pyjutsu's native _pyjutsu extension (jj-lib via PyO3). jj-lib
+  # 0.38 requires Rust >= 1.89 (edition 2024); rolling nixpkgs' stable rustc satisfies this.
+  # The jj 0.38 pin lives in pyjutsu; gitman just builds it.
+  languages.rust.enable = true;
 
   # https://devenv.sh/languages/
   languages.python = {
@@ -30,8 +31,10 @@ in
     venv.enable = true;
     uv = {
       enable = true;
-      # Install gitman (editable) + deps + the dev group into the venv on shell entry,
-      # so the `gitman` console script and ruff/pytest resolve to the venv.
+      # Install gitman (editable) + deps into the venv on shell entry. pyjutsu is a uv path
+      # dependency on ../Pyjutsu (see [tool.uv.sources]); uv builds its maturin extension
+      # using the Rust toolchain + maturin above. The console script and ruff/pytest resolve
+      # to the venv.
       sync.enable = true;
     };
   };
@@ -41,8 +44,9 @@ in
     # stdout (e.g. an agent running `devenv shell -- gitman status`).
     if [ -t 1 ]; then
       echo "gitman devenv"
-      jj --version
       git --version
+      python -c "import pyjutsu; print('pyjutsu', pyjutsu.__version__, '(jj-lib', pyjutsu.JJ_VERSION + ')')" 2>/dev/null \
+        || echo "pyjutsu not yet built — run \`uv sync\`"
     fi
   '';
 

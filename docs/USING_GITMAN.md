@@ -10,32 +10,23 @@ porcelain. This guide gets Gitman working in *another* repo. For the full design
 
 Gitman runs **only inside a [devenv.sh](https://devenv.sh) shell** and requires:
 
-- **jujutsu (`jj`) 0.38.x** — pinned; `gitman doctor` asserts it (the RepoState-capture
-  templates are validated against 0.38).
-- **git** — the colocated interop layer.
+- **jujutsu 0.38** — **embedded in-process** via [pyjutsu](https://github.com/Bullish-Design/Pyjutsu)
+  (jj-lib via PyO3); a gitman dependency, no `jj` CLI at runtime. `gitman doctor` asserts
+  `pyjutsu.JJ_VERSION == pyjutsu.JJ_LIB_TARGET`.
+- **git** — the colocated interop layer (used directly only for annotated tags).
 - **Python 3.13**.
+- **the `jj` CLI — bootstrap only:** needed once to colocate an *existing* git repo
+  (`jj git init --colocate`, step 3). A brand-new repo can skip it (pyjutsu can init a fresh
+  colocated repo). If you'd rather not depend on the CLI, see step 3's note.
 
 ## 1. Add the toolchain to your devenv
-
-In `devenv.yaml`, add a pinned-jj input (rolling nixpkgs currently ships 0.41, which
-Gitman has not validated):
-
-```yaml
-inputs:
-  nixpkgs:
-    url: github:cachix/devenv-nixpkgs/rolling
-  nixpkgs-jj:
-    url: github:NixOS/nixpkgs/26eaeac4e409d7b5a6bf6f90a2a2dc223c78d915  # jujutsu 0.38.0
-```
 
 In `devenv.nix`:
 
 ```nix
-{ pkgs, inputs, ... }:
-let
-  jjPkgs = import inputs.nixpkgs-jj { system = pkgs.stdenv.system; };
-in {
-  packages = [ pkgs.git jjPkgs.jujutsu ];
+{ pkgs, ... }:
+{
+  packages = [ pkgs.git ];          # jj-lib is embedded in gitman via pyjutsu (no jj CLI runtime dep)
   languages.python = {
     enable = true;
     version = "3.13";
@@ -45,10 +36,14 @@ in {
 }
 ```
 
+> For the one-time colocation bootstrap of an *existing* git repo (step 3) you also need the
+> `jj` CLI. Add a pinned-0.38 input and `jjPkgs.jujutsu` to `packages` for that step, then
+> drop it — gitman itself never invokes the CLI.
+
 ## 2. Install Gitman into the venv
 
-Gitman is a lean Python package (`pydantic` + `typer`; `jj`/`git` come from devenv). Add it
-to your project's dependencies so the `gitman` console script lands in the devenv venv:
+Gitman is a lean Python package (`pydantic` + `typer` + `pyjutsu`; `git` comes from devenv).
+Add it to your project's dependencies so the `gitman` console script lands in the devenv venv:
 
 ```toml
 # pyproject.toml
@@ -64,16 +59,22 @@ Then re-enter the shell (`devenv shell`) so `uv sync` installs it. Verify:
 devenv shell -- gitman doctor
 ```
 
-`doctor` should report `jj 0.38.x`, git, colocation, and (after step 3) the frozen trunk.
+`doctor` should report the embedded jj-lib version, git, colocation, and (after step 3) the
+frozen trunk.
 
 ## 3. Make the repo colocated, then init
 
 Gitman requires a **colocated** jj repo (a real `.git` kept in sync). In your repo root:
 
 ```bash
-devenv shell -- bash -c 'jj git init --colocate'   # if not already a jj repo
+devenv shell -- bash -c 'jj git init --colocate'   # existing git repo → colocate (needs the jj CLI, bootstrap only)
 devenv shell -- gitman init                         # resolve + freeze trunk, scaffold config + skill
 ```
+
+> **No `jj` CLI?** For a brand-new repo you can colocate with pyjutsu instead of the CLI:
+> `devenv shell -- python -c 'from pyjutsu import Workspace; Workspace.init(".", colocate=True)'`.
+> (This only works on a fresh dir; colocating an *existing* git repo still needs the `jj` CLI —
+> a known gap.)
 
 `gitman init`:
 

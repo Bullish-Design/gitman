@@ -10,10 +10,12 @@ authors = [
   { name = "Bullish Design", email = "BullishDesignEngineering@gmail.com" },
 ]
 
-# Lean base: jj and git come from devenv, not pip.
+# Lean base: pydantic + typer + pyjutsu (the in-process jj-lib engine). git comes from
+# devenv (for tags.py, the one retained subprocess); there is no `jj` CLI dependency.
 dependencies = [
   "pydantic>=2.12",
   "typer>=0.12",
+  "pyjutsu",
 ]
 
 [project.optional-dependencies]
@@ -49,6 +51,12 @@ include = [
 ]
 
 [tool.uv]
+
+# pyjutsu is built from the sibling checkout (build-from-sibling distribution). Editable so
+# gitman picks up local pyjutsu changes; uv builds its native extension via maturin + the
+# Rust toolchain from devenv.nix. Long-term this becomes a published wheel.
+[tool.uv.sources]
+pyjutsu = { path = "../Pyjutsu", editable = true }
 
 # Seed policy; `gitman init` writes the frozen trunk here (or to gitman.toml). See concept §15.
 [tool.gitman]

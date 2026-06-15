@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//home/andrew/Documents/Projects/testee/**)",
+      "Read(//home/andrew/Documents/Projects/testee/nix/**)",
+      "Read(//home/andrew/Documents/Projects/testee/src/**)",
+      "Bash(gh repo *)",
+      "Bash(git ls-remote *)",
+      "Bash(git show-ref *)",
+      "Bash(devenv shell -- bash -c ' *)",
+      "Bash(devenv shell *)",
+      "Read(//home/andrew/Documents/Projects/Pyjutsu/**)",
+      "Bash(sed -n '/def snapshot/,/def /p' python/pyjutsu/workspace.py)"
+    ]
+  }
+}

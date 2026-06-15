@@ -131,14 +131,15 @@ Agent → devenv shell → gitman CLI → Intent planner → Executor (jj / git)
 ```
 
 - **Intent planner** — deterministic; turns intent + flags + config + current RepoState
-  into a sequence of jj/git operations.
-- **Executor** — runs jj/git, records facts (op id before/after, exit, change IDs).
+  into a sequence of pyjutsu operations.
+- **Executor** — runs pyjutsu transactions, records facts (op id before/after, change IDs).
   Never interprets results. Wraps each mutating intent transactionally (§11).
 - **Lane registry** — the set of Gitman-managed bookmarks; near-zero extra state since jj
-  already tracks bookmarks. Workspace ↔ lane mapping via `jj workspace list`.
-- **State adapters** (`jj.py`, `git.py`) — own all tool-specific knowledge: query jj with
-  templates / colocated git for numbers, parse into typed `RepoState`. Pure `parse_*`
-  separated from effectful `run_*` (Testee convention).
+  already tracks bookmarks. Workspace ↔ lane mapping via `ws.workspaces()`.
+- **State adapter** (`session.py` + `state.py`) — `Session` is the boundary onto pyjutsu
+  (jj-lib in-process via PyO3): `view()` for frozen reads, `fresh_view()` to snapshot-then-read.
+  `state.py` projects one pyjutsu view into a typed `RepoState`. Typed pyjutsu errors replace
+  porcelain parsing; `tags.py` is the lone retained git subprocess (annotated tags).
 - **Renderer** — compact agent report; `--json` emits the `RepoState`/result model.
 - **Forge bridge** (optional extra) — `publish`→PR and the forge backend of `land`.
 
@@ -147,11 +148,11 @@ Agent → devenv shell → gitman CLI → Intent planner → Executor (jj / git)
 ```
 src/gitman/
   cli.py        Typer intents
-  core.py       orchestration per intent, devenv guard, repo lock, state IO
+  session.py    the per-invocation Session — boundary onto pyjutsu (view/fresh_view)
+  core.py       orchestration per intent, devenv guard, repo lock, typed-error mapper
   lanes.py      lane registry + workspace lifecycle (create/forget/cleanup)
-  jj.py         jj adapter: run_* + pure parse_* (templates → models)
-  git.py        colocated git: numstat, tags, remotes, push
-  state.py      RepoState capture (composes jj.py + git.py + lanes.py)
+  tags.py       colocated-git annotated tags — the one retained git-subprocess surface
+  state.py      RepoState capture (composes one pyjutsu view + lanes.py)
   models.py     Pydantic: RepoState, Lane, Change, Conflict, Op, TrunkRef, ...
   config.py     [tool.gitman] policy (Pydantic-validated)
   invariants.py canonical checks + transactional rollback wrapper
@@ -263,10 +264,19 @@ Op         { op_id, description, timestamp, undoable }   # description from op-l
 
 ## 10. Feeding `RepoState` — jj structured output
 
+> **Superseded (2026-06-17, pyjutsu migration MP1–MP3).** gitman no longer shells out to a
+> `jj` CLI or parses templated output. jj-lib runs **in-process via [pyjutsu](../Pyjutsu)**
+> (PyO3) and hands gitman **typed models** directly: `Session.view()` / `fresh_view()` →
+> `RepoView`, whose `log()` / `bookmarks()` / `diff_stat()` / `conflicts()` / `operations()`
+> return the structured data the strategies below reconstructed by hand. `state.py` projects
+> those into `RepoState`. The only retained subprocess is `tags.py` (annotated git tags). The
+> strategy analysis below is preserved as design rationale and as the **contract pyjutsu must
+> satisfy** (the field → source map in §10.7 still holds, now sourced from pyjutsu); the jj
+> 0.38 pin lives in pyjutsu and `doctor` asserts `pyjutsu.JJ_VERSION == pyjutsu.JJ_LIB_TARGET`.
+
 Capturing state is the central engineering question. Five strategies; Gitman layers
 several. **All validated against jj 0.38 by a 2026-06-15 spike** (the version nixpkgs
-provides); templates are pinned in `jj.py`, and `doctor` asserts the jj version so an
-upgrade that moves a keyword fails loudly.
+provides) — now provided in-process by pyjutsu rather than templated CLI output.
 
 ### 10.1 Strategy B — a custom `json()` template (PRIMARY)
 
@@ -348,9 +358,9 @@ A control-char-delimited (`\x1f`/`\x1e`) `jj log` template, equivalent to 10.1 w
 **Gotcha:** jj conflict markers differ from git's (`<<<<<<< conflict 1 of 1` / `%%%%%%%` /
 `+++++++` / `>>>>>>>` — not git's `=======`); marker-aware logic must expect the jj form.
 
-Keep every jj/git invocation in `jj.py`/`git.py` behind a pure `parse_*` (golden-fixture
-testable, Testee convention), with all template strings in one module to re-pin on jj
-upgrades.
+All jj reads/mutations now go through a `Session` over pyjutsu (typed models, typed errors);
+the only raw subprocess that remains is `tags.py` (annotated git tags). The conflict-marker
+gotcha above still applies — pyjutsu surfaces jj-form markers verbatim.
 
 ## 11. Enforcement — invariants & transactional rollback
 

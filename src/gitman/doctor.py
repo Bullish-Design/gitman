@@ -1,20 +1,21 @@
 """`gitman doctor` — validate the execution boundary and toolchain (concept §18).
 
-Checks: inside devenv · jj present + **version assert** (a bump that moves a keyword
-fails loudly here) · git present · colocated `.git`+`.jj` · remote · frozen trunk exists ·
-version source configured. Hard failures (missing/mismatched tool, not colocated) → exit
-2; missing-but-expected-later items (no trunk yet) are warnings.
+Checks: inside devenv · **pyjutsu importable + its linked jj-lib matches the build target**
+(`JJ_VERSION == JJ_LIB_TARGET`) · git present (for tags.py) · colocated `.git`+`.jj` · git
+remote · frozen trunk exists · version source configured. Hard failures (missing/mismatched
+engine, not colocated) → exit 2; missing-but-expected-later items (no trunk yet) are warnings.
+
+There is no `jj` CLI to probe: jj-lib is embedded in-process via pyjutsu.
 """
 
 from __future__ import annotations
 
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
-from gitman import jj as jjmod
 from gitman.config import GitmanConfig, load_config
 from gitman.core import in_devenv
-from gitman.git import git_version, has_remote, is_colocated
 
 OK = "ok"
 WARN = "warn"
@@ -37,9 +38,8 @@ class DoctorReport:
         return 2 if any(c.level == FAIL for c in self.checks) else 0
 
 
-def _trunk_exists(repo_root: Path, trunk: str) -> bool:
-    result = jjmod.run_jj(repo_root, "bookmark", "list", "-r", trunk)
-    return result.ok and bool(result.stdout.strip())
+def _is_colocated(repo_root: Path) -> bool:
+    return (repo_root / ".git").exists() and (repo_root / ".jj").exists()
 
 
 def run_doctor(repo_root: Path, config: GitmanConfig | None = None) -> DoctorReport:
@@ -52,38 +52,56 @@ def run_doctor(repo_root: Path, config: GitmanConfig | None = None) -> DoctorRep
         else Check(FAIL, "devenv", "not inside a devenv shell — run `devenv shell -- gitman ...`")
     )
 
-    jj_ver = jjmod.jj_version(repo_root)
-    if jj_ver is None:
-        checks.append(Check(FAIL, "jj", "jj not found on PATH"))
-    elif not jj_ver.startswith(jjmod.EXPECTED_JJ_VERSION + "."):
-        checks.append(
-            Check(
-                FAIL,
-                "jj",
-                f"version {jj_ver} != expected {jjmod.EXPECTED_JJ_VERSION}.x — re-pin templates.py before bumping",
-            )
-        )
-    else:
-        checks.append(Check(OK, "jj", f"jj {jj_ver}"))
+    # pyjutsu: the in-process jj-lib engine. Assert it imports and its linked jj-lib matches the
+    # version this pyjutsu build targets (the pin lives in pyjutsu; gitman inherits it).
+    try:
+        import pyjutsu
 
-    git_ver = git_version(repo_root)
-    checks.append(Check(OK, "git", f"git {git_ver}") if git_ver else Check(FAIL, "git", "git not found on PATH"))
+        if pyjutsu.JJ_VERSION == pyjutsu.JJ_LIB_TARGET:
+            checks.append(
+                Check(OK, "pyjutsu", f"pyjutsu {pyjutsu.__version__} (jj-lib {pyjutsu.JJ_VERSION})")
+            )
+        else:
+            checks.append(
+                Check(
+                    FAIL,
+                    "pyjutsu",
+                    f"linked jj-lib {pyjutsu.JJ_VERSION} != target {pyjutsu.JJ_LIB_TARGET} "
+                    "— rebuild pyjutsu (`uv sync`)",
+                )
+            )
+    except Exception as exc:  # noqa: BLE001 — report any import/link failure as a check
+        checks.append(Check(FAIL, "pyjutsu", f"import pyjutsu failed: {exc}"))
+
+    checks.append(
+        Check(OK, "git", "git on PATH")
+        if shutil.which("git")
+        else Check(FAIL, "git", "git not found on PATH (needed for annotated tags)")
+    )
 
     checks.append(
         Check(OK, "colocated", ".git + .jj present")
-        if is_colocated(repo_root)
+        if _is_colocated(repo_root)
         else Check(FAIL, "colocated", "not a colocated jj repo — run `jj git init --colocate`")
     )
 
-    checks.append(
-        Check(OK, "remote", "git remote configured")
-        if has_remote(repo_root)
-        else Check(WARN, "remote", "no git remote (publish/release will be unavailable)")
-    )
+    # Load the workspace once for the remote + trunk checks; report cleanly if it won't load.
+    ws = None
+    try:
+        from pyjutsu import Workspace
+
+        ws = Workspace.load(repo_root)
+    except Exception:  # noqa: BLE001 — not a loadable workspace; downstream checks degrade to warn
+        ws = None
+
+    if ws is not None and ws.remotes():
+        checks.append(Check(OK, "remote", "git remote configured"))
+    else:
+        checks.append(Check(WARN, "remote", "no git remote (publish/release will be unavailable)"))
 
     if not cfg.trunk:
         checks.append(Check(WARN, "trunk", "trunk not configured — run `gitman init`"))
-    elif jj_ver and _trunk_exists(repo_root, cfg.trunk):
+    elif ws is not None and _bookmark_exists(ws, cfg.trunk):
         checks.append(Check(OK, "trunk", f"frozen trunk '{cfg.trunk}' present"))
     else:
         checks.append(Check(FAIL, "trunk", f"configured trunk '{cfg.trunk}' not found in repo"))
@@ -94,3 +112,13 @@ def run_doctor(repo_root: Path, config: GitmanConfig | None = None) -> DoctorRep
         checks.append(Check(WARN, "version-source", "no [version] source (version/release unavailable)"))
 
     return DoctorReport(checks)
+
+
+def _bookmark_exists(ws, name: str) -> bool:
+    from pyjutsu import PyjutsuError
+
+    try:
+        ws.resolve(name)
+    except PyjutsuError:
+        return False
+    return True

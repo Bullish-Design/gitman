@@ -52,10 +52,11 @@ def _finish_intent(result) -> None:
     raise typer.Exit(code=result.exit_code)
 
 
-def _config(root: Path):
-    from gitman.config import load_config
+def _session():
+    """Build the per-invocation Session (workspace + config + shared root) for a migrated intent."""
+    from gitman.session import Session
 
-    return load_config(root)
+    return Session.load(_repo_root())
 
 
 # --- doctor (M0) ---------------------------------------------------------------------
@@ -83,12 +84,11 @@ def doctor() -> None:
 @app.command()
 def status() -> None:
     """Canonical/off-canonical report: trunk + all lanes."""
-    from gitman.config import load_config
     from gitman.render import render_status
+    from gitman.session import Session
     from gitman.state import capture_state
 
-    root = _repo_root()
-    state = capture_state(root, load_config(root))
+    state = capture_state(Session.load(_repo_root()))
     _emit(render_status(state), state.model_dump(mode="json"))
     raise typer.Exit(code=0 if state.canonical else 1)
 
@@ -104,8 +104,7 @@ def start(
     """Create a lane: a new change on trunk + bookmark <name>."""
     from gitman.core import do_start
 
-    root = _repo_root()
-    _finish_intent(do_start(root, _config(root), name, workspace))
+    _finish_intent(do_start(_session(), name, workspace))
 
 
 @app.command()
@@ -115,8 +114,7 @@ def save(
     """Describe the current lane's change."""
     from gitman.core import do_save
 
-    root = _repo_root()
-    _finish_intent(do_save(root, _config(root), message))
+    _finish_intent(do_save(_session(), message))
 
 
 @app.command()
@@ -124,8 +122,7 @@ def publish() -> None:
     """Push the current lane (verify hook first); branch = lane name."""
     from gitman.core import do_publish
 
-    root = _repo_root()
-    _finish_intent(do_publish(root, _config(root)))
+    _finish_intent(do_publish(_session()))
 
 
 @app.command()
@@ -135,8 +132,7 @@ def land(
     """Fold lane(s) into trunk, advance trunk, retire the lane(s)."""
     from gitman.core import do_land
 
-    root = _repo_root()
-    _finish_intent(do_land(root, _config(root), lanes))
+    _finish_intent(do_land(_session(), lanes))
 
 
 @app.command()
@@ -146,8 +142,7 @@ def abandon(
     """Discard a lane (terminal)."""
     from gitman.core import do_abandon
 
-    root = _repo_root()
-    _finish_intent(do_abandon(root, _config(root), lane))
+    _finish_intent(do_abandon(_session(), lane))
 
 
 # --- M3 ------------------------------------------------------------------------------
@@ -160,8 +155,7 @@ def sync(
     """Fetch trunk + rebase the current lane (or all) onto it."""
     from gitman.core import do_sync
 
-    root = _repo_root()
-    _finish_intent(do_sync(root, _config(root), all_))
+    _finish_intent(do_sync(_session(), all_))
 
 
 @app.command()
@@ -171,8 +165,7 @@ def resolve(
     """Surface remaining conflicts / confirm cleared."""
     from gitman.core import do_resolve
 
-    root = _repo_root()
-    _finish_intent(do_resolve(root, _config(root), list_))
+    _finish_intent(do_resolve(_session(), list_))
 
 
 @app.command()
@@ -183,8 +176,7 @@ def undo(
     """Revert the last intent, or restore to a chosen op."""
     from gitman.core import do_undo
 
-    root = _repo_root()
-    _finish_intent(do_undo(root, _config(root), op, list_))
+    _finish_intent(do_undo(_session(), op, list_))
 
 
 @app.command()
@@ -195,8 +187,7 @@ def version(
     """Show or bump the repo's semver."""
     from gitman.version import do_version
 
-    root = _repo_root()
-    _finish_intent(do_version(_config(root), root, action, level))
+    _finish_intent(do_version(_session(), action, level))
 
 
 @app.command()
@@ -207,8 +198,7 @@ def release(
     """(bump →) tag vX.Y.Z → push tag. Verify hook first."""
     from gitman.release import do_release
 
-    root = _repo_root()
-    _finish_intent(do_release(_config(root), root, level, set_version))
+    _finish_intent(do_release(_session(), level, set_version))
 
 
 @app.command()
@@ -218,8 +208,7 @@ def init(
     """Resolve + freeze trunk; scaffold gitman.toml + the agent skill."""
     from gitman.init import do_init
 
-    root = _repo_root()
-    _finish_intent(do_init(root, _config(root), trunk))
+    _finish_intent(do_init(_session(), trunk))
 
 
 @app.command()
@@ -229,19 +218,27 @@ def reconcile(
     """Adopt stray changes into lanes, or abandon them (off-canonical recovery)."""
     from gitman.reconcile import do_reconcile
 
-    root = _repo_root()
-    _finish_intent(do_reconcile(root, _config(root), abandon_))
+    _finish_intent(do_reconcile(_session(), abandon_))
 
 
 def main() -> None:
     # GitmanError carries an exit code (concept §7). It propagates out of the Typer
     # runtime, so translate it to a clean message + process exit here (re-raising
-    # typer.Exit outside the runtime would dump a traceback).
+    # typer.Exit outside the runtime would dump a traceback). Any uncaught typed
+    # PyjutsuError is mapped to a GitmanError (exit code) at this same boundary (plan §8).
+    from pyjutsu import PyjutsuError
+
+    from gitman.core import map_pyjutsu_error
+
     try:
         app()
     except GitmanError as exc:
         print(str(exc), file=sys.stderr)
         sys.exit(exc.exit_code)
+    except PyjutsuError as exc:
+        ge = map_pyjutsu_error(exc)
+        print(str(ge), file=sys.stderr)
+        sys.exit(ge.exit_code)
 
 
 if __name__ == "__main__":

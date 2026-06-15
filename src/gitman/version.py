@@ -8,9 +8,13 @@ from __future__ import annotations
 import re
 import subprocess
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from gitman.config import GitmanConfig
 from gitman.core import GitmanError, require_trunk
+
+if TYPE_CHECKING:
+    from gitman.session import Session
 
 _SEMVER = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
 LEVELS = ("major", "minor", "patch")
@@ -59,14 +63,29 @@ def read_version(config: GitmanConfig, repo_root: Path) -> str:
     raise GitmanError("no [version] source configured (file or script hook).", exit_code=2)
 
 
-def do_version(config: GitmanConfig, repo_root: Path, action: str | None, level: str | None):
+def bump_change_on_lane(session: Session, lane: str, new: str, op_desc: str = "gitman:version") -> None:
+    """Add a dedicated 'Bump version to <new>' change on top of @ and advance `lane` to it.
+
+    Three ops (new → snapshot the written file → describe+set_bookmark); call inside a
+    canonical_guard body (multi-op). Verified: probe5 A.
+    """
+    with session.ws.transaction(op_desc, auto_snapshot=False) as tx:
+        tx.new("@")  # dedicated empty change on the lane head
+    write_version(session.config, session.repo_root, new)  # writes the file on the new @
+    session.ws.snapshot()  # own op: fold the file into @
+    with session.ws.transaction(op_desc, auto_snapshot=False) as tx:
+        tx.describe("@", f"Bump version to {new}")
+        tx.set_bookmark(lane, "@")  # lane head = the bump change
+
+
+def do_version(session: Session, action: str | None, level: str | None):
     """`gitman version` (show) / `gitman version bump <level>` (write + save a bump change)."""
-    from gitman import jj
-    from gitman.invariants import transaction
+    from gitman.invariants import canonical_guard
     from gitman.lanes import require_current_lane
     from gitman.models import IntentResult
 
-    current = read_version(config, repo_root)
+    config = session.config
+    current = read_version(config, session.repo_root)
     if action is None:
         return IntentResult(intent="version", outcome="OK", messages=[f"version {current}"])
     if action != "bump":
@@ -76,20 +95,16 @@ def do_version(config: GitmanConfig, repo_root: Path, action: str | None, level:
 
     new = bump(current, level)
     trunk = require_trunk(config)
-    lane = require_current_lane(repo_root, trunk)
-    with transaction(repo_root, config, intent="version") as txn:
-        # A dedicated "Bump version" change on the lane; advance the bookmark to the new head.
-        jj.new_change(repo_root, "@")
-        write_version(config, repo_root, new)
-        jj.describe(repo_root, f"Bump version to {new}")
-        jj.bookmark_set(repo_root, lane, "@")
+    with canonical_guard(session, "version") as canon:
+        lane = require_current_lane(session, trunk)  # @ must be on a lane (read pre-mutation)
+        bump_change_on_lane(session, lane, new)
     return IntentResult(
         intent="version",
         outcome="BUMPED",
         lane=lane,
         messages=[f"{current} → {new}"],
-        undo_command=txn.undo_command,
-        state=txn.state,
+        undo_command=canon.undo_command,
+        state=canon.state,
     )
 
 

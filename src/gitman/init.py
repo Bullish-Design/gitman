@@ -7,10 +7,12 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from gitman import git, jj
-from gitman.config import GitmanConfig
 from gitman.core import GitmanError
+
+if TYPE_CHECKING:
+    from gitman.session import Session
 
 TRUNK_CANDIDATES = ("main", "master", "trunk")
 
@@ -66,16 +68,24 @@ off-canonical) · `2` infra/config · `3` invalid usage. Pass `--json` for struc
 """
 
 
-def detect_trunk(repo_root: Path) -> str:
+def _local_bookmarks(session: Session) -> set[str]:
+    return {b.name for b in session.view().bookmarks() if b.remote is None}
+
+
+def detect_trunk(session: Session) -> str:
     """Resolve trunk once: an existing main/master/trunk bookmark, else origin/HEAD, else
     'main' (created)."""
-    names = jj.bookmark_names(repo_root)
+    from gitman import tags
+    from gitman.core import pick_remote
+
+    local = _local_bookmarks(session)
     for cand in TRUNK_CANDIDATES:
-        if cand in names:
+        if cand in local:
             return cand
-    head = git.run_git(repo_root, "symbolic-ref", "--quiet", "refs/remotes/origin/HEAD")
-    if head.ok and head.stdout.strip():
-        return head.stdout.strip().rsplit("/", 1)[-1]
+    if session.ws.remotes():
+        head = tags.remote_default_branch(session.repo_root, pick_remote(session.ws))
+        if head:
+            return head
     return "main"
 
 
@@ -88,20 +98,24 @@ def _version_scaffold(repo_root: Path) -> tuple[str, str]:
     return "", "not configured — add a [version] section to gitman.toml to enable version/release"
 
 
-def do_init(repo_root: Path, config: GitmanConfig, trunk_opt: str | None):
+def do_init(session: Session, trunk_opt: str | None):
     from gitman.invariants import repo_lock
     from gitman.models import IntentResult
+    from gitman.state import _is_colocated
 
+    config = session.config
+    repo_root = session.repo_root
     if config.trunk:
         raise GitmanError(f"already initialized (trunk '{config.trunk}' is frozen).", exit_code=3)
-    if not git.is_colocated(repo_root):
+    if not _is_colocated(repo_root):
         raise GitmanError("not a colocated jj repo — run `jj git init --colocate` first.", exit_code=2)
 
     messages: list[str] = []
     with repo_lock(repo_root):
-        trunk = trunk_opt or detect_trunk(repo_root)
-        if trunk not in jj.bookmark_names(repo_root):
-            jj.bookmark_create(repo_root, trunk, "@")
+        trunk = trunk_opt or detect_trunk(session)
+        if trunk not in _local_bookmarks(session):
+            with session.ws.transaction("gitman:init", auto_snapshot=False) as tx:
+                tx.create_bookmark(trunk, "@")
             messages.append(f"created trunk bookmark '{trunk}' at @.")
         else:
             messages.append(f"using existing trunk bookmark '{trunk}'.")
