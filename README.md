@@ -45,6 +45,28 @@ devenv shell -- gitman doctor
 devenv shell -- gitman status
 ```
 
+## Use it in your repo
+
+See **[`docs/USING_GITMAN.md`](docs/USING_GITMAN.md)** for the full adoption guide
+(devenv toolchain, install, `jj git init --colocate`, `gitman init`, config, exit codes).
+The short version:
+
+```bash
+devenv shell -- bash -c 'jj git init --colocate'   # if not already a jj repo
+devenv shell -- gitman init                         # freeze trunk, scaffold gitman.toml + agent skill
+devenv shell -- gitman status
+```
+
+`gitman init` scaffolds `.claude/skills/gitman/SKILL.md` so coding agents know the loop.
+
+## Examples
+
+Runnable demo and an annotated config live in [`examples/`](examples/):
+
+```bash
+devenv shell -- bash examples/lane-loop.sh    # end-to-end lane loop in a throwaway repo
+```
+
 ## Status
 
 Pre-1.0, under active development. Base dependencies are `pydantic` + `typer` only; the

@@ -19,9 +19,10 @@ from gitman.models import Conflict, Lane, LaneState, RepoState, TrunkRef
 
 
 def _stray_revset(trunk: str) -> str:
-    # Changes descended from trunk, not in any bookmark's ancestry, excluding the current
-    # (often empty) working-copy change. A non-empty match means "edited outside Gitman".
-    return f"({trunk}..) ~ ::bookmarks() ~ @"
+    # Changes descended from trunk, not in any bookmark's ancestry (local OR remote — so
+    # fetched non-lane remote branches don't count), excluding the current (often empty)
+    # working-copy change. A non-empty match means "edited outside Gitman".
+    return f"({trunk}..) ~ ::(bookmarks() | remote_bookmarks()) ~ @"
 
 
 def find_strays(repo_root: Path, trunk: str) -> list:

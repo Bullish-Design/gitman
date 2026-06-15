@@ -1,0 +1,44 @@
+# Annotated sample gitman.toml — copy into your repo root and trim to taste.
+# `gitman init` writes a minimal version of this for you; everything below is optional
+# except `trunk`. A `gitman.toml` here takes precedence over [tool.gitman] in pyproject.toml.
+
+# Trunk bookmark/branch. Written once by `gitman init`, then FROZEN (invariant I1):
+# nothing at runtime re-detects it. Change it only by hand, deliberately.
+trunk = "main"
+
+[lanes]
+# Where `--workspace` lanes live. {repo} and {lane} expand. Default: a sibling directory.
+workspace_dir = "../{repo}-{lane}"
+# If true, every `gitman start` isolates the lane in its own workspace. Default: false.
+always_workspace = false
+
+[publish]
+# Verify hook: a single command (+args) run before `publish`. [] = no gate.
+# Generic — any verifier. Examples:
+#   verify = ["pytest", "-q"]
+#   verify = ["devenv", "shell", "--", "testee", "verify"]
+verify = []
+# What to do if verify fails: "block" (default, refuses publish) or "warn" (publish anyway).
+on_fail = "block"
+# Optional prefix applied to the lane name when it becomes a git branch.
+branch_prefix = ""
+
+[version]
+# Mechanism A — declarative (the common case): rewrite {version} in `pattern` within `file`.
+file = "pyproject.toml"
+pattern = 'version = "{version}"'
+# Mechanism B — script hook (the repo owns the logic; uncomment to use instead of A):
+# read  = ["./scripts/version.sh", "get"]
+# write = ["./scripts/version.sh", "set", "{version}"]
+
+[release]
+# Tag name format for `gitman release`. Default: "v{version}".
+tag_format = "v{version}"
+# Verify hook for release. Omit to inherit [publish].verify; [] = no gate.
+# verify = ["pytest", "-q"]
+# Push the tag after creating it. Default: true.
+push_tag = true
+
+[policy]
+# Refs that must never be rewritten or force-pushed (trunk is always protected).
+protected = ["main"]
