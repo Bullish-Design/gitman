@@ -71,7 +71,8 @@ needs to know jj is in use.
 ## 4. Locked decisions
 
 - **Agent-first** positioning (humans/CI secondary).
-- **jj required + colocated** (`jj git init --colocate`). No plain-git fallback.
+- **jj required + colocated** (pyjutsu `Workspace.init(colocate=True)`, in-process — adopts an
+  existing `.git` or creates a fresh one; no `jj` CLI). No plain-git fallback.
 - **GitHub is an optional extra** (`gitman.advanced.github`); the base never imports it.
 - **Verification is an optional pre-publish hook, off by default** — a generic command
   (any verifier, incl. Testee). Zero Testee dependency.

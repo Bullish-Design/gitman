@@ -25,10 +25,22 @@ app = typer.Typer(
 _ctx: dict = {"repo": None, "json": False}
 
 
+def _version_callback(value: bool) -> None:
+    if value:
+        from gitman import __version__
+
+        typer.echo(f"gitman {__version__}")
+        raise typer.Exit()
+
+
 @app.callback()
 def _main(
     repo: Annotated[Path | None, typer.Option("--repo", help="Path inside the target repo (default: cwd).")] = None,
     json_out: Annotated[bool, typer.Option("--json", help="Emit structured JSON instead of a report.")] = False,
+    version: Annotated[
+        bool,
+        typer.Option("--version", callback=_version_callback, is_eager=True, help="Show the gitman version and exit."),
+    ] = False,
 ) -> None:
     _ctx["repo"] = repo
     _ctx["json"] = json_out
@@ -115,6 +127,16 @@ def save(
     from gitman.core import do_save
 
     _finish_intent(do_save(_session(), message))
+
+
+@app.command()
+def seed(
+    message: Annotated[str, typer.Option("-m", "--message", help="The initial commit's message.")],
+) -> None:
+    """Make a repo's first commit on trunk (bootstrap an adopted/empty repo), leaving a clean @."""
+    from gitman.core import do_seed
+
+    _finish_intent(do_seed(_session(), message))
 
 
 @app.command()

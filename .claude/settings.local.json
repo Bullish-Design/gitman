@@ -10,7 +10,10 @@
       "Bash(devenv shell -- bash -c ' *)",
       "Bash(devenv shell *)",
       "Read(//home/andrew/Documents/Projects/Pyjutsu/**)",
-      "Bash(sed -n '/def snapshot/,/def /p' python/pyjutsu/workspace.py)"
+      "Bash(sed -n '/def snapshot/,/def /p' python/pyjutsu/workspace.py)",
+      "Bash(CLI\" docs/*.md 2>/dev/null)",
+      "Bash(grep -rn \"jj git init\\\\|jj CLI\\\\|jjPkgs\\\\|jujutsu.*packages\\\\|needs the jj\\\\|jj` CLI\" docs/*.md 2>/dev/null)",
+      "Bash(git fetch *)"
     ]
   }
 }

@@ -82,7 +82,12 @@ def run_doctor(repo_root: Path, config: GitmanConfig | None = None) -> DoctorRep
     checks.append(
         Check(OK, "colocated", ".git + .jj present")
         if _is_colocated(repo_root)
-        else Check(FAIL, "colocated", "not a colocated jj repo — run `jj git init --colocate`")
+        else Check(
+            FAIL,
+            "colocated",
+            "not a colocated jj repo — colocate it: "
+            "`python -c 'from pyjutsu import Workspace; Workspace.init(\".\", colocate=True)'`",
+        )
     )
 
     # Load the workspace once for the remote + trunk checks; report cleanly if it won't load.

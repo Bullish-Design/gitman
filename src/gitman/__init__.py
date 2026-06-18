@@ -6,4 +6,10 @@ intents over a canonical "lane" workflow. See docs/GITMAN_CONCEPT.md.
 
 from __future__ import annotations
 
-__version__ = "0.1.0"
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _pkg_version
+
+try:  # single-source the version from package metadata (pyproject), never a drifting literal.
+    __version__ = _pkg_version("gitman")
+except PackageNotFoundError:  # running from a raw checkout that was never installed.
+    __version__ = "0+unknown"

@@ -88,15 +88,18 @@ def require_trunk(config) -> str:
     return config.trunk
 
 
-def run_verify(commands: list[str], repo_root: Path) -> tuple[bool, str]:
+def run_verify(commands: list[str], repo_root: Path, timeout: float | None = None) -> tuple[bool, str]:
     """Run the configured verify hook (a single command + args). Empty → pass. Generic:
-    any verifier, zero Testee coupling (concept §4)."""
+    any verifier, zero Testee coupling (concept §4). `timeout` (seconds, None = no limit) bounds a
+    hung hook so it can't wedge gitman."""
     if not commands:
         return True, ""
     try:
-        proc = subprocess.run(commands, cwd=repo_root, capture_output=True, text=True)
+        proc = subprocess.run(commands, cwd=repo_root, capture_output=True, text=True, timeout=timeout)
     except FileNotFoundError as exc:
         raise GitmanError(f"verify command not found: {commands[0]}", exit_code=2) from exc
+    except subprocess.TimeoutExpired as exc:
+        raise GitmanError(f"verify command timed out after {timeout}s: {commands[0]}", exit_code=2) from exc
     return proc.returncode == 0, (proc.stdout + proc.stderr).strip()
 
 
@@ -217,7 +220,9 @@ def do_save(session: Session, message: str | None):
     trunk = require_trunk(session.config)
     lane = require_current_lane(session, trunk)
     if message is None:
-        wc = session.fresh_view().working_copy()  # reflect on-disk edits for the echo
+        # The description is commit metadata (set by `jj describe`), not an on-disk edit, so a
+        # frozen read suffices — no need to snapshot @ (and no lock) just to echo it.
+        wc = session.view().working_copy()
         desc = wc.description.rstrip("\n") or "(no description)"
         return IntentResult(
             intent="save",
@@ -237,6 +242,63 @@ def do_save(session: Session, message: str | None):
     )
 
 
+def do_seed(session: Session, message: str):
+    """Make a repo's **first** commit: describe `@` as trunk's initial commit, leave a clean empty `@`.
+
+    The bootstrap front door for adopting a repo with no history yet (concept §15; bootstrap Issue 6).
+    After `gitman init`, trunk's bookmark sits on `@`, which holds the not-yet-described on-disk
+    files — but `save` refuses (no lane) and `start` would fold the work *into* trunk and open an
+    empty lane. `seed` instead describes `@` (the trunk bookmark follows the rewrite, so trunk lands
+    on the seed commit) and opens a fresh empty child as the new `@`, then exports so
+    `refs/heads/<trunk>` + git HEAD point at the seed. It is one-shot: it refuses once trunk has any
+    history or the repo has lanes (use `gitman start` then).
+    """
+    from gitman.invariants import repo_lock, write_undo_checkpoint
+    from gitman.lanes import lane_names
+    from gitman.models import IntentResult
+    from gitman.state import _is_colocated, capture_state
+
+    trunk = require_trunk(session.config)
+    if not _is_colocated(session.repo_root):
+        raise GitmanError("not a colocated jj repo — run `gitman init` first.", exit_code=2)
+
+    view = session.fresh_view()  # snapshot on-disk edits into @ before inspecting it
+    wc = view.working_copy()
+    trunk_commit = view.resolve(trunk)
+
+    if lane_names(session, trunk) or any(b != trunk for b in wc.bookmarks):
+        raise GitmanError("repo already has lanes — `seed` only makes a repo's first commit.", exit_code=3)
+    if trunk_commit.commit_id != wc.commit_id:
+        raise GitmanError(
+            f"trunk '{trunk}' already has history — `seed` only makes the first commit; use `gitman start`.",
+            exit_code=3,
+        )
+    if wc.is_empty:
+        return IntentResult(
+            intent="seed",
+            outcome="NOOP",
+            messages=["working copy is empty — nothing to seed (edit files first)."],
+        )
+
+    with repo_lock(session.repo_root):
+        op_before = session.ws.head_operation()
+        with session.ws.transaction("gitman:seed", auto_snapshot=False) as tx:
+            tx.describe("@", message)  # trunk bookmark follows the rewrite → lands on the seed
+            tx.new("@")  # fresh empty child becomes the new @
+        session.ws.git_export()  # refs/heads/<trunk> + git HEAD now point at the seed (local .git)
+        write_undo_checkpoint(session.repo_root, op_before, "seed")
+
+    notes = ["the colocated git branch was updated; `gitman undo` reverts local state only."]
+    return IntentResult(
+        intent="seed",
+        outcome="SEEDED",
+        messages=[f'seeded trunk \'{trunk}\' with the initial commit: "{message}".'],
+        notes=notes,
+        undo_command="gitman undo",
+        state=capture_state(session),
+    )
+
+
 def do_publish(session: Session):
     from pyjutsu import PyjutsuError
 
@@ -249,7 +311,7 @@ def do_publish(session: Session):
         raise GitmanError("no git remote configured — cannot publish.", exit_code=2)
 
     notes: list[str] = []
-    ok, out = run_verify(session.config.publish.verify, session.repo_root)
+    ok, out = run_verify(session.config.publish.verify, session.repo_root, session.config.publish.verify_timeout)
     if not ok:
         if session.config.publish.on_fail == "block":
             raise GitmanError(f"verify failed — publish blocked:\n{out}", exit_code=1)
@@ -287,6 +349,7 @@ def do_land(session: Session, lane_args: list[str] | None):
     landed: list[str] = []
     notes: list[str] = []
     last_undo: str | None = None
+    last_state = None
     blocked: GitmanError | None = None
     for lane in targets:
         try:
@@ -305,24 +368,29 @@ def do_land(session: Session, lane_args: list[str] | None):
                     tx.set_bookmark(trunk, lane)  # advance trunk to the lane head (verified)
                     tx.delete_bookmark(lane)  # retire the lane
                 canon.notes += _cleanup_workspace(session, lane)
-                # Best-effort: a landed lane's remote branch is merged, so delete it. The local
-                # bookmark is gone but the remote-tracking ref persists until pruned, so the
-                # delete-push works after the tx. One-way; failure doesn't undo the land.
-                if was_published:
-                    try:
-                        session.ws.git_push(pick_remote(session.ws), lane, delete=True)
-                        canon.notes.append(f"deleted remote branch '{lane}'.")
-                    except PyjutsuError as exc:
-                        canon.notes.append(f"remote branch '{lane}' not deleted (delete it manually): {exc}")
+            # Postcondition passed (guard exited cleanly) → the land is committed. The remote-branch
+            # cleanup runs AFTER the postcondition so a postcondition revert never leaves the local
+            # lane restored while its remote branch is already gone (review L1). One-way and
+            # best-effort: the local bookmark is gone but the remote-tracking ref persists until
+            # pruned, so the delete-push still resolves; failure doesn't undo the land.
+            if was_published:
+                try:
+                    session.ws.git_push(pick_remote(session.ws), lane, delete=True)
+                    canon.notes.append(f"deleted remote branch '{lane}' (one-way; `gitman undo` won't restore it).")
+                except PyjutsuError as exc:
+                    canon.notes.append(f"remote branch '{lane}' not deleted (delete it manually): {exc}")
             landed.append(lane)
             notes += canon.notes
             last_undo = canon.undo_command
+            last_state = canon.state
         except GitmanError as exc:
             blocked = exc
             break
 
     if blocked is not None:
         msgs = [f"landed: {', '.join(landed)}" if landed else "landed: none", str(blocked)]
+        if len(landed) > 1:
+            notes = notes + [f"`gitman undo` reverts one lane at a time — run it {len(landed)}× to undo all."]
         return IntentResult(
             intent="land",
             outcome="BLOCKED",
@@ -330,13 +398,19 @@ def do_land(session: Session, lane_args: list[str] | None):
             notes=notes,
             exit_code=blocked.exit_code,
             undo_command=last_undo,
+            state=last_state,
         )
     return IntentResult(
         intent="land",
         outcome="LANDED",
         messages=[f"landed {', '.join(landed)} into {trunk}."],
-        notes=(notes + ["`gitman undo` reverts the last lane landed."] if len(landed) > 1 else notes),
+        notes=(
+            notes + [f"`gitman undo` reverts one lane at a time — run it {len(landed)}× to undo all."]
+            if len(landed) > 1
+            else notes
+        ),
         undo_command=last_undo,
+        state=last_state,
     )
 
 
@@ -426,11 +500,21 @@ def do_resolve(session: Session, list_: bool):
     if not files and not conflicted_lanes:
         return IntentResult(intent="resolve", outcome="CLEAN", messages=["no conflicts."])
     messages: list[str] = []
-    if files:
-        messages.append("conflicts at @:")
-        messages += [f"  {c.path} ({c.num_sides}-sided)" for c in files]
-    if conflicted_lanes:
-        messages.append(f"conflicted lanes: {', '.join(conflicted_lanes)}")
+    if list_:
+        # --list: the full per-file enumeration.
+        if files:
+            messages.append("conflicts at @:")
+            messages += [f"  {c.path} ({c.num_sides}-sided)" for c in files]
+        if conflicted_lanes:
+            messages.append(f"conflicted lanes: {', '.join(conflicted_lanes)}")
+    else:
+        # plain: a one-line summary, pointing at --list for detail.
+        bits: list[str] = []
+        if files:
+            bits.append(f"{len(files)} conflicted file{'' if len(files) == 1 else 's'} at @")
+        if conflicted_lanes:
+            bits.append(f"{len(conflicted_lanes)} conflicted lane(s): {', '.join(conflicted_lanes)}")
+        messages.append("; ".join(bits) + "  (`gitman resolve --list` for files)")
     messages.append("Not blocked — edit the files (jj markers: <<<<<<< %%%%%%% +++++++ >>>>>>>), then continue.")
     return IntentResult(intent="resolve", outcome="CONFLICTS", messages=messages, exit_code=1)
 

@@ -81,6 +81,19 @@ def find_strays(view: RepoView, trunk: str) -> list[Change]:
     return [_change(c) for c in view.log(_stray_revset(trunk)) if not c.is_empty]
 
 
+def _orphan_working_copy(view: RepoView, wc: Commit, trunk: str) -> bool:
+    """True if @ is non-empty, carries no bookmark, and descends from trunk.
+
+    `_stray_revset` deliberately excludes `@` (so `start` can adopt pre-edit work and the canonical
+    precheck stays lenient about the working copy), which means a non-empty unbookmarked `@` is NOT
+    flagged off-canonical. Surfacing it as a `status` note keeps the report honest without breaking
+    the adopt/precheck flow (review H2; full off-canonical classification is a later, larger change).
+    """
+    if wc.is_empty or wc.bookmarks:
+        return False
+    return bool(view.log(f"@ & ({trunk}..)"))
+
+
 def capture_state(session: Session) -> RepoState:
     """Build the full RepoState from one frozen view. Requires a frozen trunk (I1)."""
     config = session.config
@@ -156,6 +169,8 @@ def capture_state(session: Session) -> RepoState:
         notes.append("working copy is stale — run `gitman reconcile`.")
     if not session.ws.remotes():
         notes.append("no git remote — publish/release unavailable.")
+    if current_lane is None and _orphan_working_copy(view, wc, trunk_name):
+        notes.append("working copy @ has unbookmarked work — `gitman start <name>` to adopt it into a lane.")
 
     return RepoState(
         repo_root=repo_root,

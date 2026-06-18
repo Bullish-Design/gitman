@@ -99,20 +99,32 @@ def _read_lock_pid(lock: Path) -> int | None:
 
 @contextmanager
 def repo_lock(repo_root: Path) -> Iterator[None]:
-    """Serialize Gitman writers (I4) via an O_EXCL lockfile; reclaim stale (dead-pid) locks."""
+    """Serialize Gitman writers (I4) via an O_EXCL lockfile; reclaim stale (dead-pid) locks.
+
+    The reclaim path *retries* the O_EXCL create rather than assuming it succeeds: if two processes
+    race to reclaim the same stale lock, the loser's create fails again and it re-checks the holder
+    (now live) instead of crashing with a raw FileExistsError. A narrow window remains where a
+    reclaimer could unlink a lock another process just freshly acquired; that's strictly rarer than
+    the previous unconditional second `os.open`, and the common single-reclaimer case is correct.
+    """
     ensure_state_dir(repo_root)
     lock = repo_root / LOCK_PATH
     fd = None
     try:
-        try:
-            fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        except FileExistsError:
-            holder = _read_lock_pid(lock)
-            if holder is not None and _pid_alive(holder):
-                raise GitmanError(f"another gitman process holds the repo lock (pid {holder}).", exit_code=2) from None
-            # Stale lock — reclaim it.
-            lock.unlink(missing_ok=True)
-            fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        for _ in range(2):
+            try:
+                fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                break
+            except FileExistsError:
+                holder = _read_lock_pid(lock)
+                if holder is not None and _pid_alive(holder):
+                    raise GitmanError(
+                        f"another gitman process holds the repo lock (pid {holder}).", exit_code=2
+                    ) from None
+                # Stale lock (dead pid) — reclaim it and retry the O_EXCL create.
+                lock.unlink(missing_ok=True)
+        if fd is None:
+            raise GitmanError("could not acquire the repo lock (contended).", exit_code=2)
         os.write(fd, f"{os.getpid()} {time.time()}\n".encode())
         os.close(fd)
         fd = None

@@ -23,6 +23,7 @@ class PublishConfig(BaseModel):
     verify: list[str] = Field(default_factory=list)  # [] → no gate
     on_fail: str = "block"  # "block" | "warn"
     branch_prefix: str = ""
+    verify_timeout: float | None = None  # seconds; None → no limit (bounds a hung verify hook)
 
 
 class VersionConfig(BaseModel):

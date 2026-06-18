@@ -27,6 +27,19 @@ description: Route ALL version control through gitman (jj + colocated git). Neve
 Run **every** version-control action through `gitman` (inside the devenv shell). Raw
 `jj`/`git` edits break canonicity and force a `gitman reconcile`.
 
+## Bootstrapping a repo
+
+`gitman init` froze trunk. If trunk has **no commits yet** (a brand-new repo), make the first
+commit with `gitman seed` — it describes the working copy as trunk's initial commit and leaves a
+clean empty `@`:
+
+```
+gitman seed -m "Initial commit"   # trunk's first commit; only for an empty trunk
+```
+
+(Adopting an *existing* git repo that already has history needs no seed — `gitman init` reuses the
+existing trunk branch, and `gitman start` adopts any uncommitted work into a lane.)
+
 ## The lane loop
 
 A **lane** is one unit of work: a named bookmark (= git branch) on trunk, kept linear.
@@ -99,6 +112,7 @@ def _version_scaffold(repo_root: Path) -> tuple[str, str]:
 
 
 def do_init(session: Session, trunk_opt: str | None):
+    from gitman.config import find_config
     from gitman.invariants import repo_lock
     from gitman.models import IntentResult
     from gitman.state import _is_colocated
@@ -108,7 +122,18 @@ def do_init(session: Session, trunk_opt: str | None):
     if config.trunk:
         raise GitmanError(f"already initialized (trunk '{config.trunk}' is frozen).", exit_code=3)
     if not _is_colocated(repo_root):
-        raise GitmanError("not a colocated jj repo — run `jj git init --colocate` first.", exit_code=2)
+        raise GitmanError(
+            "not a colocated jj repo — colocate it first: "
+            "`python -c 'from pyjutsu import Workspace; Workspace.init(\".\", colocate=True)'`",
+            exit_code=2,
+        )
+
+    # If real policy already lives in pyproject's [tool.gitman], the gitman.toml we write will shadow
+    # it (gitman.toml wins in find_config) — warn rather than silently override (review L8).
+    existing_table, existing_src = find_config(repo_root)
+    notes: list[str] = ["trunk is frozen (I1); `gitman doctor` validates it."]
+    if existing_table and existing_src is not None and existing_src.name == "pyproject.toml":
+        notes.append("existing [tool.gitman] in pyproject.toml is now shadowed by gitman.toml (gitman.toml wins).")
 
     messages: list[str] = []
     with repo_lock(repo_root):
@@ -134,5 +159,5 @@ def do_init(session: Session, trunk_opt: str | None):
         intent="init",
         outcome="INITIALIZED",
         messages=messages,
-        notes=["trunk is frozen (I1); `gitman doctor` validates it."],
+        notes=notes,
     )

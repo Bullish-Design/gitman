@@ -15,9 +15,9 @@ Gitman runs **only inside a [devenv.sh](https://devenv.sh) shell** and requires:
   `pyjutsu.JJ_VERSION == pyjutsu.JJ_LIB_TARGET`.
 - **git** — the colocated interop layer (used directly only for annotated tags).
 - **Python 3.13**.
-- **the `jj` CLI — bootstrap only:** needed once to colocate an *existing* git repo
-  (`jj git init --colocate`, step 3). A brand-new repo can skip it (pyjutsu can init a fresh
-  colocated repo). If you'd rather not depend on the CLI, see step 3's note.
+
+No `jj` CLI is needed — pyjutsu colocates both brand-new **and** existing git repos in-process
+(step 3).
 
 ## 1. Add the toolchain to your devenv
 
@@ -35,10 +35,6 @@ In `devenv.nix`:
   };
 }
 ```
-
-> For the one-time colocation bootstrap of an *existing* git repo (step 3) you also need the
-> `jj` CLI. Add a pinned-0.38 input and `jjPkgs.jujutsu` to `packages` for that step, then
-> drop it — gitman itself never invokes the CLI.
 
 ## 2. Install Gitman into the venv
 
@@ -64,17 +60,16 @@ frozen trunk.
 
 ## 3. Make the repo colocated, then init
 
-Gitman requires a **colocated** jj repo (a real `.git` kept in sync). In your repo root:
+Gitman requires a **colocated** jj repo (a real `.git` kept in sync). pyjutsu colocates the repo
+in-process — it both creates a fresh `.git` and **adopts an existing one** (importing its history
+and branches). In your repo root:
 
 ```bash
-devenv shell -- bash -c 'jj git init --colocate'   # existing git repo → colocate (needs the jj CLI, bootstrap only)
+devenv shell -- python -c 'from pyjutsu import Workspace; Workspace.init(".", colocate=True)'
 devenv shell -- gitman init                         # resolve + freeze trunk, scaffold config + skill
 ```
 
-> **No `jj` CLI?** For a brand-new repo you can colocate with pyjutsu instead of the CLI:
-> `devenv shell -- python -c 'from pyjutsu import Workspace; Workspace.init(".", colocate=True)'`.
-> (This only works on a fresh dir; colocating an *existing* git repo still needs the `jj` CLI —
-> a known gap.)
+This works on a brand-new dir **and** on an existing git repo (with or without history).
 
 `gitman init`:
 
@@ -87,6 +82,18 @@ devenv shell -- gitman init                         # resolve + freeze trunk, sc
 
 Commit `gitman.toml` and the skill. Gitman's own state lives under `.gitman/` (a
 self-ignoring dir); add `.gitman/` to `.gitignore` if you prefer it explicit.
+
+### Make the first commit (brand-new repos)
+
+If trunk has **no history yet** (a fresh repo), `gitman seed` makes its initial commit — it
+describes the working copy as trunk's first commit and leaves a clean empty `@`:
+
+```bash
+devenv shell -- gitman seed -m "Initial commit"
+```
+
+Adopting an *existing* repo that already has commits needs no seed: `gitman init` reuses the
+existing trunk branch, and `gitman start` adopts any uncommitted work into a lane.
 
 ## 4. The daily loop
 

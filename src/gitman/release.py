@@ -43,7 +43,7 @@ def do_release(session: Session, level: str | None, set_version: str | None):
 
     # Verify FIRST — before any write or tag (concept §13). [] / inherits [publish].verify.
     verify_cmds = config.release.verify if config.release.verify is not None else config.publish.verify
-    ok, out = run_verify(verify_cmds, repo_root)
+    ok, out = run_verify(verify_cmds, repo_root, config.publish.verify_timeout)
     if not ok:
         raise GitmanError(f"verify failed — release blocked (no tag, no bump):\n{out}", exit_code=1)
 

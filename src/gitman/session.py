@@ -22,19 +22,29 @@ from gitman.config import GitmanConfig
 from gitman.core import GitmanError, resolve_repo_root
 
 
-def _shared_root(ws: Workspace) -> Path:
+def _shared_root(ws: Workspace, start: Path) -> Path:
     """The shared repo root = the **default** workspace's path (plan §4).
 
     In a secondary workspace, `ws.root` is that workspace's own working-copy dir, so anchoring
     `.gitman/` there gives a per-workspace lock that does not serialize parallel agents. The
     default workspace's recorded path is the one shared location every workspace agrees on.
+
+    `start` is the filesystem-resolved root the caller already walked to (`resolve_repo_root`, the
+    same answer `gitman doctor` uses). We resolve defensively against it so a bad recorded path can
+    never propagate as the repo root: a default-workspace `path` that is relative or doesn't exist
+    on disk (e.g. metadata a mismatched `jj` binary wrote as `'../..'`) is anchored at `start`,
+    falling back to `start` itself. This keeps every command's notion of "the repo root" identical.
     """
     for w in ws.workspaces():
         if w.name == "default" and w.path:
-            return Path(w.path)
+            p = Path(w.path)
+            if p.is_absolute() and p.exists():
+                return p
+            resolved = (start / p).resolve()
+            return resolved if resolved.exists() else start
     # Fallback: a repo whose default workspace has no recorded path (shouldn't happen for a
-    # normally-initialized repo) — use this workspace's own root.
-    return ws.root
+    # normally-initialized repo) — use the filesystem-resolved root.
+    return start
 
 
 class Session:
@@ -61,10 +71,12 @@ class Session:
             ws = Workspace.load(start)
         except PyjutsuError as exc:
             raise GitmanError(
-                f"not inside a jj workspace ({start}) — run `gitman init` / `jj git init --colocate`.",
+                f"not inside a jj workspace ({start}) — colocate it first: "
+                "`python -c 'from pyjutsu import Workspace; Workspace.init(\".\", colocate=True)'`, "
+                "then `gitman init`.",
                 exit_code=2,
             ) from exc
-        root = _shared_root(ws)
+        root = _shared_root(ws, start)
         if config is None:
             from gitman.config import load_config
 
