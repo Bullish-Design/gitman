@@ -1,6 +1,6 @@
 [project]
 name = "gitman"
-version = "0.1.0"
+version = "0.2.0"
 description = "Agent-first version-control interface: a safe lane workflow over jujutsu + colocated git."
 readme = "README.md"
 requires-python = ">=3.13"
