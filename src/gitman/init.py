@@ -29,16 +29,27 @@ Run **every** version-control action through `gitman` (inside the devenv shell).
 
 ## Bootstrapping a repo
 
-`gitman init` froze trunk. If trunk has **no commits yet** (a brand-new repo), make the first
-commit with `gitman seed` — it describes the working copy as trunk's initial commit and leaves a
-clean empty `@`:
+`gitman init --colocate` is the one-command front door: it colocates jj onto this directory's git —
+**adopting** an existing `.git` (importing its history, keeping uncommitted work on `@`) or creating
+a fresh one — and then freezes trunk. Pick the path by repo state:
 
-```
-gitman seed -m "Initial commit"   # trunk's first commit; only for an empty trunk
-```
+- **Existing git repo with history** (e.g. an "Initial commit" + uncommitted edits):
+  ```
+  gitman init --colocate --trunk main     # adopts the .git; trunk reuses the existing branch
+  gitman start <name>                      # adopts the uncommitted work into a lane
+  gitman save -m "<message>"
+  ```
+  No `seed` needed — trunk already has a commit.
 
-(Adopting an *existing* git repo that already has history needs no seed — `gitman init` reuses the
-existing trunk branch, and `gitman start` adopts any uncommitted work into a lane.)
+- **Fresh / empty repo** (no commits yet):
+  ```
+  gitman init --colocate --trunk main      # creates the colocated git + trunk bookmark at @
+  gitman seed -m "Initial commit"          # describes the working copy as trunk's first commit
+  ```
+  `seed` is one-shot and refuses once trunk has any history.
+
+(Without `--colocate`, `gitman init` assumes the workspace is already colocated; if it isn't, it
+tells you to colocate first.)
 
 ## The lane loop
 
@@ -111,7 +122,25 @@ def _version_scaffold(repo_root: Path) -> tuple[str, str]:
     return "", "not configured — add a [version] section to gitman.toml to enable version/release"
 
 
-def do_init(session: Session, trunk_opt: str | None):
+def ensure_colocated(repo_root: Path) -> bool:
+    """Colocate a jj workspace onto `repo_root` (for `gitman init --colocate`).
+
+    No-op returning ``False`` when already colocated. Otherwise runs pyjutsu's colocate, which
+    *adopts* an existing ``.git`` (importing HEAD/refs, leaving an empty ``@`` so uncommitted edits
+    survive) or creates a fresh colocated git when there is none — removing the manual
+    ``python -c '...Workspace.init(colocate=True)'`` bootstrap step. Returns ``True`` if it colocated.
+    """
+    from gitman.state import _is_colocated
+
+    if _is_colocated(repo_root):
+        return False
+    from pyjutsu import Workspace
+
+    Workspace.init(str(repo_root), colocate=True)
+    return True
+
+
+def do_init(session: Session, trunk_opt: str | None, *, colocated_now: bool = False):
     from gitman.config import find_config
     from gitman.invariants import repo_lock
     from gitman.models import IntentResult
@@ -123,7 +152,8 @@ def do_init(session: Session, trunk_opt: str | None):
         raise GitmanError(f"already initialized (trunk '{config.trunk}' is frozen).", exit_code=3)
     if not _is_colocated(repo_root):
         raise GitmanError(
-            "not a colocated jj repo — colocate it first: "
+            "not a colocated jj repo — run `gitman init --colocate` (adopts an existing .git or "
+            "creates one), or colocate manually: "
             "`python -c 'from pyjutsu import Workspace; Workspace.init(\".\", colocate=True)'`",
             exit_code=2,
         )
@@ -136,6 +166,8 @@ def do_init(session: Session, trunk_opt: str | None):
         notes.append("existing [tool.gitman] in pyproject.toml is now shadowed by gitman.toml (gitman.toml wins).")
 
     messages: list[str] = []
+    if colocated_now:
+        messages.append("colocated jj onto the repo's git (adopted any existing history; uncommitted work kept on @).")
     with repo_lock(repo_root):
         trunk = trunk_opt or detect_trunk(session)
         if trunk not in _local_bookmarks(session):

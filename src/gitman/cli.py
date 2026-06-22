@@ -226,11 +226,21 @@ def release(
 @app.command()
 def init(
     trunk: Annotated[str | None, typer.Option("--trunk", help="Trunk bookmark/branch (resolved + frozen).")] = None,
+    colocate: Annotated[
+        bool,
+        typer.Option(
+            "--colocate",
+            help="Colocate jj onto this repo's git first (adopts an existing .git or creates one), then init.",
+        ),
+    ] = False,
 ) -> None:
     """Resolve + freeze trunk; scaffold gitman.toml + the agent skill."""
-    from gitman.init import do_init
+    from gitman.init import do_init, ensure_colocated
+    from gitman.session import Session
 
-    _finish_intent(do_init(_session(), trunk))
+    repo_root = _repo_root()
+    colocated_now = ensure_colocated(repo_root) if colocate else False
+    _finish_intent(do_init(Session.load(repo_root), trunk, colocated_now=colocated_now))
 
 
 @app.command()

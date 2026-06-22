@@ -71,9 +71,9 @@ class Session:
             ws = Workspace.load(start)
         except PyjutsuError as exc:
             raise GitmanError(
-                f"not inside a jj workspace ({start}) — colocate it first: "
-                "`python -c 'from pyjutsu import Workspace; Workspace.init(\".\", colocate=True)'`, "
-                "then `gitman init`.",
+                f"not inside a jj workspace ({start}) — colocate it first: run `gitman init --colocate` "
+                "(adopts an existing .git or creates one, then freezes trunk), or colocate manually with "
+                "`python -c 'from pyjutsu import Workspace; Workspace.init(\".\", colocate=True)'` then `gitman init`.",
                 exit_code=2,
             ) from exc
         root = _shared_root(ws, start)
