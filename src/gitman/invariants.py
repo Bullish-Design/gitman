@@ -180,6 +180,31 @@ def _postcondition(session: Session, intent: str, trunk_before: str | None, op_b
     return after
 
 
+def _export_colocated_git(session: Session) -> None:
+    """Mirror jj's refs into the colocated git after a successful mutation.
+
+    jj-lib (via pyjutsu) does NOT auto-export to git — the jj *CLI* runs an explicit export after
+    every op so a colocated repo stays consistent for bare `git log`/`status`/`push`. gitman is that
+    CLI layer, so every mutating intent exports here (the same `ws.git_export()` `do_seed` runs inline).
+    Without it, `refs/heads/<trunk>` and lane branches lag jj after land/save/start, and a
+    `git push <trunk>` ships a stale ref. Runs last, after the undo checkpoint, so a (rare) export
+    failure never undoes an already-committed, already-recorded intent.
+
+    **Best-effort**, matching the jj CLI: `git::export_refs` can partially fail for an individual
+    bookmark whose git ref diverged from jj's last-exported position (e.g. a branch rewound by
+    `gitman undo`), and pyjutsu surfaces that as a `PyjutsuError`. The jj CLI warns and continues
+    rather than aborting the op; we do the same — the conflicting branch simply stays at its old git
+    position (the pre-export status quo), while every other ref exports. The gitman intent itself has
+    already succeeded and is authoritative in jj.
+    """
+    from pyjutsu import PyjutsuError
+
+    try:
+        session.ws.git_export()
+    except PyjutsuError:
+        pass  # best-effort mirror; jj remains source of truth (see docstring)
+
+
 @dataclass
 class Canon:
     """The multi-op guard handle: the undo target, the post-state, and accumulated notes."""
@@ -214,6 +239,7 @@ def canonical_tx(session: Session, intent: str) -> Iterator[Transaction]:
             yield tx  # body raises ⇒ pyjutsu rolls back, op_before intact
         _postcondition(session, intent, trunk_before, op_before)
         write_undo_checkpoint(session.repo_root, op_before, intent)
+        _export_colocated_git(session)
 
 
 # --- multi-op guard -------------------------------------------------------------------
@@ -241,3 +267,4 @@ def canonical_guard(session: Session, intent: str) -> Iterator[Canon]:
             raise
         canon.state = _postcondition(session, intent, trunk_before, op_before)
         write_undo_checkpoint(session.repo_root, op_before, intent)
+        _export_colocated_git(session)
