@@ -29,7 +29,7 @@ uv.lock
 .ruff_cache/
 
 # local working notes (untracked)
-.scratch/
+# .scratch/
 
 # retired old-gitman code, kept for reference only
 archive/

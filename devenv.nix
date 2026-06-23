@@ -11,18 +11,23 @@
   dotenv.disableHint = true;
 
   # https://devenv.sh/packages/
-  # No `jj` CLI: gitman talks to jj-lib in-process via pyjutsu (built from the sibling
-  # ../Pyjutsu). `git` stays for the one retained subprocess (annotated tags, tags.py).
+  # No `jj` CLI: gitman talks to jj-lib in-process via pyjutsu. `git` stays for the one
+  # retained subprocess (annotated tags, tags.py). No Rust/maturin: pyjutsu now arrives as
+  # a prebuilt wheel from vendomat's store wheelhouse (see vendor.* below), so this repo
+  # never compiles the native extension.
   packages = [
     pkgs.git
     pkgs.uv
-    pkgs.maturin
   ];
 
-  # Rust toolchain to compile pyjutsu's native _pyjutsu extension (jj-lib via PyO3). jj-lib
-  # 0.38 requires Rust >= 1.89 (edition 2024); rolling nixpkgs' stable rustc satisfies this.
-  # The jj 0.38 pin lives in pyjutsu; gitman just builds it.
-  languages.rust.enable = true;
+  # Install pyjutsu from vendomat's prebuilt wheelhouse instead of building ../Pyjutsu's
+  # maturin extension on every `uv sync`. UV_FIND_LINKS + UV_NO_BUILD_PACKAGE are set by the
+  # imported vendomat/modules; no sccache here since gitman compiles no Rust of its own.
+  vendor = {
+    enable = true;
+    libs = [ "pyjutsu" ];
+    sharedCargo = false;
+  };
 
   # https://devenv.sh/languages/
   languages.python = {
@@ -31,10 +36,9 @@
     venv.enable = true;
     uv = {
       enable = true;
-      # Install gitman (editable) + deps into the venv on shell entry. pyjutsu is a uv path
-      # dependency on ../Pyjutsu (see [tool.uv.sources]); uv builds its maturin extension
-      # using the Rust toolchain + maturin above. The console script and ruff/pytest resolve
-      # to the venv.
+      # Install gitman (editable) + deps into the venv on shell entry. pyjutsu resolves to the
+      # prebuilt cp313-abi3 wheel via UV_FIND_LINKS (vendomat) — no maturin/cargo build. The
+      # console script and ruff/pytest resolve to the venv.
       sync.enable = true;
     };
   };

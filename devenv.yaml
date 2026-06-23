@@ -10,3 +10,10 @@ inputs:
     url: github:nlewo/nix2container
   mk-shell-bin:
     url: github:rrbutani/nix-mk-shell-bin
+  # vendomat: prebuilt wheels for native libs (pyjutsu) from the Nix store, so `uv sync`
+  # installs pyjutsu instead of compiling its maturin extension every time.
+  vendomat:
+    url: path:/home/andrew/Documents/Projects/vendomat
+
+imports:
+  - vendomat/modules
