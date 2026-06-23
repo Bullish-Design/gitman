@@ -27,6 +27,13 @@ description: Route ALL version control through gitman (jj + colocated git). Neve
 Run **every** version-control action through `gitman` (inside the devenv shell). Raw
 `jj`/`git` edits break canonicity and force a `gitman reconcile`.
 
+## Scope & coordination
+
+gitman owns **version control only**. For cross-phase, cross-manager ordering across the
+repo's whole lifecycle (spec → scaffold → change → verify → save → docs), defer to the
+`repoman` skill — the repoman entrypoint sequences the managers and routes the VC steps
+here. Within version control, gitman is authoritative.
+
 ## Bootstrapping a repo
 
 `gitman init --colocate` is the one-command front door: it colocates jj onto this directory's git —
@@ -122,18 +129,30 @@ def _version_scaffold(repo_root: Path) -> tuple[str, str]:
     return "", "not configured — add a [version] section to gitman.toml to enable version/release"
 
 
-def ensure_colocated(repo_root: Path) -> bool:
+def ensure_colocated(repo_root: Path, trunk: str | None = None) -> bool:
     """Colocate a jj workspace onto `repo_root` (for `gitman init --colocate`).
 
-    No-op returning ``False`` when already colocated. Otherwise runs pyjutsu's colocate, which
-    *adopts* an existing ``.git`` (importing HEAD/refs, leaving an empty ``@`` so uncommitted edits
-    survive) or creates a fresh colocated git when there is none — removing the manual
-    ``python -c '...Workspace.init(colocate=True)'`` bootstrap step. Returns ``True`` if it colocated.
+    No-op returning ``False`` when already colocated. Otherwise it *adopts* an existing ``.git``
+    (importing HEAD/refs, leaving an empty ``@`` so uncommitted edits survive); when the directory
+    has no git at all it bootstraps an empty one first (``git init`` on the trunk branch). pyjutsu's
+    colocate reliably adopts a git repo but does not create one from nothing across versions
+    (0.8.0 raises "Failed to open git repository"), so gitman owns that bootstrap. Returns ``True``
+    if it colocated.
     """
     from gitman.state import _is_colocated
 
     if _is_colocated(repo_root):
         return False
+
+    # pyjutsu's colocate adopts an existing .git but won't create one from nothing, so bootstrap an
+    # empty git repo (on the trunk branch) when the dir has none — the one git surface besides tags.py.
+    if not (repo_root / ".git").exists():
+        from gitman.tags import _git
+
+        res = _git(repo_root, "init", "-b", trunk or "main")
+        if res.returncode != 0:
+            raise GitmanError(f"could not bootstrap git for colocate: {res.stderr.strip()}", exit_code=2)
+
     from pyjutsu import Workspace
 
     Workspace.init(str(repo_root), colocate=True)

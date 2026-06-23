@@ -239,7 +239,7 @@ def init(
     from gitman.session import Session
 
     repo_root = _repo_root()
-    colocated_now = ensure_colocated(repo_root) if colocate else False
+    colocated_now = ensure_colocated(repo_root, trunk) if colocate else False
     _finish_intent(do_init(Session.load(repo_root), trunk, colocated_now=colocated_now))
 
 
