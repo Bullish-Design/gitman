@@ -106,7 +106,7 @@ repo-global, and auto-following the change across rewrites.
 | I2 | **Every change belongs to exactly one named lane; no anonymous/stray changes.** | Stranded work — every change is *listable*; `status` is a uniform enumeration, not a triage. |
 | I3 | **Branch name = the lane's readable name**, unique-checked at creation, stable via the bookmark. | Branch-name generation / collision / freeze logic. |
 | I4 | **Gitman is the sole writer; mutating ops are serialized by a brief repo lock.** | Concurrent-rewrite divergence (parallel work lives in separate workspaces). |
-| I5 | **Each lane is linear on trunk (rebase-always); trunk advances only via `land`.** | Merge-commit states; "which base?" ambiguity. |
+| I5 | **Each lane is linear on trunk (rebase-always); trunk advances only via `land` or `adopt`.** | Merge-commit states; "which base?" ambiguity. |
 
 The principle: **resolve variability once, at a well-defined moment (init, lane
 creation), not repeatedly at runtime.**
@@ -168,7 +168,7 @@ Base deps kept lean: `pydantic`, `typer`. `jj` and `git` binaries come from deve
 
 ## 7. Intent vocabulary — v1
 
-Eleven intents. Lane lifecycle verbs (`start`/`land`/`abandon`) are the additions the lane
+Twelve intents. Lane lifecycle verbs (`start`/`land`/`abandon`) are the additions the lane
 model requires; everything else is deferred until friction proves it.
 
 | Intent | Signature | What it does | Underneath |
@@ -179,6 +179,7 @@ model requires; everything else is deferred until friction proves it.
 | `sync` | `gitman sync [--all]` | Fetch trunk + rebase the current lane (or `--all` lanes) onto it. | `jj git fetch` + `jj rebase` |
 | `publish` | `gitman publish` | Push the current lane; branch = lane name. Verify hook first. | `jj git push` (forge extra: + open/update PR) |
 | `land` | `gitman land [<lane>…]` | Fold lane(s) into trunk, advance trunk, retire the lane(s). | rebase + ff trunk + bookmark/workspace cleanup (forge extra: merge PR) |
+| `adopt` | `gitman adopt [--force] [--dry-run]` | Adopt a forge-merged trunk: advance local trunk to `origin/<trunk>`, rebase survivors, retire merged lanes. | `jj git fetch` (auto-FF trunk) + content-based retire + un-stale `@` |
 | `abandon` | `gitman abandon [<lane>]` | Discard a lane (terminal). | `jj abandon` + bookmark delete + workspace cleanup |
 | `undo` | `gitman undo [--op <id>] [--list]` | Revert the last intent, or to a chosen op. | `jj undo` / `jj op restore` |
 | `resolve` | `gitman resolve [--list]` | Surface remaining conflicts / confirm cleared. | `jj resolve --list` |
@@ -224,6 +225,30 @@ $ gitman abandon fix-cart-test                        # gave up on that one
 - **`land`** is the sanctioned trunk-advance (I5): it rebases the lane onto current trunk,
   fast-forwards trunk to include it, then deletes the bookmark and forgets the workspace.
   The forge extra swaps the local fast-forward for a GitHub PR merge.
+
+### Forge-PR adoption (`publish → PR → merge → adopt`)
+
+`land` advances trunk to a lane head you built **locally**. But the common reviewed-and-gated
+flow advances trunk on the **forge**: `gitman publish` a lane → open a PR → click **Merge**.
+The forge mints a **re-hashed** commit on `origin/<trunk>` (squash, merge-commit, and rebase
+merges all produce a new SHA), leaving the local trunk behind `origin/<trunk>`. **`adopt` is a
+`land` the forge already performed** — it's the second sanctioned trunk-advancing intent (I5),
+the only other one the transactional postcondition exempts from the trunk-frozen rule.
+
+`gitman adopt`:
+1. **Fetches** the remote. jj auto-fast-forwards the local `<trunk>` bookmark to the forge head
+   in the clean case, and prunes lanes whose remote branch was deleted (`--delete-branch`).
+2. **Retires merged lanes by content, not SHA** — a lane is "already merged" iff it is empty
+   after rebasing onto the adopted trunk (true across squash N→1, rebase-merge N→N re-hashed,
+   and merge-commit ancestry). Genuine survivors are rebased onto the new trunk and **kept**.
+3. **Refuses safely on divergence.** Un-pushed local lands + a moved origin make jj record a
+   *conflicted* trunk bookmark; `adopt` refuses (push first) unless `--force` hard-sets trunk to
+   the forge head (dropping the un-pushed lands; undoable). `--dry-run` reports the plan only.
+
+Stays CANONICAL throughout and is a single `gitman undo` step. **`sync` never advances trunk**
+(it fetches lanes-only and rebases onto *local* trunk) — trunk advancement is `land`'s or
+`adopt`'s job, by design. Keep `gitman.toml` / VC wiring on **trunk**, never only in a lane, so
+retiring a lane can never delete it.
 
 ## 9. The `RepoState` model (the Pydantic heart)
 

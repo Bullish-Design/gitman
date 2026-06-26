@@ -15,7 +15,10 @@
       "Bash(grep -rn \"jj git init\\\\|jj CLI\\\\|jjPkgs\\\\|jujutsu.*packages\\\\|needs the jj\\\\|jj` CLI\" docs/*.md 2>/dev/null)",
       "Bash(git fetch *)",
       "Bash(python -c \"import pyjutsu; print\\(pyjutsu.__file__\\)\")",
-      "Bash(find / -name \"*.pyi\" -path \"*pyjutsu*\")"
+      "Bash(find / -name \"*.pyi\" -path \"*pyjutsu*\")",
+      "Bash(command -v gh)",
+      "Bash(echo \"gh: $\\(command -v gh || echo MISSING\\)\")",
+      "Bash(gh auth *)"
     ]
   }
 }

@@ -16,9 +16,10 @@ local trunk bookmark to a **forge-merged `origin/<trunk>`**.
 So the common workflow — `gitman publish` a lane → open a GitHub PR → click **Merge** → the
 forge advances `origin/main` with a **re-hashed** commit (squash/merge/rebase all mint a new
 SHA) — leaves gitman with **no command** to pull the local trunk forward. The local trunk stays
-behind `origin/main` forever, `gitman sync` won't fix it (it rebases onto the *unchanged* local
-trunk), and `gitman land` would mint a **divergent** local SHA from the forge's merge commit —
-poisoning the merge-base of every future PR.
+behind `origin/main`, `gitman sync` won't fix it (its fetch *does* fast-forward local trunk, but
+the canonical guard reverts the move as "trunk moved outside a land" — see §3), and `gitman land`
+would mint a **divergent** local SHA from the forge's merge commit — poisoning the merge-base of
+every future PR.
 
 The only working recovery today is a manual **de-colocate + reset + re-init** dance (§4). It is
 heavyweight, undocumented in the tool, and has two sharp edges. This issue proposes making
@@ -49,13 +50,29 @@ uses forge PRs + the merge button (the normal way to get review + CI gating + an
 
 All references are `src/gitman/core.py` @ 0.2.2.
 
-- **`do_sync` rebases onto the *local* trunk bookmark, not the fetched remote.**
-  It fetches (`session.ws.git_fetch(pick_remote(session.ws))`, which only updates the
-  `origin/<trunk>` remote-tracking ref) and then `tx.rebase(lane, onto=trunk, mode="branch")`,
-  where `trunk` is the **local** bookmark (`require_trunk`). Nothing fast-forwards the local
-  `trunk` bookmark to the fetched `origin/<trunk>`. So after a forge merge, `gitman sync` reports
-  "rebased <lane> onto main" while local `main` stays put. (See the `do_sync` body and its
-  `git_fetch` → `tx.rebase(..., onto=trunk)` sequence.)
+> **Correction — validated against jj-lib 0.42 (2026-06-26).** The original hypothesis ("`git_fetch`
+> only updates the `origin/<trunk>` tracking ref; nothing fast-forwards local trunk") is **wrong for
+> jj 0.42**, and the real cause sits one layer up, in gitman's own guard. Four throwaway probes (in
+> this project's `probes/`) established the actual behavior; the corrected bullet below replaces the original.
+> The *symptom* in §1–§2 is real and correctly observed — only the mechanism was mis-inferred,
+> because gitman reverts the trunk advance before it's observable from the outside.
+
+- **The fetch *does* advance local trunk — then gitman's own canonical guard reverts it.**
+  Validated jj 0.42 facts: `git_fetch` **auto-fast-forwards** the tracked local `<trunk>` bookmark to
+  a moved `origin/<trunk>` (jj bookmark-tracking semantics — local and remote bookmarks are *not*
+  independent the way git branches are), and it **prunes** a lane whose remote branch was deleted
+  server-side (dropping the un-diverged local bookmark too). So in the squash repro, the fetch alone
+  moves local `main` to the forge-merged SHA. But `do_sync` runs that fetch **inside
+  `canonical_guard`**, whose postcondition (`invariants.py`:
+  `trunk_moved = after.trunk.commit_id != trunk_before and intent != "land"`) sees trunk moved
+  outside a `land`, calls `restore_operation(op_before)`, and **rolls the fetch back** — snapping
+  local `main` behind again and raising `reverted: trunk moved outside a land`. (If the remote lane
+  branch was also deleted, `sync` dies one step earlier at `tx.rebase(<lane>)` with "Revision
+  `<lane>` doesn't exist" — sharp edge #1 below — same net result: revert, trunk behind.) From the
+  outside, "jj never advanced trunk" and "jj advanced trunk, gitman reverted it" are
+  indistinguishable — hence the original mis-diagnosis. **Verified by driving the real `do_sync`
+  through the squash repro: it raised `reverted: trunk moved outside a land` and restored trunk to
+  its pre-fetch position.**
 
 - **`do_land` advances trunk *locally*, by pointer.**
   `tx.set_bookmark(trunk, lane)` moves the local trunk bookmark to the lane head — the lane's
@@ -63,17 +80,26 @@ All references are `src/gitman/core.py` @ 0.2.2.
   then push the fast-forwarded trunk) this is correct and there is no gotcha. The gotcha is
   exclusively a **local-land model vs. forge-merge model** mismatch.
 
-- **No remote-trunk adoption primitive exists.**
-  `pick_remote` + `git_fetch` give the building blocks, but no command sets the local `trunk`
-  bookmark from `origin/<trunk>`. (`do_reconcile` is for OFF-CANONICAL stray-change adoption —
-  a different concern; it does not touch the remote.)
+- **No intent is *permitted* to let a fetched trunk advance stand.**
+  The advance primitive isn't missing — `git_fetch` performs it (and `tx.set_bookmark(trunk,
+  "<trunk>@<remote>")` can force it in the diverged case). What's missing is a *sanctioned door*:
+  every existing mutating intent runs under `canonical_guard`, which reverts any non-`land` trunk
+  move (I1/I5). So no command can fetch-and-keep the forge-merged trunk, un-stale the `@` the fetch
+  orphans, and retire the lanes the fetch prunes. (`do_reconcile` is for OFF-CANONICAL stray-change
+  adoption — a different concern; it does not touch the remote.) `gitman adopt` is that door: the
+  second intent the postcondition exempts from the trunk-frozen rule.
 
 ### Two sharp edges that make the manual recovery worse
 
-1. **`gh pr merge --delete-branch` breaks `gitman sync`.** Deleting the remote lane branch leaves
-   the local lane's upstream ref dangling; `gitman sync` then dies with
-   "bad revision/revset: Revision `<lane>` doesn't exist", and re-`publish` is rejected as "stale
-   info". `git fetch --prune` does **not** clear it.
+1. **`gh pr merge --delete-branch` breaks `gitman sync`.** Deleting the remote lane branch makes the
+   next `gitman sync` die with "bad revision/revset: Revision `<lane>` doesn't exist", and re-`publish`
+   is rejected as "stale info". *Validated mechanism (jj 0.42):* jj's `git_fetch` **does** prune the
+   lane — it drops the `<lane>@origin` row *and* the un-diverged local `<lane>` bookmark — so the
+   subsequent `tx.rebase(<lane>, …)` resolves a name that no longer exists and raises. (The "`git
+   fetch --prune` does not clear it" note from the §4 dance was a **raw-git** observation on the
+   colocated `.git`; jj's own fetch prunes, raw `git fetch` of the bare ref does not — two different
+   fetch tools, conflated mid-firefight.) Fix: after the fetch, re-read surviving lanes and skip the
+   vanished one instead of rebasing it.
 2. **`gitman abandon` resets the working copy to trunk** (`do_abandon` abandons every `trunk..lane`
    change and moves the bookmark back to trunk's commit). If any repo wiring (e.g. `gitman.toml`)
    was committed *inside the lane* rather than on trunk, abandoning the lane deletes it from disk →
@@ -129,9 +155,12 @@ gitman sync --adopt-remote          # or a dedicated `gitman adopt` / `gitman re
 
 Behavior:
 1. `git_fetch(pick_remote)` to update `origin/<trunk>`.
-2. **Fast-forward (or hard-set) the local `trunk` bookmark to `origin/<trunk>`** — the missing
-   primitive. If local trunk has commits not on `origin/<trunk>` (true local lands not yet pushed),
-   refuse unless `--force`/`--ours` is given (don't silently discard local trunk work).
+2. **Let the local `trunk` bookmark reach `origin/<trunk>`.** Per the §3 correction, jj's fetch
+   *already* fast-forwards local trunk in the clean case — `adopt`'s job is to run that fetch under a
+   guard that **permits** the move (not to perform a set-bookmark it mostly doesn't need). Only when
+   local trunk has diverged (un-pushed lands → jj leaves a *conflicted* bookmark, no auto-FF) does
+   `adopt` hard-set it via `tx.set_bookmark(trunk, "<trunk>@<remote>")`, and only under
+   `--force`/`--ours` (don't silently discard local trunk work).
 3. For each surviving lane, `rebase(lane, onto=trunk)` onto the *new* trunk.
 4. **Retire lanes already merged on the forge.** A squash/rebase merge re-hashes, so change-ids
    and SHAs won't match — detect "already merged" by **content**: a lane whose `trunk..lane` diff

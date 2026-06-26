@@ -63,5 +63,7 @@ nix/gitman.nix  reusable devenv module (tasks + enterTest)
   surviving raw subprocess is `tags.py` (annotated git tags — pyjutsu binds no tag write).
 - Exit codes: `0` ok · `1` VC decision needed · `2` infra/config · `3` invalid usage.
 - Every mutating report ends with an inline **Undo** line. Reports are compact and honest.
-- `.scratch/` and `archive/` are untracked. Don't commit unless asked. No AI-attribution
-  in commits/PRs/docs.
+- **`.scratch/projects/<NN-name>/`** holds **tracked** design docs — the per-project ISSUE / PLAN /
+  KICKOFF / concept notes that drive each effort. Commit these. The rest of `.scratch/` (loose
+  probes, dogfood scripts, throwaway notes) is **untracked** working scratch — don't commit it.
+  `archive/` is untracked. No AI-attribution in commits/PRs/docs.

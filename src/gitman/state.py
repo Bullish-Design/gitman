@@ -76,6 +76,37 @@ def _lane_index(view: RepoView) -> tuple[set[str], set[str]]:
     return local, published
 
 
+def _trunk_conflicted(view: RepoView, trunk: str) -> bool:
+    """True if the local `<trunk>` bookmark is *conflicted* (diverged): un-pushed local lands
+    AND origin moved, so jj couldn't fast-forward and recorded multiple targets. `resolve(trunk)`
+    raises against it; `view.bookmarks()` exposes it structurally via `.conflicted`
+    (`len(target_ids) > 1`) — the clean detector, no error-string match. `gitman adopt --force`
+    resolves it toward the forge head."""
+    return any(b.name == trunk and b.remote is None and b.conflicted for b in view.bookmarks())
+
+
+def _trunk_remote_relation(session: Session, view: RepoView, trunk: str) -> tuple[int, int, str | None]:
+    """(behind, ahead, remote) of the local trunk bookmark vs its `<trunk>@<remote>` row.
+
+    `behind` = forge commits on `<trunk>@<remote>` not yet local (the forge-merge gap `gitman adopt`
+    closes); `ahead` = local trunk commits not yet pushed. Returns zeros + the remote name when no
+    remote is configured or the remote trunk hasn't been fetched yet (no network — reads the last
+    fetch's tracking ref).
+    """
+    from gitman.core import pick_remote
+
+    if not session.ws.remotes():
+        return 0, 0, None
+    remote = pick_remote(session.ws)
+    try:
+        view.resolve(f"{trunk}@{remote}")
+    except RevsetError:
+        return 0, 0, remote  # remote trunk not fetched yet
+    behind = len(view.log(f"{trunk}..{trunk}@{remote}"))
+    ahead = len(view.log(f"{trunk}@{remote}..{trunk}"))
+    return behind, ahead, remote
+
+
 def find_strays(view: RepoView, trunk: str) -> list[Change]:
     """Non-empty changes descended from trunk that belong to no lane (basic off-canonical signal)."""
     return [_change(c) for c in view.log(_stray_revset(trunk)) if not c.is_empty]
@@ -104,14 +135,45 @@ def capture_state(session: Session) -> RepoState:
 
     view = session.fresh_view()
 
+    # A *diverged* trunk (un-pushed local lands + origin moved) is a conflicted bookmark: both
+    # `view.resolve(trunk_name)` AND lane enumeration raise against it. Detect it structurally and
+    # report it off-canonical with the adopt recommendation — don't crash (this is the state
+    # `gitman adopt --force` resolves). Handled before any resolve so neither path can throw.
+    if _trunk_conflicted(view, trunk_name):
+        from gitman.core import pick_remote
+
+        remote_name = pick_remote(session.ws) if session.ws.remotes() else "origin"
+        return RepoState(
+            repo_root=repo_root,
+            colocated_git=_is_colocated(repo_root),
+            canonical=False,
+            off_canonical=(
+                f"trunk '{trunk_name}' diverged from {remote_name} (un-pushed local lands + origin moved)."
+            ),
+            trunk=TrunkRef(name=trunk_name, change_id=None, commit_id=None),
+            current_lane=None,
+            lanes=[],
+            conflicts=[],
+            recent_ops=[_op(o) for o in view.operations(10)],
+            notes=[f"run `gitman adopt` (or `gitman adopt --force` to take {remote_name}) to reconcile."],
+        )
+
     try:
         trunk_commit = view.resolve(trunk_name)
     except RevsetError as exc:
         raise GitmanError(
             f"configured trunk '{trunk_name}' not found — run `gitman doctor`.", exit_code=2
         ) from exc
+
+    # Trunk vs its remote-tracking branch (status honesty — surfaces the forge-merge gap that
+    # `gitman adopt` closes). Reads the *last fetch's* `<trunk>@<remote>` row; no network here.
+    behind_remote, ahead_remote, remote_name = _trunk_remote_relation(session, view, trunk_name)
     trunk_ref = TrunkRef(
-        name=trunk_name, change_id=trunk_commit.change_id, commit_id=trunk_commit.commit_id
+        name=trunk_name,
+        change_id=trunk_commit.change_id,
+        commit_id=trunk_commit.commit_id,
+        behind_remote=behind_remote,
+        ahead_remote=ahead_remote,
     )
 
     local_names, published = _lane_index(view)
@@ -169,6 +231,11 @@ def capture_state(session: Session) -> RepoState:
         notes.append("working copy is stale — run `gitman reconcile`.")
     if not session.ws.remotes():
         notes.append("no git remote — publish/release unavailable.")
+    if behind_remote:
+        notes.append(
+            f"local {trunk_name} is {behind_remote} behind {remote_name}/{trunk_name} "
+            f"— run `gitman adopt` to adopt the forge-merged trunk."
+        )
     if current_lane is None and _orphan_working_copy(view, wc, trunk_name):
         notes.append("working copy @ has unbookmarked work — `gitman start <name>` to adopt it into a lane.")
 

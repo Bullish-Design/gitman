@@ -170,7 +170,9 @@ def _postcondition(session: Session, intent: str, trunk_before: str | None, op_b
     from gitman.state import capture_state
 
     after = capture_state(session)
-    trunk_moved = (after.trunk.commit_id != trunk_before) and intent != "land"
+    # `adopt` is the second sanctioned trunk-advancing intent (I5 widens to land OR adopt): it lets
+    # the forge-merged `origin/<trunk>` advance stand instead of reverting it as a stray trunk move.
+    trunk_moved = (after.trunk.commit_id != trunk_before) and intent not in ("land", "adopt")
     if not after.canonical or trunk_moved:
         session.ws.restore_operation(op_before)
         reason = after.off_canonical or (
