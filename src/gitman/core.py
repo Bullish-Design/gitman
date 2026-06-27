@@ -510,6 +510,17 @@ def do_sync(session: Session, all_: bool):
 # --- forge-PR adoption: `gitman adopt` (the second trunk-advancing intent) ------------
 
 
+def _trunk_diverged_no_ff(view, trunk: str, origin_trunk, remote: str) -> bool:
+    """True if a *resolvable* (non-conflicted) local trunk can't fast-forward to the forge head —
+    origin is ahead AND local is ahead (a real divergence). Distinguishes this from the clean
+    ancestor case (behind only → the fetch auto-FFs) and the local-ahead case (ahead only → nothing
+    to adopt; never move trunk backward). Uses the resolved forge-head commit id, not the
+    `<trunk>@<remote>` row, so it's robust. See do_adopt — the diverged-not-conflicted gap."""
+    behind = len(view.log(f"{trunk}..{origin_trunk.commit_id}"))  # forge commits not local
+    ahead = len(view.log(f"{origin_trunk.commit_id}..{trunk}"))  # local commits not on the forge head
+    return behind > 0 and ahead > 0
+
+
 def _retire_lane(session: Session, trunk: str, lane: str, published_before: set[str], notes: list[str]) -> None:
     """Retire a forge-merged surviving lane: abandon its (now-empty) trunk..lane changes, delete the
     bookmark, forget its workspace, best-effort delete a still-live remote branch. Runs its own tx
@@ -596,11 +607,11 @@ def _adopt_dry_run(session: Session, trunk: str, remote: str):
                 messages.append(f"no {trunk}@{remote} — nothing to adopt; is the trunk pushed?")
                 return IntentResult(intent="adopt", outcome="PLAN", messages=messages, exit_code=1)
             surviving = set(lane_names(session, trunk))
-            if _trunk_conflicted(view, trunk):
-                messages.append(f"trunk diverged from {remote} — needs `--force` to take {remote}.")
+            if _trunk_conflicted(view, trunk) or _trunk_diverged_no_ff(view, trunk, origin_trunk, remote):
+                messages.append(f"trunk diverged from {remote} — needs `--force` (drops divergent local commits).")
             else:
-                # `behind` = forge commits not yet local; trunk only advances when origin is ahead
-                # (a fetch never moves trunk backward, so local-ahead means trunk stays put).
+                # `behind` = forge commits not yet local; trunk only advances when origin is strictly
+                # ahead (a fetch never moves trunk backward, so local-ahead means trunk stays put).
                 behind = len(view.log(f"{trunk}..{trunk}@{remote}"))
                 if behind:
                     head = origin_trunk.commit_id[:12]
@@ -667,27 +678,35 @@ def do_adopt(session: Session, *, force: bool, dry_run: bool):
                     f"no {trunk}@{remote} — nothing to adopt; is the trunk pushed?", exit_code=1
                 ) from exc
 
-            if _trunk_conflicted(view, trunk):
+            # Trunk needs a hard-set when it can't reach the forge head by fast-forward — i.e. local
+            # trunk has commit(s) the forge head lacks. jj surfaces that two ways: a *conflicted*
+            # bookmark (resolve raises), OR a plain diverged bookmark (resolvable, but origin is ahead
+            # AND local is ahead — e.g. local trunk carries a re-hashed duplicate of a commit the forge
+            # already has). The fetch auto-FFs only the clean ancestor case; both diverged shapes need
+            # `--force`. The local-only commits (origin_head..local_before) would strand as strays after
+            # the hard-set, so abandon them in the same tx.
+            diverged = _trunk_conflicted(view, trunk) or _trunk_diverged_no_ff(view, trunk, origin_trunk, remote)
+            if diverged:
                 if not force:
                     raise GitmanError(
-                        f"local {trunk} diverged from {remote} (un-pushed local lands + forge moved). "
-                        f"Push your lands first, or re-run with `--force` to hard-set {trunk} to {remote} "
-                        f"(discards the un-pushed lands; undoable).",
+                        f"local {trunk} diverged from {remote} (local commits the forge head lacks). "
+                        f"Push them first, or re-run with `--force` to hard-set {trunk} to {remote} "
+                        f"(drops the divergent local commits; undoable).",
                         exit_code=1,
                     )
-                # The un-pushed local lands are the commits reachable from the old local trunk but
-                # not from the forge head; hard-setting trunk past them would strand them as strays
-                # (off-canonical → the postcondition would revert), so abandon them in the same tx.
+                # Abandon by COMMIT id, not change id: a re-hashed duplicate makes the local change
+                # *divergent* (one change-id, two commit-ids), so `abandon(change_id)` is ambiguous and
+                # raises. The commit-id names exactly the local-only revision to drop.
                 dropped = [
-                    c.change_id
+                    c.commit_id
                     for c in session.view().log(f"{origin_trunk.commit_id}..{local_trunk_before}")
                 ]
                 with session.ws.transaction("gitman:adopt-force", auto_snapshot=False) as tx:
-                    tx.set_bookmark(trunk, f"{trunk}@{remote}")  # resolve the conflict toward the forge head
-                    for cid in dropped:
-                        tx.abandon(cid)
+                    tx.set_bookmark(trunk, f"{trunk}@{remote}")  # take the forge head (resolves any conflict)
+                    for commit_id in dropped:
+                        tx.abandon(commit_id)
                 notes.append(
-                    f"forced {trunk} to {remote} — {len(dropped)} un-pushed local land(s) dropped (undoable)."
+                    f"forced {trunk} to {remote} — {len(dropped)} divergent local commit(s) dropped (undoable)."
                 )
 
             surviving = set(lane_names(session, trunk))

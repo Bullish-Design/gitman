@@ -242,6 +242,53 @@ def test_adopt_diverged_force_takes_origin(tmp_path: Path):
     assert capture_state(_sess(work)).trunk.commit_id != _resolve(work, "main@origin")
 
 
+# --- 5b. diverged but NOT conflicted (re-hashed duplicate trunk commit) --------------
+
+
+def test_adopt_reconciles_rewritten_origin_trunk(tmp_path: Path):
+    """Origin rewrote/re-hashed trunk past a local commit (force-push). `adopt` must end with
+    local trunk == origin, canonical, the divergent local commit gone — whether jj auto-takes the
+    rewritten remote (no force needed) or pins the local bookmark (diverged → needs `--force`). The
+    force path here covers the gap where `adopt` only force-advanced a *conflicted* trunk; the
+    diverged-but-not-conflicted shape is also validated live against the gitman repo's own trunk."""
+    work, remote, ws = _with_remote(tmp_path)
+    base = ws.head().resolve("main").commit_id
+
+    # local advances main to C (with c.txt) and pushes it
+    with ws.transaction("commit C") as tx:
+        tx.new("main")
+        tx.set_bookmark("main", "@")
+        tx.describe("@", "commit C")
+    (work / "c.txt").write_text("C\n")
+    ws.snapshot()
+    with ws.transaction("set main C") as tx:
+        tx.set_bookmark("main", "@")
+    ws.git_push("origin", "main")
+    with ws.transaction("park") as tx:
+        tx.new("main")
+    local_c = ws.head().resolve("main").commit_id
+
+    # origin rewrites C → C' (identical tree, new SHA) and adds Z, then force-pushes
+    other = _clone(remote, tmp_path, "rewrite")
+    _git("reset", "--hard", base, cwd=other)
+    (other / "c.txt").write_text("C\n")
+    _git("add", ".", cwd=other)
+    _git("commit", "-m", "C rehash", cwd=other)
+    (other / "z.txt").write_text("Z\n")
+    _git("add", ".", cwd=other)
+    _git("commit", "-m", "Z", cwd=other)
+    _git("push", "-f", "origin", "main", cwd=other)
+
+    res = do_adopt(_sess(work), force=False, dry_run=False)
+    if res.outcome == "BLOCKED":  # jj pinned the local bookmark → diverged, needs the hard-set
+        res = do_adopt(_sess(work), force=True, dry_run=False)
+    assert res.outcome == "ADOPTED", res.messages
+    state = capture_state(_sess(work))
+    assert state.canonical
+    assert state.trunk.commit_id == _resolve(work, "main@origin")
+    assert state.trunk.commit_id != local_c  # the divergent local commit is gone
+
+
 # --- 6. --dry-run mutates nothing ----------------------------------------------------
 
 
