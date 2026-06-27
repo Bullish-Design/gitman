@@ -179,7 +179,7 @@ model requires; everything else is deferred until friction proves it.
 | `sync` | `gitman sync [--all]` | Fetch trunk + rebase the current lane (or `--all` lanes) onto it. | `jj git fetch` + `jj rebase` |
 | `publish` | `gitman publish` | Push the current lane; branch = lane name. Verify hook first. | `jj git push` (forge extra: + open/update PR) |
 | `land` | `gitman land [<lane>…]` | Fold lane(s) into trunk, advance trunk, retire the lane(s). | rebase + ff trunk + bookmark/workspace cleanup (forge extra: merge PR) |
-| `adopt` | `gitman adopt [--force] [--dry-run]` | Adopt a forge-merged trunk: advance local trunk to `origin/<trunk>`, rebase survivors, retire merged lanes. | `jj git fetch` (auto-FF trunk) + content-based retire + un-stale `@` |
+| `adopt` | `gitman adopt [--force] [--dry-run]` | Adopt a forge-merged trunk: advance local trunk to `origin/<trunk>`, rebase survivors, retire merged lanes. | fetch + **explicit** trunk FF + content-based retire + roll-back conflicting survivors + un-stale `@` |
 | `abandon` | `gitman abandon [<lane>]` | Discard a lane (terminal). | `jj abandon` + bookmark delete + workspace cleanup |
 | `undo` | `gitman undo [--op <id>] [--list]` | Revert the last intent, or to a chosen op. | `jj undo` / `jj op restore` |
 | `resolve` | `gitman resolve [--list]` | Surface remaining conflicts / confirm cleared. | `jj resolve --list` |
@@ -236,14 +236,27 @@ merges all produce a new SHA), leaving the local trunk behind `origin/<trunk>`. 
 the only other one the transactional postcondition exempts from the trunk-frozen rule.
 
 `gitman adopt`:
-1. **Fetches** the remote. jj auto-fast-forwards the local `<trunk>` bookmark to the forge head
-   in the clean case, and prunes lanes whose remote branch was deleted (`--delete-branch`).
+1. **Fetches** the remote, then **advances trunk explicitly**. When origin is strictly ahead
+   (local trunk an ancestor of the forge head) `adopt` sets `<trunk>` to `<trunk>@<remote>` itself
+   rather than trusting jj's fetch auto-FF — which can silently not happen when the colocated git
+   refs / jj tracking desync, leaving trunk behind with no error. The explicit set is a no-op when
+   the fetch already advanced trunk; trunk advancement is now **fetch-independent**. The fetch also
+   prunes lanes whose remote branch was deleted (`--delete-branch`).
 2. **Retires merged lanes by content, not SHA** — a lane is "already merged" iff it is empty
    after rebasing onto the adopted trunk (true across squash N→1, rebase-merge N→N re-hashed,
-   and merge-commit ancestry). Genuine survivors are rebased onto the new trunk and **kept**.
+   and merge-commit ancestry). Genuine survivors are rebased onto the new trunk and **kept**. A
+   survivor whose rebase **conflicts** is **rolled back and left on its prior base** (reported
+   `CONFLICT`): `adopt` never commits a conflicted rebase, so no checkout can materialize jj
+   conflict markers into tracked source on disk. Resolve it later with `gitman sync`, or `abandon`
+   it if it was an already-merged duplicate.
 3. **Refuses safely on divergence.** Un-pushed local lands + a moved origin make jj record a
    *conflicted* trunk bookmark; `adopt` refuses (push first) unless `--force` hard-sets trunk to
    the forge head (dropping the un-pushed lands; undoable). `--dry-run` reports the plan only.
+
+Mutating intents mirror jj's bookmarks into the colocated git after each op. If a stuck
+`refs/heads/<lane>` (e.g. an abandoned lane's leftover ref) makes that export partially fail, the
+desync is **surfaced** (a report note + a `gitman doctor` `colocated-refs` check) rather than
+swallowed, and `gitman reconcile` heals it (re-sync refs to jj, drop leftovers) — see §11.
 
 Stays CANONICAL throughout and is a single `gitman undo` step. **`sync` never advances trunk**
 (it fetches lanes-only and rebases onto *local* trunk) — trunk advancement is `land`'s or
@@ -402,7 +415,10 @@ Constraints that are only *documented* drift. The lane model holds by constructi
 - **One deviation handler, not N.** External mutation (raw `jj`/`git`, a human) is the one
   thing Gitman can't prevent. So `status` classifies the repo as **canonical** or
   **off-canonical** and there is exactly one recovery path — `gitman reconcile` — which
-  adopts stray changes into lanes or abandons them. No per-deviant-state handling.
+  adopts stray changes into lanes or abandons them. No per-deviant-state handling. `reconcile`
+  also heals **colocated git-ref drift** (jj bookmark ≠ `refs/heads/<name>`, or an abandoned
+  lane's leftover ref that makes `git_export` fail): it re-syncs the refs to jj — the source of
+  truth — and drops the leftovers. `gitman doctor`'s `colocated-refs` check surfaces the drift.
 
 ## 12. The undo model (the headline feature)
 

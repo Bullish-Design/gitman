@@ -227,6 +227,19 @@ def test_adopt_diverged_blocks_without_force(tmp_path: Path):
     assert state.trunk.commit_id == trunk_before
 
 
+def test_adopt_dry_run_on_diverged_trunk_blocks_not_crashes(tmp_path: Path):
+    """A conflicted trunk makes `{trunk}..` revsets raise. `adopt --dry-run` must classify the
+    divergence and report a clean PLAN (needs --force), not crash with a RevsetError (exit 3)."""
+    work, remote, ws = _with_remote(tmp_path)
+    _make_diverged(work, remote, tmp_path, ws)
+
+    res = do_adopt(_sess(work), force=False, dry_run=True)  # must not raise RevsetError
+
+    assert res.outcome == "PLAN"
+    assert res.exit_code == 0  # dry run never fails
+    assert any("diverged" in m and "--force" in m for m in res.messages), res.messages
+
+
 def test_adopt_diverged_force_takes_origin(tmp_path: Path):
     work, remote, ws = _with_remote(tmp_path)
     _make_diverged(work, remote, tmp_path, ws)
@@ -289,6 +302,51 @@ def test_adopt_reconciles_rewritten_origin_trunk(tmp_path: Path):
     assert state.trunk.commit_id != local_c  # the divergent local commit is gone
 
 
+# --- 5c. gap C: a conflicting survivor never corrupts the worktree -------------------
+
+
+def test_adopt_conflicting_survivor_leaves_worktree_clean(tmp_path: Path):
+    """A survivor lane whose content overlaps the adopted trunk must NOT have jj conflict markers
+    materialized into tracked source on disk (round-09 gap C — that corrupted core.py and bricked
+    the CLI). adopt advances trunk + retires merged lanes, but rolls back the conflicting rebase:
+    the lane stays on its prior base, unconflicted, worktree untouched."""
+    work, remote, ws = _with_remote(tmp_path)
+
+    # Build a survivor lane editing shared.txt, and LEAVE @ on it (the dangerous cd'd-on-lane shape).
+    with ws.transaction("start feat") as tx:
+        tx.new("main")
+        tx.create_bookmark("feat", "@")
+    (work / "shared.txt").write_text("feature line 1\nfeature line 2\n")
+    ws.snapshot()
+    with ws.transaction("describe feat") as tx:
+        tx.describe("@", "feat edits shared.txt")
+    ws.git_push("origin", "feat", allow_new=True)
+    ws.snapshot()  # @ stays on feat
+
+    # Forge advances trunk with a CONFLICTING edit to the same file; keeps feat alive (survivor).
+    other = _clone(remote, tmp_path, "squash")
+    (other / "shared.txt").write_text("trunk line 1\ntrunk line 2\n")
+    _git("add", ".", cwd=other)
+    _git("commit", "-m", "trunk edits shared.txt", cwd=other)
+    _git("push", "origin", "HEAD:main", cwd=other)
+
+    res = do_adopt(_sess(work), force=False, dry_run=False)
+
+    assert res.outcome == "CONFLICT", res.messages
+    assert res.exit_code == 1
+    # trunk advanced despite the conflicting survivor
+    assert _resolve(work, "main") == _resolve(work, "main@origin")
+    # THE GUARANTEE: no conflict markers materialized into the tracked file on disk
+    content = (work / "shared.txt").read_text()
+    assert not any(mk in content for mk in ("<<<<<<<", ">>>>>>>", "%%%%%%%", "+++++++")), content
+    assert "feature line 1" in content  # still the lane's own content, intact
+    # the lane survives, NOT conflicted in jj (the rebase was rolled back)
+    state = capture_state(_sess(work))
+    assert state.canonical
+    feat = next(lane for lane in state.lanes if lane.name == "feat")
+    assert not feat.conflict
+
+
 # --- 6. --dry-run mutates nothing ----------------------------------------------------
 
 
@@ -341,6 +399,47 @@ def test_adopt_already_current(tmp_path: Path):
     assert res.outcome == "ALREADY_CURRENT"
     assert res.exit_code == 0
     assert _resolve(work, "main") == trunk_before
+
+
+# --- 8b. gap A: adopt advances trunk even when the fetch does NOT auto-FF ------------
+
+
+class _NoFastForwardWS:
+    """Wrap a Workspace so `git_fetch` updates remote-tracking but leaves the local trunk
+    bookmark behind — the round-09 gap-A desync (a fetch that silently doesn't auto-FF).
+    Everything else delegates to the real workspace."""
+
+    def __init__(self, real, trunk: str):
+        self._real = real
+        self._trunk = trunk
+
+    def git_fetch(self, *args, **kwargs):
+        before = self._real.head().resolve(self._trunk).commit_id
+        out = self._real.git_fetch(*args, **kwargs)
+        after = self._real.head().resolve(self._trunk).commit_id
+        if after != before:  # the fetch auto-FF'd — undo just the local bookmark move
+            with self._real.transaction("test:simulate-no-ff", auto_snapshot=False) as tx:
+                tx.set_bookmark(self._trunk, before)
+        return out
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+
+def test_adopt_advances_trunk_when_fetch_does_not_ff(tmp_path: Path):
+    """Origin strictly ahead (clean FF), but the fetch leaves local trunk behind. adopt must
+    still advance trunk to origin via the explicit set_bookmark — deterministic, fetch-independent."""
+    work, remote, ws = _with_remote(tmp_path)
+    _advance_main(remote, tmp_path)  # origin strictly ahead; local main is a strict ancestor
+
+    sess = _sess(work)
+    sess.ws = _NoFastForwardWS(sess.ws, "main")  # force the no-auto-FF desync
+    res = do_adopt(sess, force=False, dry_run=False)
+
+    assert res.outcome == "ADOPTED", res.messages
+    assert res.exit_code == 0
+    assert _resolve(work, "main") == _resolve(work, "main@origin")  # advanced despite no auto-FF
+    assert capture_state(_sess(work)).canonical
 
 
 # --- 9. no remote → exit 2 -----------------------------------------------------------
