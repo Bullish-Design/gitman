@@ -71,8 +71,7 @@ needs to know jj is in use.
 ## 4. Locked decisions
 
 - **Agent-first** positioning (humans/CI secondary).
-- **jj required + colocated** (pyjutsu `Workspace.init(colocate=True)`, in-process — adopts an
-  existing `.git` or creates a fresh one; no `jj` CLI). No plain-git fallback.
+- **jj required + colocated** (`jj git init --colocate`). No plain-git fallback.
 - **GitHub is an optional extra** (`gitman.advanced.github`); the base never imports it.
 - **Verification is an optional pre-publish hook, off by default** — a generic command
   (any verifier, incl. Testee). Zero Testee dependency.
@@ -106,7 +105,7 @@ repo-global, and auto-following the change across rewrites.
 | I2 | **Every change belongs to exactly one named lane; no anonymous/stray changes.** | Stranded work — every change is *listable*; `status` is a uniform enumeration, not a triage. |
 | I3 | **Branch name = the lane's readable name**, unique-checked at creation, stable via the bookmark. | Branch-name generation / collision / freeze logic. |
 | I4 | **Gitman is the sole writer; mutating ops are serialized by a brief repo lock.** | Concurrent-rewrite divergence (parallel work lives in separate workspaces). |
-| I5 | **Each lane is linear on trunk (rebase-always); trunk advances only via `land` or `adopt`.** | Merge-commit states; "which base?" ambiguity. |
+| I5 | **Each lane is linear on trunk (rebase-always); trunk advances only via `land`.** | Merge-commit states; "which base?" ambiguity. |
 
 The principle: **resolve variability once, at a well-defined moment (init, lane
 creation), not repeatedly at runtime.**
@@ -132,15 +131,14 @@ Agent → devenv shell → gitman CLI → Intent planner → Executor (jj / git)
 ```
 
 - **Intent planner** — deterministic; turns intent + flags + config + current RepoState
-  into a sequence of pyjutsu operations.
-- **Executor** — runs pyjutsu transactions, records facts (op id before/after, change IDs).
+  into a sequence of jj/git operations.
+- **Executor** — runs jj/git, records facts (op id before/after, exit, change IDs).
   Never interprets results. Wraps each mutating intent transactionally (§11).
 - **Lane registry** — the set of Gitman-managed bookmarks; near-zero extra state since jj
-  already tracks bookmarks. Workspace ↔ lane mapping via `ws.workspaces()`.
-- **State adapter** (`session.py` + `state.py`) — `Session` is the boundary onto pyjutsu
-  (jj-lib in-process via PyO3): `view()` for frozen reads, `fresh_view()` to snapshot-then-read.
-  `state.py` projects one pyjutsu view into a typed `RepoState`. Typed pyjutsu errors replace
-  porcelain parsing; `tags.py` is the lone retained git subprocess (annotated tags).
+  already tracks bookmarks. Workspace ↔ lane mapping via `jj workspace list`.
+- **State adapters** (`jj.py`, `git.py`) — own all tool-specific knowledge: query jj with
+  templates / colocated git for numbers, parse into typed `RepoState`. Pure `parse_*`
+  separated from effectful `run_*` (Testee convention).
 - **Renderer** — compact agent report; `--json` emits the `RepoState`/result model.
 - **Forge bridge** (optional extra) — `publish`→PR and the forge backend of `land`.
 
@@ -149,11 +147,11 @@ Agent → devenv shell → gitman CLI → Intent planner → Executor (jj / git)
 ```
 src/gitman/
   cli.py        Typer intents
-  session.py    the per-invocation Session — boundary onto pyjutsu (view/fresh_view)
-  core.py       orchestration per intent, devenv guard, repo lock, typed-error mapper
+  core.py       orchestration per intent, devenv guard, repo lock, state IO
   lanes.py      lane registry + workspace lifecycle (create/forget/cleanup)
-  tags.py       colocated-git annotated tags — the one retained git-subprocess surface
-  state.py      RepoState capture (composes one pyjutsu view + lanes.py)
+  jj.py         jj adapter: run_* + pure parse_* (templates → models)
+  git.py        colocated git: numstat, tags, remotes, push
+  state.py      RepoState capture (composes jj.py + git.py + lanes.py)
   models.py     Pydantic: RepoState, Lane, Change, Conflict, Op, TrunkRef, ...
   config.py     [tool.gitman] policy (Pydantic-validated)
   invariants.py canonical checks + transactional rollback wrapper
@@ -168,7 +166,7 @@ Base deps kept lean: `pydantic`, `typer`. `jj` and `git` binaries come from deve
 
 ## 7. Intent vocabulary — v1
 
-Twelve intents. Lane lifecycle verbs (`start`/`land`/`abandon`) are the additions the lane
+Eleven intents. Lane lifecycle verbs (`start`/`land`/`abandon`) are the additions the lane
 model requires; everything else is deferred until friction proves it.
 
 | Intent | Signature | What it does | Underneath |
@@ -179,7 +177,6 @@ model requires; everything else is deferred until friction proves it.
 | `sync` | `gitman sync [--all]` | Fetch trunk + rebase the current lane (or `--all` lanes) onto it. | `jj git fetch` + `jj rebase` |
 | `publish` | `gitman publish` | Push the current lane; branch = lane name. Verify hook first. | `jj git push` (forge extra: + open/update PR) |
 | `land` | `gitman land [<lane>…]` | Fold lane(s) into trunk, advance trunk, retire the lane(s). | rebase + ff trunk + bookmark/workspace cleanup (forge extra: merge PR) |
-| `adopt` | `gitman adopt [--force] [--dry-run]` | Adopt a forge-merged trunk: advance local trunk to `origin/<trunk>`, rebase survivors, retire merged lanes. | `jj git fetch` (auto-FF trunk) + content-based retire + un-stale `@` |
 | `abandon` | `gitman abandon [<lane>]` | Discard a lane (terminal). | `jj abandon` + bookmark delete + workspace cleanup |
 | `undo` | `gitman undo [--op <id>] [--list]` | Revert the last intent, or to a chosen op. | `jj undo` / `jj op restore` |
 | `resolve` | `gitman resolve [--list]` | Surface remaining conflicts / confirm cleared. | `jj resolve --list` |
@@ -226,30 +223,6 @@ $ gitman abandon fix-cart-test                        # gave up on that one
   fast-forwards trunk to include it, then deletes the bookmark and forgets the workspace.
   The forge extra swaps the local fast-forward for a GitHub PR merge.
 
-### Forge-PR adoption (`publish → PR → merge → adopt`)
-
-`land` advances trunk to a lane head you built **locally**. But the common reviewed-and-gated
-flow advances trunk on the **forge**: `gitman publish` a lane → open a PR → click **Merge**.
-The forge mints a **re-hashed** commit on `origin/<trunk>` (squash, merge-commit, and rebase
-merges all produce a new SHA), leaving the local trunk behind `origin/<trunk>`. **`adopt` is a
-`land` the forge already performed** — it's the second sanctioned trunk-advancing intent (I5),
-the only other one the transactional postcondition exempts from the trunk-frozen rule.
-
-`gitman adopt`:
-1. **Fetches** the remote. jj auto-fast-forwards the local `<trunk>` bookmark to the forge head
-   in the clean case, and prunes lanes whose remote branch was deleted (`--delete-branch`).
-2. **Retires merged lanes by content, not SHA** — a lane is "already merged" iff it is empty
-   after rebasing onto the adopted trunk (true across squash N→1, rebase-merge N→N re-hashed,
-   and merge-commit ancestry). Genuine survivors are rebased onto the new trunk and **kept**.
-3. **Refuses safely on divergence.** Un-pushed local lands + a moved origin make jj record a
-   *conflicted* trunk bookmark; `adopt` refuses (push first) unless `--force` hard-sets trunk to
-   the forge head (dropping the un-pushed lands; undoable). `--dry-run` reports the plan only.
-
-Stays CANONICAL throughout and is a single `gitman undo` step. **`sync` never advances trunk**
-(it fetches lanes-only and rebases onto *local* trunk) — trunk advancement is `land`'s or
-`adopt`'s job, by design. Keep `gitman.toml` / VC wiring on **trunk**, never only in a lane, so
-retiring a lane can never delete it.
-
 ## 9. The `RepoState` model (the Pydantic heart)
 
 Analogous to Testee's `VerificationReport`. A reloadable snapshot; the **durable history
@@ -290,19 +263,10 @@ Op         { op_id, description, timestamp, undoable }   # description from op-l
 
 ## 10. Feeding `RepoState` — jj structured output
 
-> **Superseded (2026-06-17, pyjutsu migration MP1–MP3).** gitman no longer shells out to a
-> `jj` CLI or parses templated output. jj-lib runs **in-process via [pyjutsu](../Pyjutsu)**
-> (PyO3) and hands gitman **typed models** directly: `Session.view()` / `fresh_view()` →
-> `RepoView`, whose `log()` / `bookmarks()` / `diff_stat()` / `conflicts()` / `operations()`
-> return the structured data the strategies below reconstructed by hand. `state.py` projects
-> those into `RepoState`. The only retained subprocess is `tags.py` (annotated git tags). The
-> strategy analysis below is preserved as design rationale and as the **contract pyjutsu must
-> satisfy** (the field → source map in §10.7 still holds, now sourced from pyjutsu); the jj
-> 0.38 pin lives in pyjutsu and `doctor` asserts `pyjutsu.JJ_VERSION == pyjutsu.JJ_LIB_TARGET`.
-
 Capturing state is the central engineering question. Five strategies; Gitman layers
 several. **All validated against jj 0.38 by a 2026-06-15 spike** (the version nixpkgs
-provides) — now provided in-process by pyjutsu rather than templated CLI output.
+provides); templates are pinned in `jj.py`, and `doctor` asserts the jj version so an
+upgrade that moves a keyword fails loudly.
 
 ### 10.1 Strategy B — a custom `json()` template (PRIMARY)
 
@@ -384,9 +348,9 @@ A control-char-delimited (`\x1f`/`\x1e`) `jj log` template, equivalent to 10.1 w
 **Gotcha:** jj conflict markers differ from git's (`<<<<<<< conflict 1 of 1` / `%%%%%%%` /
 `+++++++` / `>>>>>>>` — not git's `=======`); marker-aware logic must expect the jj form.
 
-All jj reads/mutations now go through a `Session` over pyjutsu (typed models, typed errors);
-the only raw subprocess that remains is `tags.py` (annotated git tags). The conflict-marker
-gotcha above still applies — pyjutsu surfaces jj-form markers verbatim.
+Keep every jj/git invocation in `jj.py`/`git.py` behind a pure `parse_*` (golden-fixture
+testable, Testee convention), with all template strings in one module to re-pin on jj
+upgrades.
 
 ## 11. Enforcement — invariants & transactional rollback
 

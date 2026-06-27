@@ -463,18 +463,37 @@ def do_sync(session: Session, all_: bool):
     notes: list[str] = []
     conflicted: list[str] = []
     with canonical_guard(session, "sync") as canon:
-        if session.ws.remotes():
-            session.ws.git_fetch(pick_remote(session.ws))  # own op
+        if session.ws.remotes() and targets:
+            # Fetch the lane branches ONLY — never trunk. A full `git_fetch` auto-fast-forwards the
+            # local trunk bookmark to a moved `origin/<trunk>`, which the canonical_guard
+            # postcondition then reverts as "trunk moved outside a land" (the real wedge). Trunk
+            # advancement is `gitman adopt`'s job, by design. Bookmark-scoped fetch keeps sync's
+            # narrow contract ("rebase lanes onto *local* trunk") and still prunes a server-deleted
+            # in-filter lane (validated). (verb: adopt)
+            session.ws.git_fetch(pick_remote(session.ws), bookmarks=sorted(targets))  # own op
             messages.append("fetched remote.")
-        else:
+        elif not session.ws.remotes():
             notes.append("no remote — rebasing onto local trunk only.")
-        with session.ws.transaction("gitman:sync", auto_snapshot=False) as tx:
-            for lane in targets:
-                rebased = tx.rebase(lane, onto=trunk, mode="branch")
-                if rebased.has_conflict:
-                    conflicted.append(lane)  # DO NOT raise — sync is non-blocking
-    if targets:
-        messages.append(f"rebased {', '.join(targets)} onto {trunk}.")
+        # A fetch can prune a lane whose remote branch was deleted server-side (e.g.
+        # `gh pr merge --delete-branch`): jj drops the un-diverged local bookmark too, so a later
+        # `tx.rebase(lane, …)` would raise "Revision <lane> doesn't exist". Re-read the survivors
+        # AFTER the fetch and skip vanished lanes with a note instead of wedging (sharp edge #1).
+        surviving = lane_names(session, trunk)
+        todo = [lane for lane in targets if lane in surviving]
+        for lane in targets:
+            if lane not in surviving:
+                notes.append(
+                    f"lane '{lane}' no longer exists (remote branch deleted) — nothing to sync; "
+                    f"`gitman adopt` to retire it."
+                )
+        if todo:
+            with session.ws.transaction("gitman:sync", auto_snapshot=False) as tx:
+                for lane in todo:
+                    rebased = tx.rebase(lane, onto=trunk, mode="branch")
+                    if rebased.has_conflict:
+                        conflicted.append(lane)  # DO NOT raise — sync is non-blocking
+    if todo:
+        messages.append(f"rebased {', '.join(todo)} onto {trunk}.")
     if conflicted:
         notes.append(f"conflicts in {', '.join(conflicted)} — not blocked; `gitman resolve`, then continue.")
     return IntentResult(
@@ -483,6 +502,246 @@ def do_sync(session: Session, all_: bool):
         messages=messages,
         notes=notes,
         exit_code=1 if conflicted else 0,
+        undo_command="gitman undo",
+        state=canon.state,
+    )
+
+
+# --- forge-PR adoption: `gitman adopt` (the second trunk-advancing intent) ------------
+
+
+def _retire_lane(session: Session, trunk: str, lane: str, published_before: set[str], notes: list[str]) -> None:
+    """Retire a forge-merged surviving lane: abandon its (now-empty) trunk..lane changes, delete the
+    bookmark, forget its workspace, best-effort delete a still-live remote branch. Runs its own tx
+    inside an already-open `canonical_guard`. For the merge-commit case (`trunk..lane` already empty)
+    the abandon loop is a no-op and only the bookmark is dropped (the commits stay as trunk ancestors).
+    """
+    from pyjutsu import PyjutsuError
+
+    with session.ws.transaction("gitman:adopt-retire", auto_snapshot=False) as tx:
+        for c in session.view().log(f"{trunk}..{lane}"):
+            tx.abandon(c.change_id)
+        tx.delete_bookmark(lane)
+    notes += _cleanup_workspace(session, lane)
+    notes.append(f"retired (forge-merged): {lane}")
+    if lane in published_before:
+        try:
+            session.ws.git_push(pick_remote(session.ws), lane, delete=True)
+            notes.append(f"deleted remote branch '{lane}' (one-way; `gitman undo` won't restore it).")
+        except PyjutsuError as exc:
+            notes.append(f"remote branch '{lane}' not deleted (delete it manually): {exc}")
+
+
+def _reconcile_lane_against_adopted_trunk(
+    session: Session,
+    trunk: str,
+    lane: str,
+    published_before: set[str],
+    *,
+    retired: list[str],
+    rebased: list[str],
+    conflicts: list[str],
+    notes: list[str],
+) -> None:
+    """Reconcile one surviving lane against the freshly-adopted trunk (content-based, not SHA).
+
+    Three cases, one emptiness-after-rebase test (works across squash N→1, rebase-merge N→N
+    re-hashed, and merge-commit ancestry — independent of SHA/change-id):
+      * `trunk..lane` already empty  → lane is an ancestor of the new trunk → retire (no rebase).
+      * rebase onto trunk conflicts  → leave the conflicted rebase, mark CONFLICT (non-blocking).
+      * post-rebase range all empty  → merged → retire (abandon the emptied commits + delete bookmark).
+      * otherwise                    → genuine survivor → keep the rebase onto the new trunk.
+    """
+    if not session.view().log(f"{trunk}..{lane}"):  # merge-commit: already an ancestor of trunk
+        _retire_lane(session, trunk, lane, published_before, notes)
+        retired.append(lane)
+        return
+
+    with session.ws.transaction("gitman:adopt-rebase", auto_snapshot=False) as tx:
+        rebased_head = tx.rebase(lane, onto=trunk, mode="branch")
+    if rebased_head.has_conflict:  # survivor that conflicts — non-blocking, do NOT abandon
+        conflicts.append(lane)
+        notes.append(f"conflict (resolve, then sync): {lane}")
+        return
+
+    range_after = session.view().log(f"{trunk}..{lane}")  # re-read after the rebase op committed
+    if range_after and all(c.is_empty for c in range_after):  # squash / rebase-merge → merged
+        _retire_lane(session, trunk, lane, published_before, notes)
+        retired.append(lane)
+    else:
+        rebased.append(lane)
+        notes.append(f"rebased onto trunk: {lane}")
+
+
+def _adopt_dry_run(session: Session, trunk: str, remote: str):
+    """Report the adoption plan without mutating: fetch (then roll the fetch back so the op leaves no
+    net change), classify, restore. Opens no adopt transaction. See plan §2 / BUILD_PLAN §3b.7."""
+    from pyjutsu.errors import RevsetError
+
+    from gitman.invariants import repo_lock
+    from gitman.lanes import lane_names
+    from gitman.models import IntentResult
+    from gitman.state import _trunk_conflicted, capture_state
+
+    messages: list[str] = []
+    with repo_lock(session.repo_root):
+        op_before = session.ws.head_operation()
+        lanes_before = set(lane_names(session, trunk))
+        try:
+            session.ws.git_fetch(remote)
+            view = session.view()
+            try:
+                origin_trunk = view.resolve(f"{trunk}@{remote}")
+            except RevsetError:
+                messages.append(f"no {trunk}@{remote} — nothing to adopt; is the trunk pushed?")
+                return IntentResult(intent="adopt", outcome="PLAN", messages=messages, exit_code=1)
+            surviving = set(lane_names(session, trunk))
+            if _trunk_conflicted(view, trunk):
+                messages.append(f"trunk diverged from {remote} — needs `--force` to take {remote}.")
+            else:
+                # `behind` = forge commits not yet local; trunk only advances when origin is ahead
+                # (a fetch never moves trunk backward, so local-ahead means trunk stays put).
+                behind = len(view.log(f"{trunk}..{trunk}@{remote}"))
+                if behind:
+                    head = origin_trunk.commit_id[:12]
+                    messages.append(f"would advance {trunk} → {head} ({behind} forge commit(s)).")
+                elif lanes_before == surviving:
+                    messages.append(f"already current: local {trunk} is up to date with {trunk}@{remote}.")
+                else:
+                    messages.append(f"{trunk} already current — would reconcile lanes only.")
+            for lane in sorted(lanes_before - surviving):
+                messages.append(f"would retire (forge-merged, branch deleted): {lane}")
+            for lane in sorted(surviving):
+                if not view.log(f"{trunk}..{lane}"):
+                    messages.append(f"would retire (already an ancestor of trunk): {lane}")
+                else:
+                    messages.append(f"would rebase onto trunk (retire if emptied): {lane}")
+        finally:
+            session.ws.restore_operation(op_before)  # undo the fetch's FF/prune → no net mutation
+    return IntentResult(
+        intent="adopt",
+        outcome="PLAN",
+        messages=messages,
+        notes=["dry run — nothing changed; re-run without `--dry-run` to apply."],
+        state=capture_state(session),
+    )
+
+
+def do_adopt(session: Session, *, force: bool, dry_run: bool):
+    """Adopt a forge-merged trunk: fetch, let the local trunk advance to `origin/<trunk>`, rebase
+    survivors, retire merged lanes. The second intent the canonical_guard postcondition exempts from
+    the trunk-frozen rule (I5: trunk advances via `land` OR `adopt`). See ISSUE/PLAN/BUILD_PLAN §07.
+    """
+    from pyjutsu.errors import RevsetError
+
+    from gitman.invariants import canonical_guard
+    from gitman.lanes import lane_names
+    from gitman.models import IntentResult
+    from gitman.state import _lane_index, _trunk_conflicted
+
+    trunk = require_trunk(session.config)
+    if not session.ws.remotes():
+        raise GitmanError("no git remote — nothing to adopt.", exit_code=2)
+    remote = pick_remote(session.ws)
+
+    if dry_run:
+        return _adopt_dry_run(session, trunk, remote)
+
+    # Pre-fetch facts — the fetch will move trunk and prune lanes under us.
+    local_trunk_before = session.view().resolve(trunk).commit_id
+    lanes_before = set(lane_names(session, trunk))
+    published_before = _lane_index(session.view())[1]
+
+    retired: list[str] = []
+    rebased: list[str] = []
+    conflicts: list[str] = []
+    notes: list[str] = []
+    try:
+        with canonical_guard(session, "adopt") as canon:
+            session.ws.git_fetch(remote)  # own op: FFs trunk (clean), prunes deleted lanes, may stale @
+            view = session.view()
+            try:
+                origin_trunk = view.resolve(f"{trunk}@{remote}")
+            except RevsetError as exc:
+                raise GitmanError(
+                    f"no {trunk}@{remote} — nothing to adopt; is the trunk pushed?", exit_code=1
+                ) from exc
+
+            if _trunk_conflicted(view, trunk):
+                if not force:
+                    raise GitmanError(
+                        f"local {trunk} diverged from {remote} (un-pushed local lands + forge moved). "
+                        f"Push your lands first, or re-run with `--force` to hard-set {trunk} to {remote} "
+                        f"(discards the un-pushed lands; undoable).",
+                        exit_code=1,
+                    )
+                # The un-pushed local lands are the commits reachable from the old local trunk but
+                # not from the forge head; hard-setting trunk past them would strand them as strays
+                # (off-canonical → the postcondition would revert), so abandon them in the same tx.
+                dropped = [
+                    c.change_id
+                    for c in session.view().log(f"{origin_trunk.commit_id}..{local_trunk_before}")
+                ]
+                with session.ws.transaction("gitman:adopt-force", auto_snapshot=False) as tx:
+                    tx.set_bookmark(trunk, f"{trunk}@{remote}")  # resolve the conflict toward the forge head
+                    for cid in dropped:
+                        tx.abandon(cid)
+                notes.append(
+                    f"forced {trunk} to {remote} — {len(dropped)} un-pushed local land(s) dropped (undoable)."
+                )
+
+            surviving = set(lane_names(session, trunk))
+            for lane in sorted(lanes_before - surviving):  # pruned by the fetch (forge-merged + deleted)
+                notes += _cleanup_workspace(session, lane)
+                notes.append(f"retired (forge-merged): {lane}")
+                retired.append(lane)
+            for lane in sorted(surviving):
+                _reconcile_lane_against_adopted_trunk(
+                    session, trunk, lane, published_before,
+                    retired=retired, rebased=rebased, conflicts=conflicts, notes=notes,
+                )
+
+            if session.ws.is_stale():  # the fetch/abandons orphaned @ off a pruned/retired lane
+                session.ws.update_stale()
+                notes.append("refreshed the working copy onto the adopted trunk.")
+    except GitmanError as exc:
+        return IntentResult(
+            intent="adopt",
+            outcome="BLOCKED",
+            messages=[str(exc)],
+            notes=["nothing changed — the repo is back to its pre-adopt state."],
+            exit_code=exc.exit_code,
+        )
+
+    trunk_after = canon.state.trunk.commit_id if canon.state else local_trunk_before
+    changed = bool(retired or rebased or conflicts) or trunk_after != local_trunk_before
+    if conflicts:
+        outcome, exit_code = "CONFLICT", 1
+    elif not changed:
+        outcome, exit_code = "ALREADY_CURRENT", 0
+    else:
+        outcome, exit_code = "ADOPTED", 0
+
+    messages = []
+    if trunk_after != local_trunk_before:
+        messages.append(f"adopted {remote}/{trunk} → {trunk} @ {trunk_after[:12] if trunk_after else '?'}.")
+    elif outcome == "ALREADY_CURRENT":
+        messages.append(f"already current: local {trunk} == {remote}/{trunk}.")
+    if retired:
+        messages.append(f"retired {len(retired)} forge-merged lane(s): {', '.join(retired)}.")
+    if rebased:
+        messages.append(f"rebased {len(rebased)} survivor(s) onto {trunk}: {', '.join(rebased)}.")
+    if conflicts:
+        joined = ", ".join(conflicts)
+        messages.append(f"{len(conflicts)} survivor(s) conflict — `gitman resolve`, then `gitman sync`: {joined}.")
+    notes.append("`gitman undo` reverts trunk + lanes; the forge merge and deleted remote branches are not restored.")
+
+    return IntentResult(
+        intent="adopt",
+        outcome=outcome,
+        messages=messages,
+        notes=notes,
+        exit_code=exit_code,
         undo_command="gitman undo",
         state=canon.state,
     )

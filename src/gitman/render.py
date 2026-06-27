@@ -25,6 +25,18 @@ def _diff_str(ins: int, dels: int) -> str:
     return f"+{ins} −{dels}"
 
 
+def _remote_relation(trunk) -> str:
+    """The `(… origin)` suffix on the trunk line — only when a remote trunk is known."""
+    bits = []
+    if trunk.behind_remote:
+        bits.append(f"{trunk.behind_remote} behind")
+    if trunk.ahead_remote:
+        bits.append(f"{trunk.ahead_remote} ahead")
+    if not bits:
+        return ""
+    return f"  ({', '.join(bits)} origin)"
+
+
 def _lane_line(lane: Lane, current: str | None) -> str:
     here = lane.name == current
     marker = "*" if here else " "
@@ -47,11 +59,17 @@ def _lane_line(lane: Lane, current: str | None) -> str:
 
 def render_status(state: RepoState) -> str:
     if not state.canonical:
+        diverged = bool(state.off_canonical) and "diverged" in state.off_canonical
+        recover = (
+            "Recover: `gitman adopt`  — adopt the forge-merged trunk (`--force` to take origin)."
+            if diverged
+            else "Recover: `gitman reconcile`  — adopt it into a lane, or abandon it."
+        )
         return "\n".join(
             [
-                "Gitman status — OFF-CANONICAL",
+                f"Gitman status — {'DIVERGED' if diverged else 'OFF-CANONICAL'}",
                 f"Reason: {state.off_canonical}",
-                "Recover: `gitman reconcile`  — adopt it into a lane, or abandon it.",
+                recover,
                 "Exit: 1",
             ]
         )
@@ -59,7 +77,7 @@ def render_status(state: RepoState) -> str:
     n = len(state.lanes)
     header = f"Gitman status — CANONICAL · {n} lane{'' if n == 1 else 's'}"
     trunk = state.trunk
-    trunk_line = f"trunk: {trunk.name} @ {trunk.commit_id or '?'}"
+    trunk_line = f"trunk: {trunk.name} @ {trunk.commit_id or '?'}{_remote_relation(trunk)}"
     lines = [header, trunk_line]
     for lane in state.lanes:
         lines.append(_lane_line(lane, state.current_lane))

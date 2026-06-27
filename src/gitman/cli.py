@@ -181,6 +181,20 @@ def sync(
 
 
 @app.command()
+def adopt(
+    force: Annotated[
+        bool,
+        typer.Option("--force", help="Hard-set trunk to origin even if local trunk diverged (drops un-pushed lands)."),
+    ] = False,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Report the adoption plan without mutating.")] = False,
+) -> None:
+    """Adopt a forge-merged trunk: advance local trunk to origin/<trunk>, rebase survivors, retire merged lanes."""
+    from gitman.core import do_adopt
+
+    _finish_intent(do_adopt(_session(), force=force, dry_run=dry_run))
+
+
+@app.command()
 def resolve(
     list_: Annotated[bool, typer.Option("--list", help="List remaining conflicts.")] = False,
 ) -> None:

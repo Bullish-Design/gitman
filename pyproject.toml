@@ -15,7 +15,7 @@ authors = [
 dependencies = [
   "pydantic>=2.12",
   "typer>=0.12",
-  "pyjutsu",
+  "pyjutsu>=0.8",
 ]
 
 [project.optional-dependencies]
@@ -50,13 +50,10 @@ include = [
   "pyproject.toml",
 ]
 
-[tool.uv]
-
-# pyjutsu is built from the sibling checkout (build-from-sibling distribution). Editable so
-# gitman picks up local pyjutsu changes; uv builds its native extension via maturin + the
-# Rust toolchain from devenv.nix. Long-term this becomes a published wheel.
-[tool.uv.sources]
-pyjutsu = { path = "../Pyjutsu", editable = true }
+# No [tool.uv.sources] for pyjutsu: it resolves from vendomat's prebuilt wheelhouse via
+# UV_FIND_LINKS (set by the imported vendomat devenv module), instead of being built from
+# the sibling ../Pyjutsu checkout. UV_NO_BUILD_PACKAGE=pyjutsu makes a missing wheel fail
+# loudly rather than silently recompiling.
 
 # Seed policy; `gitman init` writes the frozen trunk here (or to gitman.toml). See concept §15.
 [tool.gitman]

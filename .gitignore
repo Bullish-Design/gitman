@@ -28,8 +28,9 @@ uv.lock
 .mypy_cache/
 .ruff_cache/
 
-# local working notes (untracked)
-.scratch/
+# local working notes: loose scratch is untracked; tracked design docs live in .scratch/projects/
+.scratch/*
+!.scratch/projects/
 
 # retired old-gitman code, kept for reference only
 archive/
