@@ -14,6 +14,7 @@ A **lane** is one unit of work: a named bookmark (= git branch) on trunk, kept l
 
 ```
 gitman start <name>         # begin a lane (add --workspace to isolate it in its own dir)
+gitman switch <lane>         # resume a parked lane: move @ back onto an existing lane's change
 # ...edit files...
 gitman save -m "<message>"  # describe the current change
 gitman status               # see trunk + all lanes (canonical or off-canonical)
@@ -25,6 +26,13 @@ gitman abandon [<lane>]     # discard a lane
 
 `sync` fetches **lanes-only** and rebases onto the *local* trunk — it never advances trunk and
 signposts `gitman adopt` when origin's trunk has moved.
+
+`switch` is the only lane-**navigation** verb: when `@` leaves a lane without ending it (a second
+agent ran `start` in the **same** workspace and stranded yours; you started a sibling; you landed
+one of several lanes), `gitman switch <lane>` puts `@` back on it. It never mutates trunk, refuses
+to strand an unnamed dirty `@` (save/start/abandon it first), and reports cleanly if the lane is
+checked out in another `--workspace` (`cd` there to resume). `gitman start <existing>` now points
+here instead of dead-ending.
 
 ## Forge PRs: `publish → PR → merge → adopt`
 

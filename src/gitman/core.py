@@ -211,6 +211,66 @@ def _adoptable_work(session: Session, trunk: str) -> bool:
     return bool(session.view().log(f"@ & ({trunk}..)"))
 
 
+def do_switch(session: Session, name: str):
+    """Move `@` onto an existing lane's change so a stranded/parked lane can be resumed.
+
+    The only lane-*navigation* verb: `start` creates, `land`/`abandon` end, `sync` rebases — but
+    once `@` leaves a lane (a sibling `start` in the same workspace, a landed neighbour) nothing
+    moves it back. One `tx.edit(<lane>)` does that; the rest is guard rails. Navigation only —
+    never touches trunk, so the canonical_tx trunk guard passes unmodified (no exemption).
+    """
+    from gitman.invariants import canonical_tx
+    from gitman.lanes import current_lane, lane_names
+    from gitman.models import IntentResult
+    from gitman.state import capture_state
+
+    trunk = require_trunk(session.config)
+    if name == trunk:
+        raise GitmanError(
+            f"'{trunk}' is the frozen trunk — switch onto a lane, not trunk.", exit_code=3
+        )
+    if name not in lane_names(session, trunk):
+        raise GitmanError(f"no such lane '{name}'.", exit_code=3)
+    cur = current_lane(session, trunk)
+    if cur == name:
+        return IntentResult(
+            intent="switch",
+            outcome="NOOP",
+            lane=name,
+            messages=[f"already on lane '{name}'."],
+        )
+    # Refuse to orphan an undescribed draft: if `@` carries no lane bookmark yet has on-disk work,
+    # switching away would strand it nowhere-named. Named lanes are safe (preserved as today's
+    # accidental `start` already does). (verb: save/start/abandon)
+    if cur is None and not session.view().working_copy().is_empty:
+        raise GitmanError(
+            "uncommitted work on an unnamed change would be stranded — "
+            "`gitman save -m …` (if it's a lane), `gitman start <name>` (to name it), "
+            "or `gitman abandon` first.",
+            exit_code=1,
+        )
+    # A lane with its own `--workspace` is checked out *there*. jj-lib's `edit` won't refuse a
+    # second checkout (it'd silently create a divergent dual-`@`), so detect it up front: refuse
+    # unless we *are* that workspace, and point at the `cd`-there front door instead of exit 2.
+    other_workspaces = {w.name for w in session.ws.workspaces()} - {session.ws.name}
+    if name in other_workspaces:
+        raise GitmanError(
+            f"lane '{name}' is checked out in another workspace — "
+            f"`cd` to its workspace dir to resume it.",
+            exit_code=1,
+        )
+    with canonical_tx(session, "switch") as tx:
+        tx.edit(name)  # bookmark name resolves as a revset → @ becomes that lane's change
+    return IntentResult(
+        intent="switch",
+        outcome="SWITCHED",
+        lane=name,
+        messages=[f"switched @ onto lane '{name}'."],
+        undo_command="gitman undo",
+        state=capture_state(session),
+    )
+
+
 def do_save(session: Session, message: str | None):
     from gitman.invariants import canonical_tx
     from gitman.lanes import require_current_lane
