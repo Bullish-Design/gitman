@@ -107,6 +107,52 @@ def _trunk_remote_relation(session: Session, view: RepoView, trunk: str) -> tupl
     return behind, ahead, remote
 
 
+def _git_refs_heads(repo_root: Path) -> dict[str, str]:
+    """`{bookmark_name: commit_sha}` from the colocated `refs/heads/*` (raw `git` read).
+
+    The one place gitman reads colocated git refs directly: detecting jj-bookmark↔git-ref desync
+    (round-09 gap B). jj commit ids ARE the git SHAs in a colocated repo, so the values compare
+    directly against `view.resolve(name).commit_id`. Returns `{}` if git can't be read.
+    """
+    import subprocess
+
+    proc = subprocess.run(
+        ["git", "for-each-ref", "--format=%(refname:lstrip=2) %(objectname)", "refs/heads/"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+    )
+    refs: dict[str, str] = {}
+    if proc.returncode == 0:
+        for line in proc.stdout.splitlines():
+            parts = line.split()
+            if len(parts) == 2:
+                refs[parts[0]] = parts[1]
+    return refs
+
+
+def colocated_ref_desync(view: RepoView, repo_root: Path) -> tuple[list[tuple[str, str, str | None]], list[str]]:
+    """Detect jj-bookmark ↔ colocated-git-ref drift (round-09 gap B).
+
+    Returns `(mismatched, leftover)`:
+      * `mismatched` — `(name, jj_id, git_id)` for each *local* (non-conflicted) jj bookmark whose
+        `refs/heads/<name>` is missing or points elsewhere (jj is the source of truth).
+      * `leftover`   — `refs/heads/<name>` with no matching local jj bookmark (e.g. an abandoned
+        lane's lingering ref — the kind that makes every later `git_export` raise).
+    """
+    refs = _git_refs_heads(repo_root)
+    local: dict[str, str] = {}
+    for b in view.bookmarks():
+        if b.remote is None and not b.conflicted:
+            try:
+                local[b.name] = view.resolve(b.name).commit_id
+            except RevsetError:
+                pass
+    mismatched = [(name, jj_id, refs.get(name)) for name, jj_id in local.items() if refs.get(name) != jj_id]
+    leftover = sorted(name for name in refs if name not in local)
+    return mismatched, leftover
+
+
 def find_strays(view: RepoView, trunk: str) -> list[Change]:
     """Non-empty changes descended from trunk that belong to no lane (basic off-canonical signal)."""
     return [_change(c) for c in view.log(_stray_revset(trunk)) if not c.is_empty]

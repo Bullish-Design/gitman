@@ -182,8 +182,8 @@ def _postcondition(session: Session, intent: str, trunk_before: str | None, op_b
     return after
 
 
-def _export_colocated_git(session: Session) -> None:
-    """Mirror jj's refs into the colocated git after a successful mutation.
+def _export_colocated_git(session: Session) -> list[str]:
+    """Mirror jj's refs into the colocated git after a successful mutation. Returns surfacing notes.
 
     jj-lib (via pyjutsu) does NOT auto-export to git — the jj *CLI* runs an explicit export after
     every op so a colocated repo stays consistent for bare `git log`/`status`/`push`. gitman is that
@@ -192,19 +192,30 @@ def _export_colocated_git(session: Session) -> None:
     `git push <trunk>` ships a stale ref. Runs last, after the undo checkpoint, so a (rare) export
     failure never undoes an already-committed, already-recorded intent.
 
-    **Best-effort**, matching the jj CLI: `git::export_refs` can partially fail for an individual
-    bookmark whose git ref diverged from jj's last-exported position (e.g. a branch rewound by
-    `gitman undo`), and pyjutsu surfaces that as a `PyjutsuError`. The jj CLI warns and continues
-    rather than aborting the op; we do the same — the conflicting branch simply stays at its old git
-    position (the pre-export status quo), while every other ref exports. The gitman intent itself has
-    already succeeded and is authoritative in jj.
+    **Best-effort**, matching the jj CLI: `git::export_refs` writes every ref it can — including
+    `<trunk>` — then reports the bookmarks it couldn't (a ref diverged from jj's last-exported
+    position: a branch rewound by `gitman undo`, or an abandoned lane's lingering `refs/heads/<lane>`).
+    pyjutsu raises a `PyjutsuError` listing them. We do NOT auto-heal here (deleting/importing refs
+    mid-intent is too sharp, and could resurrect an abandoned lane) — but we no longer swallow it
+    *silently*: round-09 gap B showed one stuck lane ref makes every *later* export raise too, so the
+    desync (incl. a lagging trunk ref) must surface. Return a note naming the stuck ref(s) →
+    `gitman reconcile` heals them. The intent itself has already succeeded and is authoritative in jj.
     """
     from pyjutsu import PyjutsuError
 
     try:
         session.ws.git_export()
+        return []
     except PyjutsuError:
-        pass  # best-effort mirror; jj remains source of truth (see docstring)
+        from gitman.state import colocated_ref_desync
+
+        try:
+            mismatched, leftover = colocated_ref_desync(session.view(), session.repo_root)
+            stuck = sorted([n for n, _, _ in mismatched] + leftover)
+        except Exception:  # noqa: BLE001 — surfacing must never mask the (already-committed) intent
+            stuck = []
+        names = ", ".join(stuck) if stuck else "some bookmarks"
+        return [f"colocated git ref(s) stale for: {names} — run `gitman reconcile` to re-sync."]
 
 
 @dataclass
@@ -241,6 +252,8 @@ def canonical_tx(session: Session, intent: str) -> Iterator[Transaction]:
             yield tx  # body raises ⇒ pyjutsu rolls back, op_before intact
         _postcondition(session, intent, trunk_before, op_before)
         write_undo_checkpoint(session.repo_root, op_before, intent)
+        # A stuck colocated ref can't be surfaced through the bare-tx yield, but `gitman status` /
+        # `gitman doctor` report the desync, and `gitman reconcile` heals it (round-09 gap B).
         _export_colocated_git(session)
 
 
@@ -269,4 +282,4 @@ def canonical_guard(session: Session, intent: str) -> Iterator[Canon]:
             raise
         canon.state = _postcondition(session, intent, trunk_before, op_before)
         write_undo_checkpoint(session.repo_root, op_before, intent)
-        _export_colocated_git(session)
+        canon.notes += _export_colocated_git(session)  # surface any stuck colocated ref (gap B)

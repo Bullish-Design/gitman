@@ -543,6 +543,10 @@ def _retire_lane(session: Session, trunk: str, lane: str, published_before: set[
             notes.append(f"remote branch '{lane}' not deleted (delete it manually): {exc}")
 
 
+class _SurvivorConflict(Exception):
+    """Internal sentinel: roll back a conflicting survivor rebase tx without committing it."""
+
+
 def _reconcile_lane_against_adopted_trunk(
     session: Session,
     trunk: str,
@@ -556,10 +560,15 @@ def _reconcile_lane_against_adopted_trunk(
 ) -> None:
     """Reconcile one surviving lane against the freshly-adopted trunk (content-based, not SHA).
 
-    Three cases, one emptiness-after-rebase test (works across squash N→1, rebase-merge N→N
-    re-hashed, and merge-commit ancestry — independent of SHA/change-id):
+    Cases, on one emptiness-after-rebase test (works across squash N→1, rebase-merge N→N re-hashed,
+    and merge-commit ancestry — independent of SHA/change-id):
       * `trunk..lane` already empty  → lane is an ancestor of the new trunk → retire (no rebase).
-      * rebase onto trunk conflicts  → leave the conflicted rebase, mark CONFLICT (non-blocking).
+      * rebase onto trunk conflicts  → **roll the rebase back**, leave the lane on its prior base,
+        mark CONFLICT (non-blocking). Committing a conflicted rebase would let a checkout (e.g. `@`
+        on this lane, or end-of-adopt `update_stale`) materialize jj conflict markers into tracked
+        source on disk — which can corrupt files adopt itself depends on and brick the CLI (gap C).
+        The lane stays valid (just behind trunk); the user resolves it with an explicit `gitman
+        sync`, or abandons it if the conflict is because the lane is an already-merged duplicate.
       * post-rebase range all empty  → merged → retire (abandon the emptied commits + delete bookmark).
       * otherwise                    → genuine survivor → keep the rebase onto the new trunk.
     """
@@ -568,11 +577,17 @@ def _reconcile_lane_against_adopted_trunk(
         retired.append(lane)
         return
 
-    with session.ws.transaction("gitman:adopt-rebase", auto_snapshot=False) as tx:
-        rebased_head = tx.rebase(lane, onto=trunk, mode="branch")
-    if rebased_head.has_conflict:  # survivor that conflicts — non-blocking, do NOT abandon
+    try:
+        with session.ws.transaction("gitman:adopt-rebase", auto_snapshot=False) as tx:
+            rebased_head = tx.rebase(lane, onto=trunk, mode="branch")
+            if rebased_head.has_conflict:
+                raise _SurvivorConflict  # abort the tx → lane untouched, no conflicted checkout
+    except _SurvivorConflict:
         conflicts.append(lane)
-        notes.append(f"conflict (resolve, then sync): {lane}")
+        notes.append(
+            f"left on prior base — rebase onto {trunk} conflicts: {lane} "
+            f"(`gitman sync` to rebase + resolve, or `gitman abandon {lane}` if already merged)."
+        )
         return
 
     range_after = session.view().log(f"{trunk}..{lane}")  # re-read after the rebase op committed
@@ -607,7 +622,12 @@ def _adopt_dry_run(session: Session, trunk: str, remote: str):
                 messages.append(f"no {trunk}@{remote} — nothing to adopt; is the trunk pushed?")
                 return IntentResult(intent="adopt", outcome="PLAN", messages=messages, exit_code=1)
             surviving = set(lane_names(session, trunk))
-            if _trunk_conflicted(view, trunk) or _trunk_diverged_no_ff(view, trunk, origin_trunk, remote):
+            # A *conflicted* trunk makes any `{trunk}..` revset raise, so classify divergence FIRST
+            # and skip the survivor preview when diverged (it needs `--force` to resolve trunk before
+            # survivors can be reconciled). Without this guard the survivor loop's `view.log` crashed
+            # the dry run with a RevsetError instead of reporting the plan (round-09 rehearsal).
+            diverged = _trunk_conflicted(view, trunk) or _trunk_diverged_no_ff(view, trunk, origin_trunk, remote)
+            if diverged:
                 messages.append(f"trunk diverged from {remote} — needs `--force` (drops divergent local commits).")
             else:
                 # `behind` = forge commits not yet local; trunk only advances when origin is strictly
@@ -622,11 +642,14 @@ def _adopt_dry_run(session: Session, trunk: str, remote: str):
                     messages.append(f"{trunk} already current — would reconcile lanes only.")
             for lane in sorted(lanes_before - surviving):
                 messages.append(f"would retire (forge-merged, branch deleted): {lane}")
-            for lane in sorted(surviving):
-                if not view.log(f"{trunk}..{lane}"):
-                    messages.append(f"would retire (already an ancestor of trunk): {lane}")
-                else:
-                    messages.append(f"would rebase onto trunk (retire if emptied): {lane}")
+            if diverged:
+                messages.append("survivor-lane preview unavailable until trunk is resolved (`--force`).")
+            else:
+                for lane in sorted(surviving):
+                    if not view.log(f"{trunk}..{lane}"):
+                        messages.append(f"would retire (already an ancestor of trunk): {lane}")
+                    else:
+                        messages.append(f"would rebase onto trunk (retire if emptied): {lane}")
         finally:
             session.ws.restore_operation(op_before)  # undo the fetch's FF/prune → no net mutation
     return IntentResult(
@@ -708,6 +731,21 @@ def do_adopt(session: Session, *, force: bool, dry_run: bool):
                 notes.append(
                     f"forced {trunk} to {remote} — {len(dropped)} divergent local commit(s) dropped (undoable)."
                 )
+            else:
+                # Clean fast-forward: origin is strictly ahead (local trunk is an ancestor of the
+                # forge head). The fetch *usually* auto-FFs the local trunk bookmark, but that is not
+                # guaranteed when the colocated git refs / jj tracking are desynced (round-09 gap A) —
+                # and a silently-stale trunk is the worst failure. Advance trunk EXPLICITLY so it never
+                # depends on the fetch: when origin is strictly ahead and trunk hasn't already reached
+                # it, set the bookmark to the forge head (a no-op when the fetch already advanced it).
+                # The postcondition exempts `adopt` from the trunk-frozen rule, so this stands.
+                local_trunk_now = view.resolve(trunk).commit_id
+                if local_trunk_now != origin_trunk.commit_id and not view.log(
+                    f"{origin_trunk.commit_id}..{trunk}"  # ahead == 0: never move trunk backward
+                ):
+                    with session.ws.transaction("gitman:adopt-ff", auto_snapshot=False) as tx:
+                        tx.set_bookmark(trunk, f"{trunk}@{remote}")
+                    notes.append(f"advanced {trunk} → {origin_trunk.commit_id[:12]} (explicit fast-forward).")
 
             surviving = set(lane_names(session, trunk))
             for lane in sorted(lanes_before - surviving):  # pruned by the fetch (forge-merged + deleted)
@@ -752,7 +790,10 @@ def do_adopt(session: Session, *, force: bool, dry_run: bool):
         messages.append(f"rebased {len(rebased)} survivor(s) onto {trunk}: {', '.join(rebased)}.")
     if conflicts:
         joined = ", ".join(conflicts)
-        messages.append(f"{len(conflicts)} survivor(s) conflict — `gitman resolve`, then `gitman sync`: {joined}.")
+        messages.append(
+            f"{len(conflicts)} survivor(s) couldn't rebase onto {trunk} (left on prior base, worktree "
+            f"untouched): {joined} — `gitman sync` to rebase + resolve, or `gitman abandon` if already merged."
+        )
     notes.append("`gitman undo` reverts trunk + lanes; the forge merge and deleted remote branches are not restored.")
 
     return IntentResult(

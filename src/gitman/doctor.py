@@ -116,6 +116,26 @@ def run_doctor(repo_root: Path, config: GitmanConfig | None = None) -> DoctorRep
     else:
         checks.append(Check(WARN, "version-source", "no [version] source (version/release unavailable)"))
 
+    # colocated jj-bookmark ↔ git-ref drift (round-09 gap B): a stuck/leftover ref makes every
+    # later `git_export` raise, silently desyncing trunk. Surface it (warn, recoverable) so it
+    # can't hide; `gitman reconcile` re-syncs. Skipped when the repo isn't colocated/loadable.
+    if ws is not None and _is_colocated(repo_root):
+        try:
+            from gitman.state import colocated_ref_desync
+
+            mismatched, leftover = colocated_ref_desync(ws.head(), repo_root)
+        except Exception:  # noqa: BLE001 — a probe failure must not fail doctor
+            mismatched, leftover = [], []
+        if not mismatched and not leftover:
+            checks.append(Check(OK, "colocated-refs", "jj bookmarks ↔ git refs in sync"))
+        else:
+            bits = []
+            if mismatched:
+                bits.append(f"{len(mismatched)} bookmark(s) out of sync: {', '.join(n for n, _, _ in mismatched)}")
+            if leftover:
+                bits.append(f"{len(leftover)} leftover git ref(s): {', '.join(leftover)}")
+            checks.append(Check(WARN, "colocated-refs", "; ".join(bits) + " — run `gitman reconcile`"))
+
     return DoctorReport(checks)
 
 

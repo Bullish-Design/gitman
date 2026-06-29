@@ -46,6 +46,32 @@ never run the old raw-git reconcile dance (`rm -rf .jj` / `git reset --hard` —
 `adopt` replaces it). **Never** `gitman land` after a forge merge — it would mint a divergent
 local SHA from the forge's merge commit.
 
+A survivor lane whose changes **overlap** the adopted trunk can't auto-rebase: `adopt` reports it
+`CONFLICT`, leaves it **on its prior base with the worktree untouched** (never writes conflict
+markers into your files), and tells you to `gitman sync` it (rebase + resolve) or `gitman abandon`
+it if it was already merged.
+
+### Colocated `gh` quirks (jj keeps git HEAD detached)
+
+In a colocated jj repo git's `HEAD` is detached (parked at `@`'s parent), so some `gh`/`git`
+porcelain that assumes a checked-out branch misbehaves — **the forge action still succeeds**:
+
+- `gh pr merge … --delete-branch` prints `could not determine current branch: not on any branch`.
+  **The merge itself succeeds**; only the *local* branch-delete step fails. Delete the merged
+  **remote** branch explicitly instead:
+  ```
+  gh api -X DELETE repos/<owner>/<repo>/git/refs/heads/<lane>
+  ```
+  (or just merge in the web UI). Then `gitman adopt` retires the local lane.
+
+### Pushing trunk to `origin`
+
+There is **no `gitman push` for trunk** — by design, trunk reaches `origin` through the **forge
+loop** (`publish → PR → merge → adopt`), which is the sanctioned path. If you landed locally
+(`gitman land`) and must publish trunk without a PR, push it explicitly with jj's git bridge:
+`python -c 'from pyjutsu import Workspace; Workspace.load(".").git_push("origin","main")'` (never
+raw `git push`, which can ship a stale ref). Prefer the forge loop.
+
 **Keep `gitman.toml` and other VC wiring committed on trunk, never only inside a lane** — so
 retiring/abandoning a lane can never delete it from disk.
 
@@ -56,7 +82,10 @@ retiring/abandoning a lane can never delete it from disk.
 - **`gitman resolve [--list]`** surfaces conflicts. Conflicts are *not* blocking — keep
   working and resolve later (jj records conflicts in commits).
 - **`gitman reconcile`** is the one recovery path when `status` says OFF-CANONICAL: it
-  adopts stray changes into lanes (or `--abandon` discards them).
+  adopts stray changes into lanes (or `--abandon` discards them). It also heals **colocated
+  git-ref drift** — when `gitman doctor` warns `colocated-refs` (a lane's `refs/heads/<name>`
+  lags jj, or an abandoned lane left a leftover ref that makes `git_export` fail), `reconcile`
+  re-syncs the refs to jj and removes the leftovers.
 
 ## Versioning
 
