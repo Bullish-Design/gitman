@@ -15,6 +15,7 @@ A **lane** is one unit of work: a named bookmark (= git branch) on trunk, kept l
 ```
 gitman start <name>         # begin a lane (add --workspace to isolate it in its own dir)
 gitman switch <lane>         # resume a parked lane: move @ back onto an existing lane's change
+gitman split --paths <sel> --into <lane>   # carve entangled paths into a second sibling lane
 # ...edit files...
 gitman save -m "<message>"  # describe the current change
 gitman status               # see trunk + all lanes (canonical or off-canonical)
@@ -34,6 +35,15 @@ to strand an unnamed dirty `@` (save/start/abandon it first), and reports cleanl
 checked out in another `--workspace` (`cd` there to resume). `gitman start <existing>` now points
 here instead of dead-ending.
 
+`split` is the lane-**partition** verb: when two concerns entangle in one draft change,
+`gitman split --paths <sel>… --into <new-lane> [-m <desc>]` carves the selected paths onto a new
+sibling lane on trunk and leaves the remainder on the original — both independently
+landable/publishable. `@` stays on the **remainder** (original) lane; continue on the carved one
+with `gitman switch <new-lane>`. `--paths` selects **whole files** (exact path, a `dir/` prefix, or
+a glob like `'src/**'` — repeat `--paths` for several); hunk-level/partial-file split is deferred.
+It refuses (exit 3) a multi-change or non-trunk-rooted lane, a selector matching nothing, or one
+covering the whole change. One `gitman undo` reverts the whole split.
+
 ## Forge PRs: `publish → PR → merge → adopt`
 
 When you review/merge on the **forge** instead of landing locally — `gitman publish`, open a PR,
@@ -41,13 +51,25 @@ click **Merge** (squash / merge-commit / rebase all re-hash to a new SHA on `ori
 the local trunk falls behind. Pull it forward with **one command**:
 
 ```
-gh pr merge --squash --delete-branch    # (or via the web UI)
+gh pr merge --squash        # (or via the web UI); do NOT pass --delete-branch
 gitman adopt                # advance local trunk to origin/<trunk>, retire merged lanes,
                             #   rebase un-merged survivors; stays canonical, undoable
+# OPTIONAL cleanup, only AFTER adopt (the local lane is already retired → no tracking conflict):
+gh api -X DELETE repos/<owner>/<repo>/git/refs/heads/<lane>   # or delete in the web UI
 gitman adopt --dry-run      # preview the plan without mutating
 gitman adopt --force        # only if trunk diverged (un-pushed local lands + origin moved):
                             #   hard-set trunk to origin, dropping the un-pushed lands (undoable)
 ```
+
+**Order matters — delete the lane's remote branch *after* `adopt`, not before.** Deleting it first
+(e.g. `gh pr merge --delete-branch`) drops the remote branch of a still-tracked **local** lane,
+which leaves the local bookmark **conflicted** (`<lane>@origin` tracked-but-empty vs a live local
+target) instead of pruned — and both `gitman adopt` and `gitman reconcile` then raise
+`RevsetError: Name '<lane>' is conflicted` with no front door. `adopt` retires merged lanes by
+**content**, so let it run first; the remote-branch delete is optional cleanup afterward.
+*(Deferred hardening, not built yet: teaching `adopt`/`reconcile` to treat a conflicted **lane**
+bookmark the way they already treat a conflicted **trunk** — retire-by-content if its tip is in
+trunk, else surface cleanly.)*
 
 `adopt` retires forge-merged lanes by **content** (works across squash/merge/rebase), so you
 never run the old raw-git reconcile dance (`rm -rf .jj` / `git reset --hard` — **deprecated**;
@@ -65,12 +87,15 @@ In a colocated jj repo git's `HEAD` is detached (parked at `@`'s parent), so som
 porcelain that assumes a checked-out branch misbehaves — **the forge action still succeeds**:
 
 - `gh pr merge … --delete-branch` prints `could not determine current branch: not on any branch`.
-  **The merge itself succeeds**; only the *local* branch-delete step fails. Delete the merged
-  **remote** branch explicitly instead:
+  **The merge itself succeeds**; only the *local* branch-delete step fails. Don't reach for the
+  remote-branch delete to compensate: run `gitman adopt` first (it retires the local lane by
+  content), then — **optionally, afterward** — delete the merged **remote** branch:
   ```
-  gh api -X DELETE repos/<owner>/<repo>/git/refs/heads/<lane>
+  gitman adopt                                                  # retires the local lane first
+  gh api -X DELETE repos/<owner>/<repo>/git/refs/heads/<lane>   # optional, AFTER adopt (or web UI)
   ```
-  (or just merge in the web UI). Then `gitman adopt` retires the local lane.
+  Deleting the remote branch *before* `adopt` leaves a conflicted local bookmark that wedges both
+  `adopt` and `reconcile` (see the order note above).
 
 ### Pushing trunk to `origin`
 

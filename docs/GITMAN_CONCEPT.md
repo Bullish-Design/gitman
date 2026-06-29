@@ -123,7 +123,10 @@ A lane is always in exactly one of three states — **draft** (being edited), **
 (pushed / PR open), **landed/abandoned** (terminal). That bounds everything `status` must
 render. When `@` leaves a lane without ending it (a sibling `start` in the same workspace, a
 landed neighbour), **`switch <lane>`** moves `@` back onto an existing lane to resume it —
-navigation *between* lanes, never a trunk mutation.
+navigation *between* lanes, never a trunk mutation. And when two concerns entangle in one draft,
+**`split --paths <sel> --into <lane>`** divides that change into two sibling lanes on trunk (the
+carved paths onto a new lane, the remainder on the original) — a partition *within* the lane set,
+also never a trunk mutation.
 
 ## 6. Architecture
 
@@ -170,14 +173,15 @@ Base deps kept lean: `pydantic`, `typer`. `jj` and `git` binaries come from deve
 
 ## 7. Intent vocabulary — v1
 
-Thirteen intents. Lane lifecycle verbs (`start`/`land`/`abandon`) are the additions the lane
-model requires; everything else is deferred until friction proves it.
+Fourteen intents. Lane lifecycle verbs (`start`/`switch`/`split`/`land`/`abandon`) are the additions
+the lane model requires; everything else is deferred until friction proves it.
 
 | Intent | Signature | What it does | Underneath |
 |---|---|---|---|
 | `status` | `gitman status [--json]` | Canonical/off-canonical report: trunk + all lanes. | `jj log`/`op log`/`workspace list` (+git numstat) |
 | `start` | `gitman start <name> [--workspace]` | Create a lane (new change on trunk + bookmark `<name>`); `--workspace` isolates it. | `jj new <trunk>` + `jj bookmark create` (+ `jj workspace add`) |
 | `switch` | `gitman switch <lane>` | Move `@` onto an existing lane's change to resume it (navigation, never mutates trunk). Refuses to strand an unnamed dirty `@`; reports a lane checked out in another workspace. | `jj edit <lane>` |
+| `split` | `gitman split --paths <sel>… --into <lane> [-m <desc>]` | Partition the current lane's single change into two sibling lanes on trunk: the carved paths onto new lane `<into>`, the remainder on the original. `@` stays on the remainder; never mutates trunk. Path-scoped (whole files); refuses a multi-change/non-trunk-rooted lane, an empty match, or a whole-change match. | `jj new <trunk>` + `jj restore` ×2 + bookmark |
 | `save` | `gitman save [-m <desc>]` | Describe the current lane's change. | `jj describe` |
 | `sync` | `gitman sync [--all]` | Fetch trunk + rebase the current lane (or `--all` lanes) onto it. | `jj git fetch` + `jj rebase` |
 | `publish` | `gitman publish` | Push the current lane; branch = lane name. Verify hook first. | `jj git push` (forge extra: + open/update PR) |
@@ -195,8 +199,9 @@ blocked / off-canonical) · `2` infra/config (no remote, auth, jj/git missing, o
 devenv, no version source) · `3` invalid usage.
 
 **Deferred:** the forge extra's PR `land`/`pr-status`, stacked PRs, `shape`
-(squash/split/reorder), `switch` (parallel lanes use workspaces instead), pre-release
-version metadata, pluggable forges.
+(squash/reorder + **hunk-level/interactive** split — the path-scoped `split` above shipped; only
+partial-file selection needs a native pyjutsu `split` binding), pre-release version metadata,
+pluggable forges.
 
 ## 8. Lane & workspace flow (parallel agents)
 
@@ -543,8 +548,8 @@ the eleven intents (§7) incl. lane lifecycle + workspaces (§8); `RepoState` + 
 (§16); the agent skill (§17); `init`/`doctor`/`reconcile`; devenv boundary.
 
 **Deferred until dogfooding demands it:** the forge extra (PR `publish`/`land`/`pr-status`),
-stacked PRs, `shape` (squash/split/reorder), `switch`, pre-release/build version metadata,
-pluggable forges (GitLab/Gitea).
+stacked PRs, `shape` (squash/reorder + hunk-level/interactive split — path-scoped `split` shipped),
+pre-release/build version metadata, pluggable forges (GitLab/Gitea).
 
 ## 20. Resolved questions
 

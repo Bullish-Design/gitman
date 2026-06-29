@@ -5,6 +5,7 @@ and the per-intent migrations onto pyjutsu (canonical_tx / canonical_guard). See
 
 from __future__ import annotations
 
+import fnmatch
 import os
 import shutil
 import subprocess
@@ -266,6 +267,109 @@ def do_switch(session: Session, name: str):
         outcome="SWITCHED",
         lane=name,
         messages=[f"switched @ onto lane '{name}'."],
+        undo_command="gitman undo",
+        state=capture_state(session),
+    )
+
+
+def _match_paths(patterns: list[str], changed: list[str]) -> list[str]:
+    """Resolve `--paths` selectors against a change's exact changed-file set.
+
+    `tx.restore`'s path matcher is jj's `FilesMatcher` — **exact repo-relative files only** (a bare
+    directory or a glob matches nothing; verified by probe). So `split` does the ergonomic matching
+    itself: each selector matches a changed path if it equals it, is a directory prefix of it
+    (`src/foo` ⊃ `src/foo/bar.py`), or globs it (`fnmatch`, so `*`/`?`/`[]`/`**` all work). Returns
+    the matched paths in `changed`'s order (deterministic), de-duplicated by first match.
+    """
+    matched: list[str] = []
+    for path in changed:
+        for pat in patterns:
+            prefix = pat.rstrip("/")
+            if path == prefix or path.startswith(prefix + "/") or fnmatch.fnmatch(path, pat):
+                matched.append(path)
+                break
+    return matched
+
+
+def do_split(session: Session, paths: list[str], into: str, message: str | None):
+    """Partition the current lane's single change into two **sibling** lanes on trunk.
+
+    The last missing core lane op: `start` opens, `switch` navigates, `save` describes,
+    `land`/`abandon` end, `sync` rebases — but nothing **divides** a change once two concerns
+    entangle in one working copy. `split` carves the `--paths` subset onto a new `--into` lane and
+    leaves the remainder on the original, both children of trunk (independently landable). Composes
+    `tx.new` + `tx.restore` only — no new pyjutsu surface, no raw jj/git.
+
+    Algorithm (one canonical_tx → one undo; never moves trunk, so the trunk guard passes unmodified):
+    create an empty child of trunk, bookmark it `into` immediately (so it isn't auto-abandoned and
+    can be referenced by a rewrite-following name), fill it with the lane change `C`'s full content,
+    then revert the *remainder* paths in it (→ carved-only); finally revert the *carved* paths in `C`
+    (→ remainder-only) and put `@` back on the original lane. `restore` is referenced by bookmark /
+    change-id throughout, never by a returned commit-id (those re-resolve to the stale pre-rewrite
+    commit in the immutable store). `@` stays on the remainder lane; the report points at
+    `gitman switch <into>` to continue on the carved lane (composes round 10).
+    """
+    from gitman.invariants import canonical_tx
+    from gitman.lanes import ensure_unique, require_current_lane
+    from gitman.models import IntentResult
+    from gitman.state import capture_state
+
+    trunk = require_trunk(session.config)
+    if not paths:
+        raise GitmanError("`gitman split` needs at least one `--paths` selector.", exit_code=3)
+
+    with canonical_tx(session, "split") as tx:
+        # Pre-tx facts: while the tx is open, `session.view()` is still the post-snapshot, pre-tx
+        # head — exactly the before-state these guards need (we read all of it before mutating).
+        view = session.view()
+        lane = require_current_lane(session, trunk)
+        ensure_unique(session, trunk, into)  # exit 3 (+ round-10 `gitman switch` hint) if `into` exists
+        trunk_id = view.resolve(trunk).commit_id
+        wc = view.working_copy()  # the lane's change `C` (its bookmark sits on @)
+        c_change, c_id = wc.change_id, wc.commit_id
+
+        # Precondition: exactly one change, rooted directly on trunk. A stacked/deeper-rooted lane
+        # would need descendant rebasing — out of MVP scope; refuse clearly (exit 3).
+        lane_range = view.log(f"{trunk}..{lane}")
+        if len(lane_range) != 1 or lane_range[0].parent_ids != [trunk_id]:
+            raise GitmanError(
+                f"`gitman split` needs a lane with exactly one change rooted on {trunk}; "
+                f"lane '{lane}' has {len(lane_range)} change(s) (or isn't rooted on trunk). "
+                "Land/abandon the stack down to one change first.",
+                exit_code=3,
+            )
+
+        changed = [f.path for f in view.diff(lane).files]
+        carved = _match_paths(paths, changed)
+        if not carved:
+            raise GitmanError(f"`--paths` matched no changes in lane '{lane}'.", exit_code=3)
+        remainder = [p for p in changed if p not in set(carved)]
+        if not remainder:
+            raise GitmanError(
+                "`--paths` covers the whole change — use `gitman start`/rename, not split.",
+                exit_code=3,
+            )
+
+        # Build the two siblings. Reference the carved lane by its bookmark `into` (rewrite-follows,
+        # never GC'd) and `C` by its change-id `c_change` (stable; the original bookmark follows it).
+        tx.new([trunk_id])  # @ → A, an empty child of trunk
+        tx.create_bookmark(into, "@")  # name + protect A before @ leaves it
+        tx.restore(into, from_=c_id)  # A := C's full content
+        tx.restore(into, from_=trunk_id, paths=remainder)  # A := carved-only (revert the remainder)
+        if message:
+            tx.describe(into, message)
+        tx.restore(c_change, from_=trunk_id, paths=carved)  # C := remainder-only (revert the carved)
+        tx.edit(c_change)  # @ back onto the remainder/original lane
+
+    return IntentResult(
+        intent="split",
+        outcome="SPLIT",
+        lane=lane,
+        messages=[
+            f"carved {len(carved)} path(s) onto new lane '{into}'; "
+            f"{len(remainder)} path(s) remain on '{lane}'."
+        ],
+        notes=[f"`gitman switch {into}` to continue on the carved lane."],
         undo_command="gitman undo",
         state=capture_state(session),
     )

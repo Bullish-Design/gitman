@@ -130,6 +130,21 @@ def switch(
 
 
 @app.command()
+def split(
+    paths: Annotated[
+        list[str],
+        typer.Option("--paths", help="Repo-relative file path(s)/dir-prefix(es)/glob(s) to carve out (repeatable)."),
+    ],
+    into: Annotated[str, typer.Option("--into", help="Name of the new lane to carve the paths onto.")],
+    message: Annotated[str | None, typer.Option("-m", "--message", help="Describe the carved lane.")] = None,
+) -> None:
+    """Partition the current lane's change into two sibling lanes: carved paths onto <into>, rest stays."""
+    from gitman.core import do_split
+
+    _finish_intent(do_split(_session(), paths, into, message))
+
+
+@app.command()
 def save(
     message: Annotated[str | None, typer.Option("-m", "--message", help="Describe the current change.")] = None,
 ) -> None:
