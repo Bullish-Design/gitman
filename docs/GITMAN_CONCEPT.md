@@ -121,7 +121,9 @@ start ──▶ draft ──(edit · save · sync · resolve)──▶ published
 
 A lane is always in exactly one of three states — **draft** (being edited), **published**
 (pushed / PR open), **landed/abandoned** (terminal). That bounds everything `status` must
-render.
+render. When `@` leaves a lane without ending it (a sibling `start` in the same workspace, a
+landed neighbour), **`switch <lane>`** moves `@` back onto an existing lane to resume it —
+navigation *between* lanes, never a trunk mutation.
 
 ## 6. Architecture
 
@@ -168,13 +170,14 @@ Base deps kept lean: `pydantic`, `typer`. `jj` and `git` binaries come from deve
 
 ## 7. Intent vocabulary — v1
 
-Twelve intents. Lane lifecycle verbs (`start`/`land`/`abandon`) are the additions the lane
+Thirteen intents. Lane lifecycle verbs (`start`/`land`/`abandon`) are the additions the lane
 model requires; everything else is deferred until friction proves it.
 
 | Intent | Signature | What it does | Underneath |
 |---|---|---|---|
 | `status` | `gitman status [--json]` | Canonical/off-canonical report: trunk + all lanes. | `jj log`/`op log`/`workspace list` (+git numstat) |
 | `start` | `gitman start <name> [--workspace]` | Create a lane (new change on trunk + bookmark `<name>`); `--workspace` isolates it. | `jj new <trunk>` + `jj bookmark create` (+ `jj workspace add`) |
+| `switch` | `gitman switch <lane>` | Move `@` onto an existing lane's change to resume it (navigation, never mutates trunk). Refuses to strand an unnamed dirty `@`; reports a lane checked out in another workspace. | `jj edit <lane>` |
 | `save` | `gitman save [-m <desc>]` | Describe the current lane's change. | `jj describe` |
 | `sync` | `gitman sync [--all]` | Fetch trunk + rebase the current lane (or `--all` lanes) onto it. | `jj git fetch` + `jj rebase` |
 | `publish` | `gitman publish` | Push the current lane; branch = lane name. Verify hook first. | `jj git push` (forge extra: + open/update PR) |

@@ -51,4 +51,7 @@ def ensure_unique(session: Session, trunk: str, name: str) -> None:
     if name == trunk:
         raise GitmanError(f"lane name '{name}' collides with trunk.", exit_code=3)
     if name in lane_names(session, trunk) | {trunk}:
-        raise GitmanError(f"lane '{name}' already exists.", exit_code=3)
+        raise GitmanError(
+            f"lane '{name}' already exists — use `gitman switch {name}` to resume it.",
+            exit_code=3,
+        )

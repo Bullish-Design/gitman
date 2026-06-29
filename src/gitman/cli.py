@@ -120,6 +120,16 @@ def start(
 
 
 @app.command()
+def switch(
+    name: Annotated[str, typer.Argument(help="The existing lane to resume.")],
+) -> None:
+    """Move @ onto an existing lane's change to resume it."""
+    from gitman.core import do_switch
+
+    _finish_intent(do_switch(_session(), name))
+
+
+@app.command()
 def save(
     message: Annotated[str | None, typer.Option("-m", "--message", help="Describe the current change.")] = None,
 ) -> None:
