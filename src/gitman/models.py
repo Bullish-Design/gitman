@@ -72,7 +72,7 @@ class Lane(BaseModel):
 
     name: str  # = bookmark = git branch (readable)
     state: LaneState = LaneState.draft
-    head: Change
+    head: Change | None = None  # None for a *conflicted* lane bookmark — it names no single commit
     workspace: str | None = None  # isolated workspace dir, if any
     conflict: bool = False
     ahead: int = 0  # changes vs trunk

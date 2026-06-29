@@ -85,6 +85,32 @@ def _trunk_conflicted(view: RepoView, trunk: str) -> bool:
     return any(b.name == trunk and b.remote is None and b.conflicted for b in view.bookmarks())
 
 
+def _conflicted_lanes(view: RepoView, trunk: str) -> dict[str, list[str]]:
+    """`{lane_name: target_ids}` for every *conflicted* local lane bookmark (≠ trunk).
+
+    A lane bookmark goes conflicted when its local position and its remote-tracking position
+    diverge (the classic shape: a forge PR merge advances `origin/<lane>` with a merge commit the
+    local bookmark never saw). Resolving such a name in a revset raises `RevsetError: Name is
+    conflicted`, which used to crash `capture_state` — and therefore the precheck of *every* guarded
+    intent (issue 11). Read it the same structural way `_trunk_conflicted` reads trunk: off
+    `view.bookmarks()`, never `resolve()`. The two `target_ids` are the lane's two sides."""
+    return {
+        b.name: list(b.target_ids)
+        for b in view.bookmarks()
+        if b.remote is None and b.name != trunk and b.conflicted
+    }
+
+
+def _remote_target(view: RepoView, name: str) -> str | None:
+    """The single commit id of the `<name>@<remote>` tracking row (the lane's *pushed* side), if a
+    real remote (not the colocated `git` backing) tracks it. The remote-tracking row is never
+    conflicted, so it resolves structurally even when the local bookmark `name` does not."""
+    for b in view.bookmarks():
+        if b.name == name and b.remote not in (None, "git") and len(b.target_ids) == 1:
+            return b.target_ids[0]
+    return None
+
+
 def _trunk_remote_relation(session: Session, view: RepoView, trunk: str) -> tuple[int, int, str | None]:
     """(behind, ahead, remote) of the local trunk bookmark vs its `<trunk>@<remote>` row.
 
@@ -228,8 +254,25 @@ def capture_state(session: Session) -> RepoState:
     wc = view.working_copy()
     current_lane = next((b for b in wc.bookmarks if b != trunk_name), None)
 
+    # A conflicted LANE bookmark is the lane-level analogue of a conflicted trunk: its name can't be
+    # resolved as a revset, so it must be read structurally and reported off-canonical (recovery is
+    # `gitman reconcile`), never resolved — else the lane loop below crashes the whole capture, and
+    # with it the precheck of every guarded intent (issue 11). Detected once, up front.
+    conflicted = _conflicted_lanes(view, trunk_name)
+
     lanes: list[Lane] = []
     for name in sorted(local_names - {trunk_name}):
+        if name in conflicted:
+            lanes.append(
+                Lane(
+                    name=name,
+                    state=LaneState.published if name in published else LaneState.draft,
+                    head=None,  # two-sided — it names no single commit
+                    workspace=name if name in workspace_names else None,
+                    conflict=True,
+                )
+            )
+            continue
         head = view.resolve(name)
         change = _change(head, view.diff_stat(name))
         range_changes = view.log(f"{trunk_name}..{name}")
@@ -267,10 +310,18 @@ def capture_state(session: Session) -> RepoState:
     recent_ops = [_op(o) for o in view.operations(10)]
 
     strays = find_strays(view, trunk_name)
-    off_canonical = None
+    reasons: list[str] = []
+    if conflicted:
+        # No "diverged" here, by design: render keys the *trunk*-divergence recovery hint on that
+        # word, whereas a conflicted lane's recovery is `gitman reconcile`, not `adopt`.
+        reasons.append(
+            f"lane(s) {', '.join(sorted(conflicted))} are conflicted with their pushed branch "
+            f"(likely forge-merged) — run `gitman reconcile`."
+        )
     if strays:
         ids = ", ".join(c.change_id for c in strays)
-        off_canonical = f"change(s) {ids} belong to no lane (edited outside Gitman?)."
+        reasons.append(f"change(s) {ids} belong to no lane (edited outside Gitman?).")
+    off_canonical = " ".join(reasons) if reasons else None
 
     notes: list[str] = []
     if session.is_stale():

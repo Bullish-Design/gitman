@@ -40,12 +40,17 @@ def _remote_relation(trunk) -> str:
 def _lane_line(lane: Lane, current: str | None) -> str:
     here = lane.name == current
     marker = "*" if here else " "
-    plural = "change" if lane.change_count == 1 else "changes"
-    counts = f"{lane.change_count} {plural}, {_diff_str(lane.insertions, lane.deletions)}"
+    # A conflicted lane bookmark (head is None) names no single commit — show the divergence, not a
+    # diff summary, and point at the recovery verb.
+    if lane.head is None:
+        counts = "CONFLICTED (diverged from origin — `gitman reconcile`)"
+    else:
+        plural = "change" if lane.change_count == 1 else "changes"
+        counts = f"{lane.change_count} {plural}, {_diff_str(lane.insertions, lane.deletions)}"
     extra = []
     if lane.workspace:
         extra.append(f"ws {lane.workspace}")
-    if lane.conflict:
+    if lane.conflict and lane.head is not None:
         extra.append("CONFLICT (not blocked — resolve later)")
     if lane.pr:
         extra.append(f"PR #{lane.pr.number}")

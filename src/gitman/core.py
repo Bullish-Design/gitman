@@ -52,6 +52,14 @@ def map_pyjutsu_error(exc: PyjutsuError) -> GitmanError:
     if isinstance(exc, GitError):
         return GitmanError(f"git operation failed: {exc}", exit_code=1)
     if isinstance(exc, RevsetError):
+        # A conflicted bookmark name ("Name `X` is conflicted") is a recoverable VC state, not a bad
+        # revset typed by the user — route it to exit 1 + the recovery verb (issue 11 backstop; the
+        # structural reads in capture_state mean the common paths no longer reach here).
+        if "is conflicted" in str(exc):
+            return GitmanError(
+                f"a bookmark diverged from its pushed branch ({exc}) — run `gitman reconcile`.",
+                exit_code=1,
+            )
         return GitmanError(f"bad revision/revset: {exc}", exit_code=3)
     if isinstance(exc, (WorkspaceError, BackendError, WorkingCopyError, JjCliError)):
         return GitmanError(f"infra/config: {exc}", exit_code=2)
@@ -707,6 +715,64 @@ def _retire_lane(session: Session, trunk: str, lane: str, published_before: set[
             notes.append(f"remote branch '{lane}' not deleted (delete it manually): {exc}")
 
 
+def _resolve_conflicted_lane(
+    session: Session,
+    trunk: str,
+    lane: str,
+    *,
+    abandon: bool,
+    notes: list[str],
+) -> str:
+    """Clear a *conflicted* lane bookmark structurally (issue 11) and return 'retired' or 'resolved'.
+
+    A conflicted lane names two commits (its local side + its diverged pushed side), so its name
+    can't be resolved as a revset — `set_bookmark`/`delete_bookmark` act on it structurally, the way
+    `do_adopt`'s `--force` resolves a conflicted *trunk*. This is `reconcile`'s helper (the sole verb
+    that clears conflicted lanes); the policy is work-preserving and undoable:
+
+      * `abandon`, or the lane is fully forge-merged (pushed side ∈ trunk AND no extra local
+        commits) → **retire**: abandon any local-only commits the merge superseded (by commit-id —
+        a divergent change-id is ambiguous), delete the bookmark. Leaves no strays.
+      * otherwise → **resolve**: pin the bookmark to its local side so the *name* resolves again,
+        turning the conflict into an ordinary ahead/behind the user can `sync`/`publish`/`abandon`.
+        Never silently drops un-pushed local work.
+
+    The pushed (remote-tracking) side is left on `<lane>@<remote>`: with the local bookmark resolved
+    there's nothing left to conflict against, and a still-live remote branch is harmless (a later
+    `git fetch --prune` or forge delete clears it). reconcile stays a *local* recovery — it never
+    pushes a branch deletion (that's `adopt`/`land`'s forge job).
+    """
+    from gitman.state import _conflicted_lanes, _remote_target
+
+    view = session.view()
+    targets = _conflicted_lanes(view, trunk).get(lane, [])
+    if not targets:  # not actually conflicted — nothing to clear (defensive; caller pre-checks)
+        return "resolved"
+    remote_tip = _remote_target(view, lane)
+    local_tip = next((t for t in targets if t != remote_tip), targets[0])
+    local_ahead = view.log(f"{trunk}..{local_tip}")
+    fully_merged = remote_tip is not None and not view.log(f"{trunk}..{remote_tip}") and not local_ahead
+
+    with session.ws.transaction("gitman:reconcile-conflicted-lane", auto_snapshot=False) as tx:
+        if abandon or fully_merged:
+            for c in local_ahead:  # empty in the common forge-merge shape (local side ∈ trunk)
+                tx.abandon(c.commit_id)
+            tx.delete_bookmark(lane)
+            action = "retired"
+        else:
+            tx.set_bookmark(lane, local_tip)  # commit-id arg resolves even when the name can't
+            action = "resolved"
+
+    if action == "retired":
+        notes += _cleanup_workspace(session, lane)
+        notes.append(f"retired conflicted lane '{lane}'.")
+    else:
+        notes.append(
+            f"resolved conflicted lane '{lane}' to its local tip — `gitman sync` to rebase onto {trunk}."
+        )
+    return action
+
+
 class _SurvivorConflict(Exception):
     """Internal sentinel: roll back a conflicting survivor rebase tx without committing it."""
 
@@ -735,7 +801,22 @@ def _reconcile_lane_against_adopted_trunk(
         sync`, or abandons it if the conflict is because the lane is an already-merged duplicate.
       * post-rebase range all empty  → merged → retire (abandon the emptied commits + delete bookmark).
       * otherwise                    → genuine survivor → keep the rebase onto the new trunk.
+
+    A lane the fetch left *conflicted* (its pushed side diverged — the report's scenario) is NOT
+    rebased here: rebasing a lane that shares an un-merged ancestor with its diverged pushed side
+    drags that side along and orphans it as a stray (which the postcondition then reverts). Clearing
+    a conflicted bookmark is `reconcile`'s job (it can retire it or preserve un-pushed work without
+    orphaning a side), so refuse with a clean pointer and let the guard roll the adopt back (issue 11).
     """
+    from gitman.state import _conflicted_lanes
+
+    if lane in _conflicted_lanes(session.view(), trunk):
+        raise GitmanError(
+            f"lane '{lane}' diverged from its pushed branch (conflicted bookmark) — run "
+            f"`gitman reconcile` to retire/resolve it, then re-run `gitman adopt`.",
+            exit_code=1,
+        )
+
     if not session.view().log(f"{trunk}..{lane}"):  # merge-commit: already an ancestor of trunk
         _retire_lane(session, trunk, lane, published_before, notes)
         retired.append(lane)
@@ -771,7 +852,7 @@ def _adopt_dry_run(session: Session, trunk: str, remote: str):
     from gitman.invariants import repo_lock
     from gitman.lanes import lane_names
     from gitman.models import IntentResult
-    from gitman.state import _trunk_conflicted, capture_state
+    from gitman.state import _conflicted_lanes, _trunk_conflicted, capture_state
 
     messages: list[str] = []
     with repo_lock(session.repo_root):
@@ -809,8 +890,11 @@ def _adopt_dry_run(session: Session, trunk: str, remote: str):
             if diverged:
                 messages.append("survivor-lane preview unavailable until trunk is resolved (`--force`).")
             else:
+                conflicted_lanes = _conflicted_lanes(view, trunk)
                 for lane in sorted(surviving):
-                    if not view.log(f"{trunk}..{lane}"):
+                    if lane in conflicted_lanes:  # name unresolvable — don't `view.log` it (issue 11)
+                        messages.append(f"conflicted lane — run `gitman reconcile` first: {lane}")
+                    elif not view.log(f"{trunk}..{lane}"):
                         messages.append(f"would retire (already an ancestor of trunk): {lane}")
                     else:
                         messages.append(f"would rebase onto trunk (retire if emptied): {lane}")
