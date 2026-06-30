@@ -55,24 +55,35 @@ def _heal_colocated_refs(session: Session) -> list[str]:
 
 
 def do_reconcile(session: Session, abandon_: bool):
+    from gitman.core import _resolve_conflicted_lane
     from gitman.invariants import repo_lock, write_undo_checkpoint
     from gitman.models import IntentResult
-    from gitman.state import capture_state, colocated_ref_desync, find_strays
+    from gitman.state import _conflicted_lanes, capture_state, colocated_ref_desync, find_strays
 
     trunk = require_trunk(session.config)
     with repo_lock(session.repo_root):
         view = session.fresh_view()  # snapshot dirty @ first
+        conflicted = _conflicted_lanes(view, trunk)
         strays = find_strays(view, trunk)
         mismatched, leftover = colocated_ref_desync(view, session.repo_root)
-        if not strays and not mismatched and not leftover:
+        if not conflicted and not strays and not mismatched and not leftover:
             return IntentResult(
                 intent="reconcile", outcome="CLEAN", messages=["already canonical — no strays, refs in sync."]
             )
 
         op_before = session.ws.head_operation()
-        ref_notes = _heal_colocated_refs(session)  # gap B: heal git-ref drift first
-        existing = {b.name for b in view.bookmarks() if b.remote is None}
         actions: list[str] = []
+        # Conflicted lanes FIRST: clearing them is what unwedges the repo (issue 11), and retiring
+        # one can orphan local commits, so strays must be (re-)scanned afterwards. Local recovery —
+        # don't push-delete the remote branch here (that's a forge action; `adopt` owns it).
+        if conflicted:
+            for lane in sorted(conflicted):
+                _resolve_conflicted_lane(session, trunk, lane, abandon=abandon_, notes=actions)
+            view = session.fresh_view()  # resolving may have orphaned local commits → re-scan
+            strays = find_strays(view, trunk)
+
+        ref_notes = _heal_colocated_refs(session)  # gap B: heal git-ref drift (also clears retired refs)
+        existing = {b.name for b in session.view().bookmarks() if b.remote is None}
         if strays:
             with session.ws.transaction("gitman:reconcile", auto_snapshot=False) as tx:
                 for change in strays:

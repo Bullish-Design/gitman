@@ -136,6 +136,28 @@ def run_doctor(repo_root: Path, config: GitmanConfig | None = None) -> DoctorRep
                 bits.append(f"{len(leftover)} leftover git ref(s): {', '.join(leftover)}")
             checks.append(Check(WARN, "colocated-refs", "; ".join(bits) + " — run `gitman reconcile`"))
 
+    # Conflicted lane bookmark (issue 11): a lane whose local + pushed positions diverged (typically a
+    # forge PR merge) names two commits, so any revset on it raises and used to wedge every command.
+    # `colocated_ref_desync` deliberately *skips* conflicted bookmarks, so it can't see this — a
+    # dedicated structural read closes the doctor-vs-status blind spot that reported HEALTHY while the
+    # repo was bricked. WARN (recoverable): `gitman reconcile` retires/resolves it.
+    if ws is not None and cfg.trunk:
+        try:
+            from gitman.state import _conflicted_lanes
+
+            conflicted = sorted(_conflicted_lanes(ws.head(), cfg.trunk))
+        except Exception:  # noqa: BLE001 — a probe failure must not fail doctor
+            conflicted = []
+        if conflicted:
+            checks.append(
+                Check(
+                    WARN,
+                    "lane-conflicts",
+                    f"lane bookmark(s) conflicted (diverged from origin): {', '.join(conflicted)} "
+                    "— run `gitman reconcile`",
+                )
+            )
+
     return DoctorReport(checks)
 
 
