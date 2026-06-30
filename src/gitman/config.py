@@ -14,8 +14,11 @@ from pydantic import BaseModel, Field
 
 
 class LanesConfig(BaseModel):
-    # Where `--workspace` lanes live; {repo}/{lane} expand. Default: sibling dir.
-    workspace_dir: str = "../{repo}-{lane}"
+    # Where `--workspace` lanes live; {repo}/{lane} expand. Default: a hidden, self-ignored
+    # in-repo dir (`.worktrees/<lane>`) — keeps each ~140 MB checkout *inside* the repo (not a
+    # sibling that looks like a standalone fleet clone) and out of the small `.gitman/` control
+    # dir. {repo} stays supported for an explicit sibling override (`../{repo}-{lane}`).
+    workspace_dir: str = ".worktrees/{lane}"
     always_workspace: bool = False
 
 
