@@ -3,7 +3,8 @@
 Gitman is the single version-control interface for a repo: an agent (or you) runs a small
 set of **intents** and gets back compact, structured reports instead of raw `jj`/`git`
 porcelain. This guide gets Gitman working in *another* repo. For the full design see
-[`GITMAN_CONCEPT.md`](GITMAN_CONCEPT.md); for the daily loop see the per-repo skill that
+[`GITMAN_CONCEPT.md`](GITMAN_CONCEPT.md); new to jujutsu, see
+[`JUJUTSU_PRIMER.md`](JUJUTSU_PRIMER.md); for the daily loop see the per-repo skill that
 `gitman init` scaffolds at `.claude/skills/gitman/SKILL.md`.
 
 ## Prerequisites

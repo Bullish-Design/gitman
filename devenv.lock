@@ -191,7 +191,7 @@
     "pyjutsu": {
       "flake": false,
       "locked": {
-        "ref": "refs/heads/docs/11-split-binding-issue",
+        "ref": "refs/heads/feat/11-tx-split",
         "type": "git",
         "url": "file:///home/andrew/Documents/Projects/Pyjutsu"
       },

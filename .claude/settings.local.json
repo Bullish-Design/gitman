@@ -18,7 +18,12 @@
       "Bash(find / -name \"*.pyi\" -path \"*pyjutsu*\")",
       "Bash(command -v gh)",
       "Bash(echo \"gh: $\\(command -v gh || echo MISSING\\)\")",
-      "Bash(gh auth *)"
+      "Bash(gh auth *)",
+      "Bash(grep -v \"^$\")",
+      "Bash(git -C ../Pyjutsu log --oneline -15)",
+      "Bash(grep -n \"^| \\\\`gitman\\\\|^### \\\\|intent\" docs/GITMAN_CONCEPT.md)",
+      "Bash(kill -0 %1)",
+      "Bash(break)"
     ]
   }
 }

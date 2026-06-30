@@ -15,7 +15,9 @@ model (auto-snapshot working copy, first-class conflicts, total undo via the ope
 log, stable change IDs, workspaces) is what makes that safety real rather than guardrails
 over a sharp tool.
 
-See [`docs/GITMAN_CONCEPT.md`](docs/GITMAN_CONCEPT.md) for the full design.
+See [`docs/GITMAN_CONCEPT.md`](docs/GITMAN_CONCEPT.md) for the full design. New to
+jujutsu? [`docs/JUJUTSU_PRIMER.md`](docs/JUJUTSU_PRIMER.md) is a git-user's guide to the
+jj model and how Gitman rides on it.
 
 ## The lane model
 
