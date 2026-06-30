@@ -25,7 +25,15 @@ def _stray_revset(trunk: str) -> str:
     # Changes descended from trunk, not in any bookmark's ancestry (local OR remote — so
     # fetched non-lane remote branches don't count), excluding the current (often empty)
     # working-copy change. A non-empty match means "edited outside Gitman".
-    return f"({trunk}..) ~ ::(bookmarks() | remote_bookmarks()) ~ @"
+    #
+    # Tagged commits are *intentional* history (releases / bisect anchors), never "edited
+    # outside Gitman" — so exclude their ancestry too. `tags()` is the standard jj revset
+    # (it evaluates through pyjutsu/jj-lib's resolver, not just the builder-bound funcs);
+    # gitman's own release tags (tags.py) sit on lane heads already covered by bookmarks(),
+    # so this only suppresses *off-lane* tagged commits. Accepted false-negative: an agent
+    # that both strays AND tags its own scratch off-lane (negligible — a deliberate tag is a
+    # strong "intentional, not stray" signal).
+    return f"({trunk}..) ~ ::(bookmarks() | remote_bookmarks() | tags()) ~ @"
 
 
 def _is_colocated(repo_root: Path) -> bool:
@@ -319,7 +327,9 @@ def capture_state(session: Session) -> RepoState:
             f"(likely forge-merged) — run `gitman reconcile`."
         )
     if strays:
-        ids = ", ".join(c.change_id for c in strays)
+        # Tag each with its short commit_id: two divergent sides share a change_id, so change_id
+        # alone would print the same label twice and hide the divergence (issue 06 §G2).
+        ids = ", ".join(f"{c.change_id} ({c.commit_id[:8]})" for c in strays)
         reasons.append(f"change(s) {ids} belong to no lane (edited outside Gitman?).")
     off_canonical = " ".join(reasons) if reasons else None
 

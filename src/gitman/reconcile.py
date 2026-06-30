@@ -2,7 +2,8 @@
 
 Non-interactive (agent context): it heals two desyncs in one pass — (1) **off-canonical strays**
 (non-empty changes outside every lane): by default each is **adopted** into an auto-named lane
-(`adopted-<change_id>` bookmark), or discarded with `--abandon`; (2) **colocated git-ref drift**
+(`adopted-<commit_id>` bookmark — keyed off commit_id so divergent sides get distinct names),
+or discarded with `--abandon`; (2) **colocated git-ref drift**
 (round-09 gap B): a live bookmark whose `refs/heads/<name>` lags jj, or an abandoned lane's
 leftover ref that makes every `git_export` raise. It runs without the canonical precheck (the repo
 is off-canonical by definition) and records an undo checkpoint so `gitman undo` can revert it.
@@ -12,7 +13,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from gitman.core import require_trunk
+from gitman.core import _target, require_trunk
 
 if TYPE_CHECKING:
     from gitman.session import Session
@@ -85,18 +86,24 @@ def do_reconcile(session: Session, abandon_: bool):
         ref_notes = _heal_colocated_refs(session)  # gap B: heal git-ref drift (also clears retired refs)
         existing = {b.name for b in session.view().bookmarks() if b.remote is None}
         if strays:
+            # Target AND name each stray by commit_id (via `_target`), never the bare change_id.
+            # A divergent change-id resolves to ≥2 commits, so a change-id target dead-ends the
+            # transaction — and, critically, the two divergent sides *share* a change_id, so naming
+            # by change_id collides them onto one bookmark. commit_id is what actually differs, so
+            # it both resolves unambiguously and yields distinct lane names (issue 06 §G2).
             with session.ws.transaction("gitman:reconcile", auto_snapshot=False) as tx:
                 for change in strays:
+                    cid = _target(change)
                     if abandon_:
-                        tx.abandon(change.change_id)
-                        actions.append(f"abandoned {change.change_id}")
+                        tx.abandon(cid)
+                        actions.append(f"abandoned {cid[:12]}")
                     else:
-                        name = f"adopted-{change.change_id[:8]}"
+                        name = f"adopted-{cid[:8]}"
                         if name in existing:
-                            name = f"adopted-{change.change_id}"
-                        tx.create_bookmark(name, change.change_id)
+                            name = f"adopted-{cid[:12]}"
+                        tx.create_bookmark(name, cid)
                         existing.add(name)
-                        actions.append(f"adopted {change.change_id} → lane '{name}'")
+                        actions.append(f"adopted {cid[:12]} → lane '{name}'")
         actions += ref_notes
         if not actions:
             actions = ["nothing to do."]

@@ -97,6 +97,19 @@ def require_trunk(config) -> str:
     return config.trunk
 
 
+def _target(change) -> str:
+    """The transaction-safe revset for a stray / range-row change: its **commit_id**, never the
+    bare change_id.
+
+    A divergent change-id (one change_id → ≥2 commits — manufactured on a fresh `git_import` of a
+    forge repo with orphaned `refs/jj/keep/*`) resolves to >1 revision, so `tx.abandon(change_id)`
+    / `tx.create_bookmark(name, change_id)` raise `Change ID … is divergent` and dead-end the
+    intent. A full commit hex always resolves to exactly one commit, so mutating by commit_id is
+    strictly safer with no downside. Works for both pyjutsu `Commit` rows (`view.log(...)`) and
+    gitman `Change` rows (`find_strays`) — both carry `.commit_id`. (issue 06 §G2)"""
+    return change.commit_id
+
+
 def run_verify(commands: list[str], repo_root: Path, timeout: float | None = None) -> tuple[bool, str]:
     """Run the configured verify hook (a single command + args). Empty → pass. Generic:
     any verifier, zero Testee coupling (concept §4). `timeout` (seconds, None = no limit) bounds a
@@ -596,11 +609,12 @@ def do_abandon(session: Session, lane: str | None):
     with canonical_guard(session, "abandon") as canon:
         if target not in lane_names(session, trunk):
             raise GitmanError(f"no such lane '{target}'.", exit_code=3)
-        # change_ids are stable across rewrites; abandoning every trunk..lane change moves the
-        # lane bookmark back onto trunk's commit, so delete_bookmark then succeeds (no strays).
+        # Abandoning every trunk..lane change moves the lane bookmark back onto trunk's commit,
+        # so delete_bookmark then succeeds (no strays). Target by commit_id (via `_target`) so a
+        # divergent change in the range can't dead-end the abandon (issue 06 §G2).
         with session.ws.transaction("gitman:abandon", auto_snapshot=False) as tx:
             for c in session.view().log(f"{trunk}..{target}"):
-                tx.abandon(c.change_id)
+                tx.abandon(_target(c))
             tx.delete_bookmark(target)
         canon.notes += _cleanup_workspace(session, target)
     return IntentResult(
@@ -701,9 +715,12 @@ def _retire_lane(session: Session, trunk: str, lane: str, published_before: set[
     """
     from pyjutsu import PyjutsuError
 
+    # Target by commit_id (via `_target`): _retire_lane runs in the exact post-`git_import` adopt
+    # window where keep-ref divergence is introduced, so a bare change_id could dead-end here (issue
+    # 06 §G2).
     with session.ws.transaction("gitman:adopt-retire", auto_snapshot=False) as tx:
         for c in session.view().log(f"{trunk}..{lane}"):
-            tx.abandon(c.change_id)
+            tx.abandon(_target(c))
         tx.delete_bookmark(lane)
     notes += _cleanup_workspace(session, lane)
     notes.append(f"retired (forge-merged): {lane}")
