@@ -137,13 +137,21 @@ def pick_remote(ws: Workspace) -> str:
 def _cleanup_workspace(session: Session, lane: str) -> list[str]:
     """Forget a retired lane's workspace and remove its dir — unless the caller is cd'd
     inside it (then forget but keep the dir, and say so). Never blocks. Publishes its own jj
-    op → only call inside a `canonical_guard` body. See plan / concept §20."""
+    op → only call inside a `canonical_guard` body. See plan / concept §20.
+
+    Removes the workspace at jj's *recorded* on-disk path (`WorkspaceInfo.path`), NOT a path
+    recomputed from today's `workspace_dir` config — so a workspace created under a prior default
+    (e.g. the old `../{repo}-{lane}` sibling) is cleaned at its real location instead of being
+    orphaned. `.path` must be read BEFORE `forget_workspace` (forget drops the row) and is a `str`
+    (wrap in `Path`). Only a corrupted/out-of-band-removed store yields `path is None` → fall back
+    to the config recompute (prior behavior)."""
     from gitman.lanes import resolve_workspace_path
 
-    if lane not in {w.name for w in session.ws.workspaces()}:
-        return []
+    rec = next((w for w in session.ws.workspaces() if w.name == lane), None)
+    if rec is None:
+        return []  # not a workspace lane — nothing to do
+    wpath = Path(rec.path) if rec.path is not None else resolve_workspace_path(session.repo_root, session.config, lane)
     notes: list[str] = []
-    wpath = resolve_workspace_path(session.repo_root, session.config, lane)
     session.ws.forget_workspace(lane)
     cwd = Path.cwd()
     inside = cwd == wpath or wpath in cwd.parents
@@ -203,10 +211,16 @@ def _start_workspace(session: Session, trunk: str, name: str, messages: list[str
     guard's `except` restores `op_before`, forgetting the workspace record."""
     from pyjutsu import Workspace
 
-    from gitman.invariants import canonical_guard
+    from gitman.invariants import canonical_guard, ensure_self_ignored_dir
     from gitman.lanes import ensure_unique, resolve_workspace_path
 
     wpath = resolve_workspace_path(session.repo_root, session.config, name)
+    # For an in-repo workspace (the default `.worktrees/<lane>`), self-ignore its parent so
+    # colocated git never reports the checkout as `?? .worktrees/` noise (jj-lib already never
+    # snapshots a nested workspace). Gated to in-repo only: an outside-repo override writes no
+    # stray .gitignore (§6). Both paths are resolved-absolute, so `in wpath.parents` is robust.
+    if session.repo_root in wpath.parents:
+        ensure_self_ignored_dir(wpath.parent)
     with canonical_guard(session, "start") as canon:
         ensure_unique(session, trunk, name)
         try:

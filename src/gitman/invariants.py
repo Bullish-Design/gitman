@@ -64,16 +64,24 @@ def clear_undo_checkpoint(repo_root: Path) -> None:
     (repo_root / LAST_UNDO_PATH).unlink(missing_ok=True)
 
 
+def ensure_self_ignored_dir(path: Path) -> Path:
+    """`mkdir` `path` and drop a `*`-ignoring `.gitignore` inside it so git/jj never snapshot its
+    contents into the working copy — regardless of the repo's root `.gitignore`. Idempotent; never
+    overwrites an existing `.gitignore`. The `*` glob also covers the `.gitignore` file itself, so
+    there are zero tracked changes. Used for both `.gitman/` (control state) and an in-repo
+    `.worktrees/` (workspace checkouts) — see `core._start_workspace`."""
+    path.mkdir(parents=True, exist_ok=True)
+    gitignore = path / ".gitignore"
+    if not gitignore.exists():
+        gitignore.write_text("*\n")
+    return path
+
+
 def ensure_state_dir(repo_root: Path) -> Path:
     """Create `.gitman/` and make it self-ignoring so jj/git never snapshot Gitman's own
     state (lock, undo checkpoint) into the working copy — regardless of the repo's
     .gitignore. Must run before any state file is written."""
-    state = repo_root / ".gitman"
-    state.mkdir(parents=True, exist_ok=True)
-    gitignore = state / ".gitignore"
-    if not gitignore.exists():
-        gitignore.write_text("*\n")
-    return state
+    return ensure_self_ignored_dir(repo_root / ".gitman")
 
 
 # --- the shared-root lock (UNCHANGED body; ALWAYS called with session.repo_root) ------

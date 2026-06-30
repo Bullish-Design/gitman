@@ -155,7 +155,7 @@ def test_start_workspace_creates_isolated_lane(tmp_path: Path):
     _init(tmp_path)
     repo = tmp_path / "repo"
     repo.mkdir()
-    # Use a nested repo so the workspace dir (sibling of repo) is predictable.
+    # Use a nested repo so the in-repo workspace dir (.worktrees/<lane>) is predictable.
     ws = Workspace.init(repo, colocate=True)
     (repo / "f.txt").write_text("base\n")
     with ws.transaction("initial") as tx:
@@ -229,7 +229,7 @@ def test_stale_working_copy_refused(tmp_path: Path):
         tx.create_bookmark("main", "@")
 
     do_start(_sess(repo), "wlane", workspace=True)
-    wpath = tmp_path / "repo-wlane"  # workspace_dir default "../{repo}-{lane}" → sibling of repo
+    wpath = repo / ".worktrees" / "wlane"  # workspace_dir default ".worktrees/{lane}" → in-repo
     sub = Workspace.load(wpath)
 
     op_now = ws.head_operation()

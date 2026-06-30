@@ -489,7 +489,7 @@ Pydantic-validated.
 | Key | Meaning |
 |---|---|
 | `trunk` | Trunk bookmark/branch. **Written once by `init`, then frozen** (I1). |
-| `[lanes] workspace_dir` | Where `--workspace` lanes live (default `../<repo>-<lane>`). |
+| `[lanes] workspace_dir` | Where `--workspace` lanes live (default `.worktrees/<lane>` — a hidden, self-ignored in-repo dir; `../<repo>-<lane>` for the old sibling layout). |
 | `[lanes] always_workspace` | If true, `start` always isolates (default false). |
 | `[publish] verify` | Command run before publish/release (`[]` → no gate). |
 | `[publish] on_fail` | `block` (default) or `warn`. |

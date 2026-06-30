@@ -81,7 +81,10 @@ This works on a brand-new dir **and** on an existing git repo (with or without h
 - Scaffolds **`.claude/skills/gitman/SKILL.md`** — the agent's how-to for this repo.
 
 Commit `gitman.toml` and the skill. Gitman's own state lives under `.gitman/` (a
-self-ignoring dir); add `.gitman/` to `.gitignore` if you prefer it explicit.
+self-ignoring dir); add `.gitman/` to `.gitignore` if you prefer it explicit. A `--workspace`
+lane's checkout lives under a second self-ignoring dir, `.worktrees/<lane>/` (in-repo by
+default — see `[lanes].workspace_dir`); both carry their own `*` `.gitignore`, so neither shows
+up as untracked noise and there's nothing to add to your root `.gitignore`.
 
 ### Make the first commit (brand-new repos)
 
@@ -129,7 +132,7 @@ See [`../examples/gitman.toml`](../examples/gitman.toml) for an annotated sample
 | Key | Meaning |
 |---|---|
 | `trunk` | Trunk bookmark/branch. Written once by `init`, then **frozen**. |
-| `[lanes].workspace_dir` | Where `--workspace` lanes live (default `../{repo}-{lane}`). |
+| `[lanes].workspace_dir` | Where `--workspace` lanes live (default `.worktrees/{lane}` — a hidden, self-ignored in-repo dir; set `../{repo}-{lane}` for the old sibling layout). |
 | `[lanes].always_workspace` | If true, `start` always isolates (default false). |
 | `[publish].verify` | Command run before publish (`[]` → no gate). Any verifier. |
 | `[publish].on_fail` | `block` (default) or `warn`. |
