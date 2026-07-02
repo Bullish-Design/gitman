@@ -191,7 +191,7 @@
     "pyjutsu": {
       "flake": false,
       "locked": {
-        "ref": "refs/heads/feat/11-tx-split",
+        "ref": "refs/heads/main",
         "type": "git",
         "url": "file:///home/andrew/Documents/Projects/Pyjutsu"
       },
