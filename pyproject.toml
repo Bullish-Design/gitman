@@ -15,7 +15,7 @@ authors = [
 dependencies = [
   "pydantic>=2.12",
   "typer>=0.12",
-  "pyjutsu>=0.8",
+  "pyjutsu>=0.10",
 ]
 
 [project.optional-dependencies]
