@@ -64,14 +64,30 @@ A **lane** is one unit of work: a named bookmark (= git branch) on trunk, kept l
 
 ```
 gitman start <name>         # begin a lane (add --workspace to isolate it in its own dir)
+gitman switch <lane>        # resume a parked lane: move @ back onto an existing lane's change
+gitman split --paths <sel> --into <lane>   # carve entangled paths into a second sibling lane
 # ...edit files...
 gitman save -m "<message>"  # describe the current change
 gitman status               # see trunk + all lanes (canonical or off-canonical)
 gitman sync                 # rebase this lane onto local trunk (fetches lane branches)
 gitman publish              # push the lane (branch = lane name); verify hook runs first
-gitman land [<lane>...]     # fold lane(s) into trunk, advance trunk, retire the lane(s)
+gitman land [<lane>...]     # fold lane(s) into trunk LOCALLY, advance trunk, retire the lane(s)
 gitman abandon [<lane>]     # discard a lane
 ```
+
+**Lanes don't stack — `start` always bases on trunk.** To build on an un-landed lane, `gitman land`
+it first (its saved changes are in trunk after). If you `start` a new lane while sitting on an
+un-landed lane, its report warns you: the current lane's tree is *not* in the new (trunk-based) lane.
+
+`switch` is the lane-**navigation** verb: when `@` leaves a lane without ending it (a sibling `start`
+in the same workspace stranded yours; you landed one of several lanes), `gitman switch <lane>` puts
+`@` back on it. It refuses to strand an unnamed dirty `@` (save/start/abandon it first) and reports
+cleanly if the lane is checked out in another `--workspace` (`cd` there to resume).
+
+`split` is the lane-**partition** verb: when two concerns entangle in one draft change,
+`gitman split --paths <sel>… --into <new-lane> [-m <desc>]` carves the selected paths onto a new
+**sibling** lane on trunk and leaves the remainder on the original — both independently landable.
+`@` stays on the remainder; continue on the carved one with `gitman switch <new-lane>`.
 
 ## Trunk ↔ origin (local-authored model)
 

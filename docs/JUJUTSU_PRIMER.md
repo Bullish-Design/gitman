@@ -154,7 +154,7 @@ The invariants Gitman enforces are just jj's sharp edges, sanded off:
 | Every change is in exactly one **named** lane | anonymous heads / stray commits (§5) |
 | Branch name = lane name, unique-checked | branch-name churn |
 | Gitman is the sole writer, under a brief lock | concurrent-rewrite divergence |
-| Each lane is linear; trunk advances only via `land`/`adopt` | merge-commit tangles, "which base?" |
+| Each lane is linear; trunk advances only via `land` (local) or `pull` (integrating origin) | merge-commit tangles, "which base?" |
 
 ## Concept-to-Gitman map
 

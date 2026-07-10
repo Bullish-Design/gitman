@@ -106,7 +106,7 @@ repo-global, and auto-following the change across rewrites.
 | I2 | **Every change belongs to exactly one named lane; no anonymous/stray changes.** | Stranded work — every change is *listable*; `status` is a uniform enumeration, not a triage. |
 | I3 | **Branch name = the lane's readable name**, unique-checked at creation, stable via the bookmark. | Branch-name generation / collision / freeze logic. |
 | I4 | **Gitman is the sole writer; mutating ops are serialized by a brief repo lock.** | Concurrent-rewrite divergence (parallel work lives in separate workspaces). |
-| I5 | **Each lane is linear on trunk (rebase-always); trunk advances only via `land` or `adopt`.** | Merge-commit states; "which base?" ambiguity. |
+| I5 | **Each lane is linear on trunk (rebase-always); trunk advances only via `land` (local) or `pull` (integrating a moved origin).** | Merge-commit states; "which base?" ambiguity. |
 
 The principle: **resolve variability once, at a well-defined moment (init, lane
 creation), not repeatedly at runtime.**
@@ -171,10 +171,12 @@ src/gitman/
 
 Base deps kept lean: `pydantic`, `typer`. `jj` and `git` binaries come from devenv.
 
-## 7. Intent vocabulary — v1
+## 7. Intent vocabulary
 
-Fourteen intents. Lane lifecycle verbs (`start`/`switch`/`split`/`land`/`abandon`) are the additions
-the lane model requires; everything else is deferred until friction proves it.
+The core intent set. Lane lifecycle verbs (`start`/`switch`/`split`/`land`/`abandon`) are the additions
+the lane model requires; the trunk↔origin verbs (`pull`/`push`/`remote add`/`untrack`) are the
+single-model interop surface (§8); `doctor`/`init`/`reconcile` are the boundary/bootstrap/recovery
+verbs. Anything not listed is deferred until friction proves it.
 
 | Intent | Signature | What it does | Underneath |
 |---|---|---|---|
@@ -183,11 +185,15 @@ the lane model requires; everything else is deferred until friction proves it.
 | `switch` | `gitman switch <lane>` | Move `@` onto an existing lane's change to resume it (navigation, never mutates trunk). Refuses to strand an unnamed dirty `@`; reports a lane checked out in another workspace. | `jj edit <lane>` |
 | `split` | `gitman split --paths <sel>… --into <lane> [-m <desc>]` | Partition the current lane's single change into two sibling lanes on trunk: the carved paths onto new lane `<into>`, the remainder on the original. `@` stays on the remainder; never mutates trunk. Path-scoped (whole files); refuses a multi-change/non-trunk-rooted lane, an empty match, or a whole-change match. | `jj new <trunk>` + `jj restore` ×2 + bookmark |
 | `save` | `gitman save [-m <desc>]` | Describe the current lane's change. | `jj describe` |
-| `sync` | `gitman sync [--all]` | Fetch trunk + rebase the current lane (or `--all` lanes) onto it. | `jj git fetch` + `jj rebase` |
+| `seed` | `gitman seed -m <desc>` | One-shot: make a fresh repo's first commit on trunk, leaving a clean `@`. Refuses once trunk has history. | `jj describe` @ + bookmark trunk |
+| `sync` | `gitman sync [--all]` | Fetch **lane** branches + rebase the current lane (or `--all` lanes) onto **local** trunk (never advances trunk). | `jj git fetch <lanes>` + `jj rebase` |
 | `publish` | `gitman publish` | Push the current lane; branch = lane name. Verify hook first. | `jj git push` (forge extra: + open/update PR) |
-| `land` | `gitman land [<lane>…]` | Fold lane(s) into trunk, advance trunk, retire the lane(s). | rebase + ff trunk + bookmark/workspace cleanup (forge extra: merge PR) |
-| `adopt` | `gitman adopt [--force] [--dry-run]` | Adopt a forge-merged trunk: advance local trunk to `origin/<trunk>`, rebase survivors, retire merged lanes. | fetch + **explicit** trunk FF + content-based retire + roll-back conflicting survivors + un-stale `@` |
+| `land` | `gitman land [<lane>…]` | Fold lane(s) into **local** trunk, advance trunk, retire the lane(s). The one local trunk-advance. | rebase + ff trunk + bookmark/workspace cleanup |
 | `abandon` | `gitman abandon [<lane>]` | Discard a lane (terminal). | `jj abandon` + bookmark delete + workspace cleanup |
+| `pull` | `gitman pull [--dry-run]` | Integrate a genuinely-moved `origin/<trunk>`: fetch, content-aware FF / rebase un-pushed lands onto origin (never dropping work), rebase/retire surviving lanes, repark `@`. | `jj git fetch` + content relation + explicit trunk FF/rebase + survivor retire + repark |
+| `push` | `gitman push [--reset-origin]` | Publish local trunk → origin as a strict fast-forward (refuses non-FF → `pull`). `--reset-origin` lifts the gate (lease-safe migration escape). | `ws.git_push(<remote>, <trunk>)` (force-with-lease engine; strict-FF is a gitman policy) |
+| `remote add` | `gitman remote add <url> [--name origin]` | Add a git remote (in-process; never touches git HEAD), bootstrapping trunk toward its first `push`. | `ws.add_remote` |
+| `untrack` | `gitman untrack <path>…` | Stop tracking machine-local file(s): add to `.gitignore` + drop from the tree (files kept on disk; on the current lane). | `.gitignore` + `ws.untrack_paths` |
 | `undo` | `gitman undo [--op <id>] [--list]` | Revert the last intent, or to a chosen op. | `jj undo` / `jj op restore` |
 | `resolve` | `gitman resolve [--list]` | Surface remaining conflicts / confirm cleared. | `jj resolve --list` |
 | `version` | `gitman version [bump <major\|minor\|patch>]` | Show or bump the repo's semver. | version-source read/write |
@@ -198,10 +204,11 @@ the lane model requires; everything else is deferred until friction proves it.
 blocked / off-canonical) · `2` infra/config (no remote, auth, jj/git missing, outside
 devenv, no version source) · `3` invalid usage.
 
-**Deferred:** the forge extra's PR `land`/`pr-status`, stacked PRs, `shape`
-(squash/reorder + **hunk-level/interactive** split — the path-scoped `split` above shipped; only
-partial-file selection needs a native pyjutsu `split` binding), pre-release version metadata,
-pluggable forges.
+**Deferred:** the forge extra's PR `land`/`pr-status`; **lane stacking** (`start --onto <lane>` to base
+a new lane on an un-landed lane's head, with bottom-up `land` ordering — the issue-17 guardrail below
+already prevents the silent-revert trap without it); `shape` (squash/reorder + **hunk-level/interactive**
+split — the path-scoped `split` above shipped; only partial-file selection needs a native pyjutsu
+`split` binding), pre-release version metadata, pluggable forges.
 
 ## 8. Lane & workspace flow (parallel agents)
 
@@ -230,46 +237,58 @@ $ gitman abandon fix-cart-test                        # gave up on that one
   advance, op-log head, bookmark namespace). Per-lane editing is contention-free, so
   parallelism is real. Concurrent lane *creation* with the same name is resolved once,
   under the lock, at creation (refuse or suffix) — never an ambiguity downstream.
-- **`land`** is the sanctioned trunk-advance (I5): it rebases the lane onto current trunk,
-  fast-forwards trunk to include it, then deletes the bookmark and forgets the workspace.
-  The forge extra swaps the local fast-forward for a GitHub PR merge.
+- **`land`** is the sanctioned local trunk-advance (I5): it rebases the lane onto current trunk,
+  fast-forwards trunk to include it, then deletes the bookmark and forgets the workspace. This is
+  *the* merge — a reviewed flow opens a PR for CI/audit, but the trunk advance is still the local
+  `land` (§8.1), not a forge merge button.
 
-### Forge-PR adoption (`publish → PR → merge → adopt`)
+### 8.1 Trunk ↔ origin — the single local-authored model (`push` / `pull`)
 
-`land` advances trunk to a lane head you built **locally**. But the common reviewed-and-gated
-flow advances trunk on the **forge**: `gitman publish` a lane → open a PR → click **Merge**.
-The forge mints a **re-hashed** commit on `origin/<trunk>` (squash, merge-commit, and rebase
-merges all produce a new SHA), leaving the local trunk behind `origin/<trunk>`. **`adopt` is a
-`land` the forge already performed** — it's the second sanctioned trunk-advancing intent (I5),
-the only other one the transactional postcondition exempts from the trunk-frozen rule.
+**Trunk is local-authored: gitman is the sole writer of trunk SHAs.** Lanes fold into local trunk via
+`land`; origin is a **mirror** you reach by fast-forward `push`. Because a sole author never seeds a
+divergence, every `push` stays a fast-forward — no re-hash twins, no force-push in the normal path.
+There is **one** origin-integration verb (`pull`) and **one** trunk-push verb (`push`); the old
+two-door `adopt`/forge-authored-trunk path is gone.
 
-`gitman adopt`:
-1. **Fetches** the remote, then **advances trunk explicitly**. When origin is strictly ahead
-   (local trunk an ancestor of the forge head) `adopt` sets `<trunk>` to `<trunk>@<remote>` itself
-   rather than trusting jj's fetch auto-FF — which can silently not happen when the colocated git
-   refs / jj tracking desync, leaving trunk behind with no error. The explicit set is a no-op when
-   the fetch already advanced trunk; trunk advancement is now **fetch-independent**. The fetch also
-   prunes lanes whose remote branch was deleted (`--delete-branch`).
-2. **Retires merged lanes by content, not SHA** — a lane is "already merged" iff it is empty
-   after rebasing onto the adopted trunk (true across squash N→1, rebase-merge N→N re-hashed,
-   and merge-commit ancestry). Genuine survivors are rebased onto the new trunk and **kept**. A
-   survivor whose rebase **conflicts** is **rolled back and left on its prior base** (reported
-   `CONFLICT`): `adopt` never commits a conflicted rebase, so no checkout can materialize jj
-   conflict markers into tracked source on disk. Resolve it later with `gitman sync`, or `abandon`
-   it if it was an already-merged duplicate.
-3. **Refuses safely on divergence.** Un-pushed local lands + a moved origin make jj record a
-   *conflicted* trunk bookmark; `adopt` refuses (push first) unless `--force` hard-sets trunk to
-   the forge head (dropping the un-pushed lands; undoable). `--dry-run` reports the plan only.
+**The review flow is `publish → (open PR) → land → push`:** `publish` the lane and open a PR so CI runs
+and reviewers see the diff (as *information*, not a gate); then `land` locally and `push`. The pushed
+trunk contains the PR head, so GitHub auto-marks the PR **Merged** — review and audit survive, but the
+trunk advance is local. (If trunk moved between publish and land, the rebase re-hashes the lane and you
+close the PR by hand — rare under single authorship.)
+
+`gitman push` — publish local trunk to `origin`:
+- **Content-gated strict fast-forward, as a gitman *policy*.** It classifies local trunk vs
+  `origin/<trunk>` by *content* (§10) and pushes only when local is `in-sync`/`local-ahead`; a
+  `forge-ahead`/`diverged` origin **refuses → `gitman pull` first** (never clobbers real forge work).
+- **The engine is an unconditional force-with-lease** (`ws.git_push`): jj-lib always force-pushes with
+  a lease (= the remote-tracking ref). So strict-FF is *gitman's* gate, not the engine's — and
+  **`push --reset-origin`** is the *same* call with that gate lifted: the lease-safe migration escape
+  for legacy re-hash residue. The lease still refuses to clobber genuinely out-of-band work, so even
+  `--reset-origin` cannot overwrite a collaborator's push made since your last fetch.
+
+`gitman pull` — integrate a genuinely-moved `origin/<trunk>`:
+1. **Fetches**, then **classifies by content** (§10). `in-sync`/`local-ahead` (incl. a re-hash twin) →
+   trunk does **not** move (lanes-only reconcile). `forge-ahead` → **FF** local trunk to origin.
+   `diverged` (un-pushed local lands **and** origin genuinely moved) → **rebase the un-pushed lands
+   onto origin** — the single model **never drops local work** (there is no `--force`).
+2. **The conflicted trunk bookmark is the normal divergence shape:** jj marks the local trunk bookmark
+   conflicted whenever a fetch finds real both-sides divergence; `pull` resolves it structurally
+   (rebase the local side onto the origin side, set the bookmark to the new head). A rebase that
+   *conflicts* is rolled back non-blocking (never commits markers into tracked source) → `gitman
+   resolve`.
+3. **Retires forge-merged survivor lanes by content** (empty-after-rebase across squash/merge/rebase),
+   rebases genuine survivors, and **reparks `@`** onto the advanced trunk. `--dry-run` reports the plan
+   only.
 
 Mutating intents mirror jj's bookmarks into the colocated git after each op. If a stuck
 `refs/heads/<lane>` (e.g. an abandoned lane's leftover ref) makes that export partially fail, the
 desync is **surfaced** (a report note + a `gitman doctor` `colocated-refs` check) rather than
 swallowed, and `gitman reconcile` heals it (re-sync refs to jj, drop leftovers) — see §11.
 
-Stays CANONICAL throughout and is a single `gitman undo` step. **`sync` never advances trunk**
-(it fetches lanes-only and rebases onto *local* trunk) — trunk advancement is `land`'s or
-`adopt`'s job, by design. Keep `gitman.toml` / VC wiring on **trunk**, never only in a lane, so
-retiring a lane can never delete it.
+Every trunk↔origin op stays CANONICAL and is a single `gitman undo` step (a `push` is one-way — undo
+reverts local only). **`sync` never advances trunk** (it fetches lanes-only and rebases onto *local*
+trunk) — trunk advancement is `land`'s (local) or `pull`'s (integrating origin) job, by design. Keep
+`gitman.toml` / VC wiring on **trunk**, never only in a lane, so retiring a lane can never delete it.
 
 ## 9. The `RepoState` model (the Pydantic heart)
 
@@ -409,6 +428,25 @@ All jj reads/mutations now go through a `Session` over pyjutsu (typed models, ty
 the only raw subprocess that remains is `tags.py` (annotated git tags). The conflict-marker
 gotcha above still applies — pyjutsu surfaces jj-form markers verbatim.
 
+### 10.8 The trunk↔origin content relation (drives `status`/`push`/`pull`)
+
+`TrunkRef` carries a **content-aware** relation between local trunk and `origin/<trunk>`, not an
+ancestry count. The one honest question: *does `origin/<trunk>` hold a commit whose **content** is
+absent from local trunk?* — answered by patch-equivalence (a commit is "already present" iff it is
+empty after rebasing onto the other side; `state._trunk_content_relation` / `_merge_tree_relation`).
+Four outcomes drive the verbs:
+
+| Relation | Meaning | `status` / next |
+|---|---|---|
+| `in-sync` | same content (incl. a re-hash **twin** — same tree, different SHA) | `push` is a NOOP |
+| `local-ahead` | local has content origin lacks; origin has none local lacks | `gitman push` (FF) |
+| `forge-ahead` | origin has content local lacks; local has no un-pushed lands | `gitman pull` (FF) |
+| `diverged` | **both** hold content the other lacks | `gitman pull` (rebase un-pushed lands onto origin) |
+
+Because it compares **diffs, not SHAs**, a re-hash twin reads `in-sync` — never the old hash-based
+"N behind → integrate" nag that could discard un-pushed lands. This is what makes the single
+local-authored model safe under an occasional forge merge or collaborator push.
+
 ## 11. Enforcement — invariants & transactional rollback
 
 Constraints that are only *documented* drift. The lane model holds by construction:
@@ -473,10 +511,14 @@ push_tag   = true
 
 ## 14. Safety & policy
 
-- **Protected trunk.** Trunk is never rewritten or force-pushed; it only advances via
-  `land` (I5).
+- **Protected trunk.** Trunk advances only via `land` (local) or `pull` (integrating a moved
+  origin) — I5. The everyday `push` is a strict fast-forward **policy** (content-check → refuse
+  non-FF → `pull`), so it never rewrites shared history in the normal path. The engine's
+  force-with-lease is the out-of-band backstop, surfaced only as the explicit `push --reset-origin`
+  migration escape — and even that cannot clobber genuine out-of-band work (the lease blocks it).
 - **No raw destructive primitive** in the intent surface (no `reset --hard`, no blind
-  force-push). Force-push is allowed only to a lane's own branch, via `publish`.
+  force-push). Lane branches force-push via `publish`; trunk reaches origin only through the
+  content-gated `push`.
 - **Everything undoable**, always surfaced inline; every command transactional (§11).
 - **Policy is Pydantic-validated config** — trunk, protected refs, verify hook
   (same discipline as `[tool.testee]`).
@@ -505,12 +547,16 @@ report ends with an inline **Undo** line. `status` is a uniform lane enumeration
 
 ```text
 Gitman status — CANONICAL · 3 lanes
-trunk: main @ def456  (up to date with origin/main)
+trunk: main @ def456  (in sync with origin)
 * fix-auth-test     draft      1 change,  +18 −4   · ws ../repo-fix-auth-test  (you are here)
   fix-billing-test  published  1 change,  +30 −2   · PR #41
   fix-cart-test     draft      2 changes, +60 −9   · ws ../repo-fix-cart-test
 Next: edit · `gitman publish` · `gitman land fix-billing-test`
 ```
+
+The trunk line is **content-aware** (§10): `(in sync with origin)` · `(local-ahead — `gitman push`)` ·
+`(forge-ahead — `gitman pull`)` · `(diverged — `gitman pull` to rebase)`. It compares *content*, not
+SHAs, so a re-hash twin reads `in sync`, never a data-losing "N behind → integrate" nag.
 
 ```text
 Gitman status — OFF-CANONICAL
@@ -529,9 +575,9 @@ name the lane.
 
 `gitman init` scaffolds `.claude/skills/gitman/SKILL.md` (mirrors Testee's skill): route
 *all* version control through Gitman, never raw `jj`/`git` (it breaks canonicity);
-documents the lane loop and the eleven intents; explains exit codes; points at
-`gitman undo` as the safety net and `gitman reconcile` for off-canonical; and records the
-repo's version-bump procedure.
+documents the lane loop, the trunk↔origin verbs (`push`/`pull`), and the safety net; explains exit
+codes; points at `gitman undo` and `gitman reconcile` (off-canonical); and records the repo's
+version-bump procedure.
 
 ## 18. Execution boundary
 

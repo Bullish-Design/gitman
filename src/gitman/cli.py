@@ -199,7 +199,7 @@ def abandon(
 def sync(
     all_: Annotated[bool, typer.Option("--all", help="Sync all lanes, not just the current one.")] = False,
 ) -> None:
-    """Fetch trunk + rebase the current lane (or all) onto it."""
+    """Fetch lane branches + rebase the current lane (or all) onto local trunk (never advances trunk)."""
     from gitman.core import do_sync
 
     _finish_intent(do_sync(_session(), all_))

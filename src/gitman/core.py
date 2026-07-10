@@ -170,7 +170,7 @@ def _cleanup_workspace(session: Session, lane: str) -> list[str]:
 
 def do_start(session: Session, name: str, workspace: bool):
     from gitman.invariants import canonical_tx
-    from gitman.lanes import ensure_unique
+    from gitman.lanes import current_lane, ensure_unique, lane_has_content
     from gitman.models import IntentResult
     from gitman.state import capture_state
 
@@ -188,6 +188,21 @@ def do_start(session: Session, name: str, workspace: bool):
                 tx.create_bookmark(name, "@")
                 messages.append(f"adopted in-progress work into lane '{name}' on {trunk}.")
             else:
+                # Issue-17 guardrail: a new lane ALWAYS bases on trunk — lanes don't stack. If `@` is
+                # currently on a named lane that holds saved, un-landed work, that lane's tree is NOT
+                # in the new base, so the working copy reverts to trunk (silently, pre-guardrail). State
+                # the base explicitly and point at the fix. Non-blocking (a trunk-based sibling is a
+                # legitimate choice — that's what parallel lanes / `split` are), so this is a note, not
+                # a refusal. Distinct from `_adoptable_work` above (a dirty *unbookmarked* `@`); computed
+                # before `tx.new` moves `@` off the current lane.
+                cur = current_lane(session, trunk)
+                if cur is not None and lane_has_content(session, trunk, cur):
+                    base_sha = session.view().resolve(trunk).commit_id[:12]
+                    notes.append(
+                        f"'{name}' is based on trunk {base_sha}; the un-landed lane '{cur}' is NOT in "
+                        f"that base — `gitman land {cur}` first (lanes don't stack; `start` always bases "
+                        f"on trunk). Its saved changes live on '{cur}', not on disk."
+                    )
                 tx.new(trunk)
                 tx.create_bookmark(name, "@")
                 messages.append(f"lane '{name}' created on {trunk}.")

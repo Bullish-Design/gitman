@@ -26,12 +26,21 @@ name, anchored on trunk, kept linear, with a stable identity Gitman tracks. A la
 named jj **bookmark** (which *is* the git branch) on a trunk descendant, optionally in its
 own jj **workspace** for parallel agents. Multiplicity is fine; anarchy is not.
 
-## Intents (v1)
+**Trunk is local-authored:** Gitman is the sole writer of trunk SHAs. Lanes fold into local trunk via
+`land`; origin is a mirror reached by fast-forward `push`, and `pull` integrates a genuinely-moved
+origin (rebasing your un-pushed lands — never dropping work). One model, no forge-authored trunk door.
+
+## Intents
 
 ```
-status   start <name> [--workspace]   save [-m]   sync [--all]   publish
-land [<lane>…]   abandon [<lane>]   undo [--op|--list]   resolve [--list]
-version [bump <major|minor|patch>]   release [<level>|--version X.Y.Z]
+# lane loop
+start <name> [--workspace]   switch <lane>   split --paths <sel> --into <lane>
+save [-m]   sync [--all]   publish   land [<lane>…]   abandon [<lane>]   status
+# trunk ↔ origin (single local-authored model)
+remote add <url>   push [--reset-origin]   pull [--dry-run]   untrack <path>…
+# safety net / bootstrap / meta
+undo [--op|--list]   resolve [--list]   reconcile [--abandon]   seed -m
+version [bump <major|minor|patch>]   release [<level>|--version X.Y.Z]   init [--colocate]   doctor
 ```
 
 Exit codes: `0` ok · `1` VC decision needed (conflict / push rejected / verify blocked /
@@ -50,12 +59,10 @@ devenv shell -- gitman status
 ## Use it in your repo
 
 See **[`docs/USING_GITMAN.md`](docs/USING_GITMAN.md)** for the full adoption guide
-(devenv toolchain, install, `jj git init --colocate`, `gitman init`, config, exit codes).
-The short version:
+(devenv toolchain, install, `gitman init --colocate`, config, exit codes). The short version:
 
 ```bash
-devenv shell -- bash -c 'jj git init --colocate'   # if not already a jj repo
-devenv shell -- gitman init                         # freeze trunk, scaffold gitman.toml + agent skill
+devenv shell -- gitman init --colocate   # colocate jj onto git (new or existing) + freeze trunk + scaffold
 devenv shell -- gitman status
 ```
 

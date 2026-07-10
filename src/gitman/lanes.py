@@ -36,6 +36,17 @@ def require_current_lane(session: Session, trunk: str) -> str:
     return lane
 
 
+def lane_has_content(session: Session, trunk: str, lane: str) -> bool:
+    """True if `lane` holds saved, un-landed work — any *non-empty* change in `trunk..lane`.
+
+    Drives the issue-17 `start` guardrail: leaving a content-bearing un-landed lane to base a new lane
+    on trunk silently drops that lane's tree from the working copy. A freshly-started (empty) lane, or
+    one already folded into trunk, has no non-empty change here → no warning. Emptiness is per-commit
+    (`Commit.is_empty`), the same predicate `state.capture_state` uses for `change_count`.
+    """
+    return any(not c.is_empty for c in session.view().log(f"{trunk}..{lane}"))
+
+
 def resolve_workspace_path(repo_root: Path, config: GitmanConfig, lane: str) -> Path:
     """Expand the [lanes].workspace_dir template ({repo}, {lane}) to an absolute path."""
     template = config.lanes.workspace_dir

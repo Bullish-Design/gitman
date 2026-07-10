@@ -61,16 +61,17 @@ frozen trunk.
 
 ## 3. Make the repo colocated, then init
 
-Gitman requires a **colocated** jj repo (a real `.git` kept in sync). pyjutsu colocates the repo
-in-process — it both creates a fresh `.git` and **adopts an existing one** (importing its history
-and branches). In your repo root:
+Gitman requires a **colocated** jj repo (a real `.git` kept in sync). **`gitman init --colocate` is the
+one-command front door:** it colocates jj onto this directory in-process — creating a fresh `.git` or
+importing an existing one's history and branches — and then freezes trunk. In your repo root:
 
 ```bash
-devenv shell -- python -c 'from pyjutsu import Workspace; Workspace.init(".", colocate=True)'
-devenv shell -- gitman init                         # resolve + freeze trunk, scaffold config + skill
+devenv shell -- gitman init --colocate              # colocate jj onto git + resolve + freeze trunk
 ```
 
-This works on a brand-new dir **and** on an existing git repo (with or without history).
+This works on a brand-new dir **and** on an existing git repo (with or without history). (If you'd
+rather colocate by hand first, `python -c 'from pyjutsu import Workspace; Workspace.init(".",
+colocate=True)'` then plain `gitman init` — but `--colocate` is the supported path.)
 
 `gitman init`:
 
@@ -108,11 +109,29 @@ devenv shell -- gitman start fix-thing        # new lane (add --workspace to iso
 devenv shell -- gitman save -m "fix the thing"
 devenv shell -- gitman sync                    # fetch trunk + rebase this lane
 devenv shell -- gitman publish                 # push the lane (branch = lane name); verify hook runs first
-devenv shell -- gitman land fix-thing          # fold into trunk, advance trunk, retire the lane
+devenv shell -- gitman land fix-thing          # fold into trunk LOCALLY, advance trunk, retire the lane
 ```
 
 Safety net: `gitman undo` (revert the last intent), `gitman resolve` (surface conflicts —
 never blocking), `gitman reconcile` (recover from off-canonical).
+
+### Trunk ↔ origin (the single local-authored model)
+
+Trunk is **local-authored**: gitman is the sole writer of trunk SHAs. `land` folds a lane into local
+trunk; origin is a mirror you reach by fast-forward `push`. `pull` integrates a genuinely-moved origin.
+
+```bash
+devenv shell -- gitman remote add <url>        # bootstrap a remote (in-process; never touches git HEAD)
+devenv shell -- gitman push                    # publish local trunk → origin (strict FF; refuses non-FF → pull)
+devenv shell -- gitman pull                    # integrate a moved origin/<trunk> (rebases un-pushed lands; never drops work)
+devenv shell -- gitman untrack <path>          # stop tracking a machine-local file (gitignore + drop from the tree)
+```
+
+The review flow is `publish → (open a PR for CI/audit) → land → push`: the *merge* is the local `land`
++ FF `push`, so GitHub auto-marks the PR merged — no forge merge button advances trunk. `status` is
+content-aware (`in-sync` / `local-ahead` → `push` / `forge-ahead` → `pull` / `diverged` → `pull`).
+`gitman push --reset-origin` is the rare, lease-safe escape for migrating a repo that carries legacy
+re-hash residue.
 
 ## 5. Parallel agents (workspaces)
 
