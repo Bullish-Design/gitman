@@ -46,6 +46,9 @@ def _remote_relation(trunk) -> str:
 def _lane_line(lane: Lane, current: str | None) -> str:
     here = lane.name == current
     marker = "*" if here else " "
+    # Fractal lanes: indent by task-tree depth. Alphabetical enumeration of `/`-path names IS pre-order
+    # DFS (`T`, `T/api`, `T/api/handler`, `T/web`), so the indent alone renders the work-breakdown tree.
+    indent = "  " * lane.depth
     # A conflicted lane bookmark (head is None) names no single commit — show the divergence, not a
     # diff summary, and point at the recovery verb.
     if lane.head is None:
@@ -54,7 +57,11 @@ def _lane_line(lane: Lane, current: str | None) -> str:
         plural = "change" if lane.change_count == 1 else "changes"
         counts = f"{lane.change_count} {plural}, {_diff_str(lane.insertions, lane.deletions)}"
     extra = []
-    if lane.base:
+    if lane.orphaned:
+        # I3′: name-parent deleted out-of-band — the node is valid but its stack link is dangling.
+        parent = lane.name.rsplit("/", 1)[0]
+        extra.append(f"ORPHANED (name-parent '{parent}' gone — `gitman reconcile`)")
+    elif lane.base:
         extra.append(f"↳ on {lane.base}")  # fractal lanes: this lane is stacked on <base>
     if lane.workspace:
         extra.append(f"ws {lane.workspace}")
@@ -67,7 +74,7 @@ def _lane_line(lane: Lane, current: str | None) -> str:
     if here:
         extra.append("you are here")
     tail = ("   · " + "  · ".join(extra)) if extra else ""
-    return f"{marker} {lane.name:<20} {lane.state.value:<10} {counts}{tail}"
+    return f"{marker} {indent}{lane.name:<20} {lane.state.value:<10} {counts}{tail}"
 
 
 def render_status(state: RepoState) -> str:

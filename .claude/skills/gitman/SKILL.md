@@ -45,24 +45,28 @@ A **lane** is one unit of work: a named bookmark (= git branch) on trunk, kept l
 
 ```
 gitman start <name>         # begin a lane (add --workspace to isolate it in its own dir)
-gitman start <name> --onto <lane>   # STACK a new lane on <lane>'s head (build on un-landed work)
+gitman start <T/api>        # STACK a lane on `T`: a `/`-path name's base IS its name-parent
+gitman subtask <leaf>       # fan out `<current-lane>/<leaf>` (≡ `start <cur>/<leaf>`) — decompose a task
 gitman switch <lane>        # resume a parked lane: move @ back onto an existing lane's change
 gitman split --paths <sel> --into <lane>   # carve entangled paths into a second sibling lane
 # ...edit files...
 gitman save -m "<message>"  # describe the current change
-gitman status               # see trunk + all lanes (canonical; a stacked lane shows `↳ on <base>`)
+gitman status               # see trunk + the lane TREE (a stacked lane is indented, shows `↳ on <base>`)
 gitman sync                 # rebase this lane onto its base (parent lane, or local trunk)
 gitman publish              # push the lane (branch = lane name); verify hook runs first
 gitman land [<lane>...]     # fold lane(s) into their base (parent lane, or trunk), retire the lane(s)
 gitman abandon [<lane>]     # discard a lane
 ```
 
-**Stacking a lane on un-landed work — `gitman start <name> --onto <lane>`** (fractal lanes). By
-default `start` bases on trunk (and warns if you leave an un-landed lane, whose tree is *not* in the
-new trunk-based lane). To build *on top of* an un-landed lane instead, `--onto <lane>` bases the new
-lane on that lane's head, so the working copy carries its tree. `land <child>` then folds the child
-**into its base** (the parent lane advances); a base with a live child refuses to land/abandon until
-the child is folded in ("fold the child in first"). Land bottom-up: children before their parents.
+**Decomposing a task into a tree — the `/`-path name IS the structure** (fractal lanes). A lane name
+may be a `/`-path: `T`, `T/api`, `T/api/handler`. A lane's **base is its name-parent** (`T/api` stacks
+on `T`) — derived purely from the name, so the tree is always explicit. `start T/api` refuses if `T`
+isn't a live lane (`gitman start T` first); a flat name (no `/`) roots on trunk as before. **`gitman
+subtask <leaf>`** is the ergonomic fan-out: while on `T`, `subtask api` creates `T/api` stacked on
+`T`, carrying `T`'s tree. `land <child>` folds the child **into its base** (the parent lane advances);
+a base with a live child refuses to land/abandon until the child is folded in ("fold the child in
+first"). Land bottom-up: children before their parents. `--onto <lane>` is retained only as an
+optional assertion that must equal the name-parent.
 
 `switch` is the lane-**navigation** verb: when `@` leaves a lane without ending it (a sibling `start`
 in the same workspace stranded yours; you landed one of several lanes), `gitman switch <lane>` puts

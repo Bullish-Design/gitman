@@ -110,17 +110,31 @@ def status() -> None:
 
 @app.command()
 def start(
-    name: Annotated[str, typer.Argument(help="The lane's readable name (= bookmark = branch).")],
+    name: Annotated[
+        str,
+        typer.Argument(help="The lane's readable name (= bookmark = branch); a `/`-path (`T/api`) stacks on `T`."),
+    ],
     workspace: Annotated[bool, typer.Option("--workspace", help="Isolate the lane in its own jj workspace.")] = False,
     onto: Annotated[
         str | None,
-        typer.Option("--onto", help="Stack the new lane on <lane>'s head (or `@`) instead of trunk."),
+        typer.Option("--onto", help="Optional assertion of the base lane (must equal the name-parent)."),
     ] = None,
 ) -> None:
-    """Create a lane: a new change on trunk (or on <lane> with --onto) + bookmark <name>."""
+    """Create a lane: a `/`-path name (`T/api`) stacks on its name-parent `T`; a flat name roots on trunk."""
     from gitman.core import do_start
 
     _finish_intent(do_start(_session(), name, workspace, onto))
+
+
+@app.command()
+def subtask(
+    name: Annotated[str, typer.Argument(help="Single-segment leaf name; creates `<current-lane>/<name>`.")],
+    workspace: Annotated[bool, typer.Option("--workspace", help="Isolate the subtask in its own workspace.")] = False,
+) -> None:
+    """Fan out a child lane under the current lane: `subtask api` on `T` ≡ `start T/api` (stacks on `T`)."""
+    from gitman.core import do_subtask
+
+    _finish_intent(do_subtask(_session(), name, workspace))
 
 
 @app.command()

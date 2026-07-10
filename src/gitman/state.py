@@ -112,9 +112,9 @@ def _conflicted_lanes(view: RepoView, trunk: str) -> dict[str, list[str]]:
 def _resolvable_lane_heads(view: RepoView, trunk: str) -> dict[str, str]:
     """`{lane_name: head_commit_id}` for every live, non-conflicted lane (≠ trunk).
 
-    The input to the DAG base-derivation (`_base_of`): a conflicted lane names no single commit, so
-    it can't participate as a base (skip it). One `bookmarks()` read via `_lane_index` + one resolve
-    per lane."""
+    The live-lane set the name-derived base checks against (`_name_parent`): a conflicted lane names no
+    single commit, so it can't participate as a base (skip it). One `bookmarks()` read via `_lane_index`
+    + one resolve per lane."""
     local, _ = _lane_index(view)
     conflicted = _conflicted_lanes(view, trunk)
     heads: dict[str, str] = {}
@@ -125,33 +125,19 @@ def _resolvable_lane_heads(view: RepoView, trunk: str) -> dict[str, str]:
     return heads
 
 
-def _base_of(view: RepoView, lane: str, lane_heads: dict[str, str]) -> str | None:
-    """The name of the lane `lane` is stacked on (its base), or None if it's based on trunk.
+def _name_parent(lane: str, live: set[str]) -> str | None:
+    """The name of the lane `lane` is stacked on (its base), or None if it's a trunk root.
 
-    Fractal-lanes Phase 1: the base is **DAG-derived, never stored** (consistent with I3 — structure
-    from bookmarks, no side-car). Among all OTHER live lanes whose head is a proper ancestor of
-    `lane`'s head, the base is the *closest* — the candidate that is itself a descendant of every
-    other candidate. jj auto-rebases a stacked child onto its base's head on every rewrite (verified),
-    so a live child always sits on top of its base head and this ancestry test holds. (A child left
-    *behind* an advanced base — the sibling-fan-in case — loses the ancestry link under flat names;
-    that is Phase-2's name-path job, out of Phase-1 scope.)
+    Fractal-lanes Phase 2A (D1): the base is a **pure function of the `/`-path NAME**, never the commit
+    graph. The name-parent of `T/api` is `T`; the base is `T` iff `T` is a live lane (`live`). A flat
+    name (no `/`) is always a trunk root (base None). This retires Phase-1's DAG ancestry search and
+    closes its "child-behind-its-base loses the link" gap by construction — the name is authoritative,
+    the head resolved live. A non-live name-parent → None here (trunk-based for range purposes); the
+    orphan is flagged separately in `capture_state` so `status` can report it."""
+    from gitman.lanes import name_parent
 
-    `lane_heads` is `_resolvable_lane_heads(view, trunk)` — pass it in so a whole-repo `capture_state`
-    resolves each head once rather than per-lane."""
-    lane_head = lane_heads.get(lane)
-    if lane_head is None:
-        return None
-    candidates = {
-        n: h
-        for n, h in lane_heads.items()
-        if n != lane and h != lane_head and view.log(f"{h} & ::{lane_head}")
-    }
-    if not candidates:
-        return None
-    for name, head in candidates.items():
-        if all(view.log(f"{oh} & ::{head}") for other, oh in candidates.items() if other != name):
-            return name
-    return None  # no unique closest ancestor-lane (degenerate) → treat as trunk-based
+    parent = name_parent(lane)
+    return parent if parent is not None and parent in live else None
 
 
 def _remote_target(view: RepoView, name: str) -> str | None:
@@ -422,9 +408,13 @@ def capture_state(session: Session) -> RepoState:
     # with it the precheck of every guarded intent (issue 11). Detected once, up front.
     conflicted = _conflicted_lanes(view, trunk_name)
     # Fractal-lanes F2: a lane's own stats are `parentHead..name`, not `trunk..name` — for a stacked
-    # lane the latter double-counts its whole base chain as its own work. Derive each lane's base
-    # (DAG, no side-car) once from a shared lane-head map, and range against the base head (or trunk).
+    # lane the latter double-counts its whole base chain as its own work. The base is name-derived
+    # (Phase 2A, D1 — a pure function of the `/`-path name): `T/api`'s base is `T` iff `T` is live.
+    # Resolve every live head once (the liveness set + the parentHead range target).
+    from gitman.lanes import name_parent
+
     lane_heads = _resolvable_lane_heads(view, trunk_name)
+    live = set(lane_heads)
 
     lanes: list[Lane] = []
     for name in sorted(local_names - {trunk_name}):
@@ -441,7 +431,13 @@ def capture_state(session: Session) -> RepoState:
             continue
         head = view.resolve(name)
         change = _change(head, view.diff_stat(name))
-        base = _base_of(view, name, lane_heads)
+        # Name-derived base (D1): the name-parent iff it's a live lane, else None. `depth` is a pure
+        # name count. An `orphaned` node has a name-parent that isn't trunk and isn't a live bookmark
+        # (a raw out-of-band parent delete) — reported by `status`, never crashes capture (issue 11).
+        parent = name_parent(name)
+        base = parent if (parent is not None and parent in live) else None
+        depth = name.count("/")
+        orphaned = parent is not None and parent != trunk_name and parent not in local_names
         base_ref = base if base is not None else trunk_name  # parentHead (a bookmark name resolves)
         range_changes = view.log(f"{base_ref}..{name}")
         ahead = len(range_changes)
@@ -457,6 +453,8 @@ def capture_state(session: Session) -> RepoState:
             Lane(
                 name=name,
                 base=base,
+                depth=depth,
+                orphaned=orphaned,
                 state=LaneState.published if name in published else LaneState.draft,
                 head=change,
                 workspace=name if name in workspace_names else None,
@@ -523,6 +521,15 @@ def capture_state(session: Session) -> RepoState:
         )
     if current_lane is None and _orphan_working_copy(view, wc, trunk_name):
         notes.append("working copy @ has unbookmarked work — `gitman start <name>` to adopt it into a lane.")
+    # Fractal-lanes I3′: an orphaned node (its `/`-path name-parent was deleted out-of-band) is still a
+    # valid, resolvable lane — surface it as a note pointing at `reconcile`, never a crash. The tree
+    # render marks the node itself; this names the recovery verb.
+    orphans = sorted(lane.name for lane in lanes if lane.orphaned)
+    if orphans:
+        notes.append(
+            f"orphaned lane(s) {', '.join(orphans)}: name-parent deleted out-of-band — "
+            f"`gitman reconcile` to re-root (or rename)."
+        )
 
     return RepoState(
         repo_root=repo_root,

@@ -168,39 +168,73 @@ def _cleanup_workspace(session: Session, lane: str) -> list[str]:
 # --- lane lifecycle intents (M2) -----------------------------------------------------
 
 
-def _resolve_onto(session: Session, trunk: str, name: str, onto: str) -> tuple[str, str]:
-    """Resolve `--onto <lane|@>` → `(base_lane_name, base_head_commit_id)`; refuse (exit 3) otherwise.
+def _resolve_base(session: Session, trunk: str, name: str, onto: str | None) -> tuple[str | None, str | None]:
+    """Derive the new lane's base from its `/`-path NAME (D1, sole-source), cross-checking `--onto`.
 
-    MUST be called AFTER the precheck snapshot (i.e. inside the tx / guard body) so `@`'s own dirty
-    edits are folded into the base head before it's read — else a stacked lane would base on a stale
-    pre-edit commit and the ancestry link would break. `@` resolves to the current lane's head. Refuse
-    plain-`start` equivalents (`--onto <trunk>`), self-stacking, and a nonexistent / conflicted base."""
-    from gitman.lanes import current_lane, lane_names
+    Returns `(base_lane_name, base_head_commit_id)` for a stacked lane, or `(None, None)` for a trunk
+    root (a flat name). The name is authoritative: `start T/api` bases on `T` — `--onto` is an optional
+    *assertion* that must AGREE with the name-parent (D2, explicit tree), never a way to stack a
+    differently-named lane.
+
+    Refuses (exit 3): a name-parent that isn't a live lane (`gitman start <parent>` first — no
+    auto-create); a conflicted parent; a **bare** (flat) child name given `--onto` (name the lane
+    `<onto>/<name>`); an `--onto` that disagrees with the name-parent; and the plain-`start`
+    equivalents (`--onto <trunk>`, self-stack). MUST run AFTER the precheck snapshot (inside the tx /
+    guard body) so `@`'s dirty edits are folded into the parent head before it's read."""
+    from gitman.lanes import current_lane, lane_names, name_parent
     from gitman.state import _conflicted_lanes
 
     view = session.view()
-    if onto == "@":
-        cur = current_lane(session, trunk)
-        if cur is None:
+    parent = name_parent(name)  # pure, name-derived: `T/api` → `T`; flat → None
+
+    if onto is not None:
+        resolved = onto
+        if resolved == "@":
+            cur = current_lane(session, trunk)
+            if cur is None:
+                raise GitmanError(
+                    "`--onto @` but @ is not on a lane (it's on trunk) — use plain `gitman start`.",
+                    exit_code=3,
+                )
+            resolved = cur
+        if resolved == trunk:
             raise GitmanError(
-                "`--onto @` but @ is not on a lane (it's on trunk) — use plain `gitman start`.",
+                f"`--onto {trunk}` is just `gitman start` — a lane on trunk; omit `--onto`.", exit_code=3
+            )
+        if resolved == name:
+            raise GitmanError("a lane can't stack on itself.", exit_code=3)
+        # D2: `--onto` must agree with the name-parent — the NAME is the base. A bare child + `--onto`
+        # is refused (name it `<onto>/<name>`), not silently auto-qualified.
+        if parent is None:
+            raise GitmanError(
+                f"to stack '{name}' under '{resolved}', name the lane '{resolved}/{name}' — the "
+                f"`/`-path name is the base (then `--onto` is optional).",
                 exit_code=3,
             )
-        onto = cur
-    if onto == trunk:
+        if parent != resolved:
+            raise GitmanError(
+                f"`--onto {onto}` disagrees with the name-parent '{parent}' of '{name}' — the name is "
+                f"the base; drop `--onto`, or name the lane '{resolved}/…' to stack under '{resolved}'.",
+                exit_code=3,
+            )
+
+    if parent is None or parent == trunk:
+        return None, None  # flat name (or a literal `<trunk>/x`) → trunk root
+
+    # Name-parent present → it MUST be a live, resolvable lane (D2, no auto-create).
+    if parent not in lane_names(session, trunk):
         raise GitmanError(
-            f"`--onto {trunk}` is just `gitman start` — a lane on trunk; omit `--onto`.", exit_code=3
-        )
-    if onto == name:
-        raise GitmanError("a lane can't stack on itself.", exit_code=3)
-    if onto not in lane_names(session, trunk):
-        raise GitmanError(f"no such lane '{onto}' to stack onto.", exit_code=3)
-    if onto in _conflicted_lanes(view, trunk):
-        raise GitmanError(
-            f"lane '{onto}' is conflicted (diverged from origin) — `gitman reconcile` it before stacking.",
+            f"parent lane '{parent}' of '{name}' does not exist — `gitman start {parent}` first "
+            f"(or `gitman subtask <leaf>` while on '{parent}').",
             exit_code=3,
         )
-    return onto, view.resolve(onto).commit_id
+    if parent in _conflicted_lanes(view, trunk):
+        raise GitmanError(
+            f"parent lane '{parent}' is conflicted (diverged from origin) — `gitman reconcile` it "
+            f"before stacking under it.",
+            exit_code=3,
+        )
+    return parent, view.resolve(parent).commit_id
 
 
 def do_start(session: Session, name: str, workspace: bool, onto: str | None = None):
@@ -217,12 +251,15 @@ def do_start(session: Session, name: str, workspace: bool, onto: str | None = No
     else:
         with canonical_tx(session, "start") as tx:
             ensure_unique(session, trunk, name)
-            if onto is not None:
-                # Fractal lanes: base the new lane on <parent>'s head instead of trunk (the stacking
-                # atom). The issue-17 guardrail below is for the *trunk* path only — with `--onto` you
-                # are deliberately stacking on the un-landed lane, so it doesn't apply; and `--onto`
-                # supersedes the dirty-`@` adopt path (an explicit base wins).
-                base_name, base_commit = _resolve_onto(session, trunk, name, onto)
+            # Fractal lanes (D1): the base is derived from the `/`-path NAME — `start T/api` stacks on
+            # `T`. `_resolve_base` returns the parent + its head (stacked) or (None, None) for a trunk
+            # root, and enforces the D2 refusals (non-live parent, bare-child+`--onto`, disagreement).
+            base_name, base_commit = _resolve_base(session, trunk, name, onto)
+            if base_name is not None:
+                # Base the new lane on <parent>'s head instead of trunk (the stacking atom). The
+                # issue-17 guardrail below is for the *trunk* root path only — when stacking you
+                # deliberately build on the un-landed parent, and the base supersedes the dirty-`@`
+                # adopt path (an explicit, name-derived base wins).
                 tx.new(base_commit)
                 tx.create_bookmark(name, "@")
                 messages.append(f"lane '{name}' stacked on '{base_name}'.")
@@ -232,21 +269,21 @@ def do_start(session: Session, name: str, workspace: bool, onto: str | None = No
                 tx.create_bookmark(name, "@")
                 messages.append(f"adopted in-progress work into lane '{name}' on {trunk}.")
             else:
-                # Issue-17 guardrail: a plain `start` bases on trunk. If `@` is currently on a named
-                # lane that holds saved, un-landed work, that lane's tree is NOT in the new base, so the
-                # working copy reverts to trunk (silently, pre-guardrail). State the base explicitly and
-                # point at the two fixes — land the lane first (sibling on trunk), or stack on it with
-                # `--onto`. Non-blocking (a trunk-based sibling is a legitimate choice), so it's a note,
-                # not a refusal. Distinct from `_adoptable_work` (a dirty *unbookmarked* `@`); computed
-                # before `tx.new` moves `@` off the current lane.
+                # Issue-17 guardrail: a plain (flat-name) `start` bases on trunk. If `@` is currently on
+                # a named lane that holds saved, un-landed work, that lane's tree is NOT in the new base,
+                # so the working copy reverts to trunk (silently, pre-guardrail). State the base
+                # explicitly and point at the two fixes — land the lane first (sibling on trunk), or
+                # stack on it by naming the new lane `<cur>/<name>` (or `gitman subtask <name>` while on
+                # it). Non-blocking (a trunk-based sibling is a legitimate choice), so it's a note, not a
+                # refusal. Computed before `tx.new` moves `@` off the current lane.
                 cur = current_lane(session, trunk)
                 if cur is not None and lane_has_content(session, trunk, cur):
                     base_sha = session.view().resolve(trunk).commit_id[:12]
                     notes.append(
                         f"'{name}' is based on trunk {base_sha}; the un-landed lane '{cur}' is NOT in "
-                        f"that base — `gitman land {cur}` first (a sibling on trunk), or "
-                        f"`gitman start {name} --onto {cur}` to stack on it. Its saved changes live on "
-                        f"'{cur}', not on disk."
+                        f"that base — `gitman land {cur}` first (a sibling on trunk), or name it "
+                        f"'{cur}/{name}' (a.k.a. `gitman subtask {name}` while on '{cur}') to stack on "
+                        f"it. Its saved changes live on '{cur}', not on disk."
                     )
                 tx.new(trunk)
                 tx.create_bookmark(name, "@")
@@ -286,12 +323,12 @@ def _start_workspace(
         ensure_self_ignored_dir(wpath.parent)
     with canonical_guard(session, "start") as canon:
         ensure_unique(session, trunk, name)
-        # Resolve the base AFTER the precheck snapshot (inside the guard): trunk by default, or the
-        # `--onto` parent head. A commit id is workspace-global, so the sub-workspace tx can name it.
-        if onto is not None:
-            base_name, base_ref = _resolve_onto(session, trunk, name, onto)
-        else:
-            base_name, base_ref = trunk, trunk
+        # Resolve the base AFTER the precheck snapshot (inside the guard): name-derived (D1) — the
+        # `/`-path parent head when stacked, else trunk. A commit id is workspace-global, so the
+        # sub-workspace tx can name it; the trunk bookmark resolves across the shared op-log.
+        base_name, base_commit = _resolve_base(session, trunk, name, onto)
+        stacked = base_name is not None
+        base_ref = base_commit if stacked else trunk
         try:
             session.ws.add_workspace(str(wpath), name=name)  # own op; new @ on root
             sub = Workspace.load(wpath)
@@ -302,7 +339,7 @@ def _start_workspace(
             shutil.rmtree(wpath, ignore_errors=True)  # drop the half-made workspace dir
             raise
     messages.append(
-        f"lane '{name}' stacked on '{base_name}'." if onto is not None else f"lane '{name}' created on {trunk}."
+        f"lane '{name}' stacked on '{base_name}'." if stacked else f"lane '{name}' created on {trunk}."
     )
     notes.append(f"workspace at {wpath} — `cd {wpath}` to work in it.")
     notes.extend(canon.notes)
@@ -316,6 +353,28 @@ def _adoptable_work(session: Session, trunk: str) -> bool:
     if wc.is_empty or wc.bookmarks:
         return False
     return bool(session.view().log(f"@ & ({trunk}..)"))
+
+
+def do_subtask(session: Session, name: str, workspace: bool = False):
+    """Fan out a child lane under the current lane (D4): `subtask api` on `T` ≡ `start T/api`.
+
+    The ergonomic decomposition verb. Requires being on a lane `cur` (refuse on trunk, exit 1); `name`
+    is a **single segment** — a `/` refuses (exit 3: you decompose the lane you're on, not name a path
+    elsewhere). Delegates to the name-derived `do_start` path with the qualified name `<cur>/<name>`, so
+    validation, the D1 base derivation, and I3′ all apply uniformly. `--workspace` (P3 fan-out) is wired
+    through to the isolated-workspace path; own-work-on-the-parent stays allowed (model §1.6)."""
+    from gitman.lanes import require_current_lane
+
+    trunk = require_trunk(session.config)
+    cur = require_current_lane(session, trunk)  # exit 1 if @ is on trunk
+    if "/" in name:
+        raise GitmanError(
+            f"`subtask` takes a single-segment leaf name (got '{name}') — it decomposes the lane you're "
+            f"on. Use `gitman start {name}` for a `/`-path elsewhere.",
+            exit_code=3,
+        )
+    result = do_start(session, f"{cur}/{name}", workspace, onto=None)
+    return result.model_copy(update={"intent": "subtask"})
 
 
 def do_switch(session: Session, name: str):

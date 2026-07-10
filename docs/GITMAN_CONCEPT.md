@@ -107,9 +107,13 @@ repo-global, and auto-following the change across rewrites.
 | I3 | **Branch name = the lane's readable name**, unique-checked at creation, stable via the bookmark. | Branch-name generation / collision / freeze logic. |
 | I4 | **Gitman is the sole writer; mutating ops are serialized by a brief repo lock.** | Concurrent-rewrite divergence (parallel work lives in separate workspaces). |
 | I5 | **Each lane is linear on trunk (rebase-always); trunk advances only via `land` (local) or `pull` (integrating a moved origin).** | Merge-commit states; "which base?" ambiguity. |
+| I3′ | **A lane name is a task-tree `/`-path; its base is its name-parent (`T/api` → `T`), which must be a live lane or trunk** (fractal lanes, Phase 2A). Enforced *by construction* at `start`/`subtask` (parent-must-be-live) + refuse-with-child at `land`/`abandon`. | DAG base-ambiguity; a stacked lane's base is a namespace lookup, not a graph search. |
 
 The principle: **resolve variability once, at a well-defined moment (init, lane
-creation), not repeatedly at runtime.**
+creation), not repeatedly at runtime.** An out-of-band parent delete (a raw `jj`/`git`
+edit) is the sole way to violate I3′ → an **orphaned** node, which `status` reports (with a
+`gitman reconcile` pointer), never a crash — the same "external edits handled in one place"
+discipline as every other off-canonical state.
 
 ### Lane lifecycle
 
@@ -180,8 +184,9 @@ verbs. Anything not listed is deferred until friction proves it.
 
 | Intent | Signature | What it does | Underneath |
 |---|---|---|---|
-| `status` | `gitman status [--json]` | Canonical/off-canonical report: trunk + all lanes. | `jj log`/`op log`/`workspace list` (+git numstat) |
-| `start` | `gitman start <name> [--workspace] [--onto <lane>]` | Create a lane (new change on trunk + bookmark `<name>`); `--workspace` isolates it; `--onto <lane\|@>` **stacks** it on that lane's head (fractal lanes — the working copy carries the parent's tree). | `jj new <trunk\|parent-head>` + `jj bookmark create` (+ `jj workspace add`) |
+| `status` | `gitman status [--json]` | Canonical/off-canonical report: trunk + the lane **tree** (stacked lanes indented by `/`-path depth; `--json` stays a flat list with `base`+`depth`). | `jj log`/`op log`/`workspace list` (+git numstat) |
+| `start` | `gitman start <name> [--workspace] [--onto <lane>]` | Create a lane. A **`/`-path name** (`T/api`) **stacks** on its name-parent `T` — the base is derived from the name (fractal lanes, D1); a flat name roots on trunk. `--workspace` isolates it; `--onto` is an optional assertion that must equal the name-parent. | `jj new <trunk\|parent-head>` + `jj bookmark create` (+ `jj workspace add`) |
+| `subtask` | `gitman subtask <leaf> [--workspace]` | Fan out a child lane under the current lane: `subtask api` on `T` ≡ `start T/api` (stacks on `T`, carries its tree). Single-segment leaf; refuses on trunk. The ergonomic task-decomposition verb (fractal lanes, D4). | `do_start(<cur>/<leaf>)` |
 | `switch` | `gitman switch <lane>` | Move `@` onto an existing lane's change to resume it (navigation, never mutates trunk). Refuses to strand an unnamed dirty `@`; reports a lane checked out in another workspace. | `jj edit <lane>` |
 | `split` | `gitman split --paths <sel>… --into <lane> [-m <desc>]` | Partition the current lane's single change into two sibling lanes on trunk: the carved paths onto new lane `<into>`, the remainder on the original. `@` stays on the remainder; never mutates trunk. Path-scoped (whole files); refuses a multi-change/non-trunk-rooted lane, an empty match, or a whole-change match. | `jj new <trunk>` + `jj restore` ×2 + bookmark |
 | `save` | `gitman save [-m <desc>]` | Describe the current lane's change. | `jj describe` |
@@ -204,12 +209,15 @@ verbs. Anything not listed is deferred until friction proves it.
 blocked / off-canonical) · `2` infra/config (no remote, auth, jj/git missing, outside
 devenv, no version source) · `3` invalid usage.
 
-**Fractal lanes (recursive task-decomposition), Phase 1 shipped:** `start --onto <lane>` bases a new
-lane on another lane's head — the whole model is *making the 2-level (trunk + lanes) tree n-level by
-replacing the constant "trunk" with "this node's parent."* `land`/`sync`/`status` are parent-aware at
-one level (fold a node into its base, `parentHead..node` reporting, `↳ on <parent>`), and a base with a
-live child refuses to land/abandon. Phases 2–3 (deferred) add the `/`-path name hierarchy, recursion,
-`decompose` fan-out, and parallel-agent workspace-per-subtask fan-in.
+**Fractal lanes (recursive task-decomposition), Phase 2A shipped:** the whole model is *making the
+2-level (trunk + lanes) tree n-level by replacing the constant "trunk" with "this node's parent."* A
+lane name is a `/`-path (`T`, `T/api`, `T/api/handler`) and its **base is its name-parent** — a pure
+namespace lookup (D1), which retired Phase-1's DAG-ancestry base search and closed its "child-behind-
+its-base" gap by construction (I3′). `subtask <leaf>` fans out a child under the current lane;
+`land`/`sync`/`status` are parent-aware (fold a node into its base, `parentHead..node` reporting, the
+indented `↳ on <parent>` tree), and a base with a live child refuses to land/abandon. **Deferred:**
+`land --all` (bottom-up forest fold — PR-B), and Phase 3's parallel-agent workspace-per-subtask
+fan-out/fan-in + `abandon --recursive`.
 
 **Deferred:** the forge extra's PR `land`/`pr-status`; fractal-lanes Phases 2–3 (above); `shape`
 (squash/reorder + **hunk-level/interactive**
