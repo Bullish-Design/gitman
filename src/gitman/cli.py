@@ -193,11 +193,12 @@ def publish() -> None:
 @app.command()
 def land(
     lanes: Annotated[list[str] | None, typer.Argument(help="Lane(s) to fold into trunk (default: current).")] = None,
+    all_: Annotated[bool, typer.Option("--all", help="Fold the whole forest bottom-up (child→parent→trunk).")] = False,
 ) -> None:
-    """Fold lane(s) into trunk, advance trunk, retire the lane(s)."""
+    """Fold lane(s) into their base (parent lane or trunk); `--all` folds the whole forest bottom-up."""
     from gitman.core import do_land
 
-    _finish_intent(do_land(_session(), lanes))
+    _finish_intent(do_land(_session(), lanes, all_))
 
 
 @app.command()

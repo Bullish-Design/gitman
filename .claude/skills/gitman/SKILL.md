@@ -55,6 +55,7 @@ gitman status               # see trunk + the lane TREE (a stacked lane is inden
 gitman sync                 # rebase this lane onto its base (parent lane, or local trunk)
 gitman publish              # push the lane (branch = lane name); verify hook runs first
 gitman land [<lane>...]     # fold lane(s) into their base (parent lane, or trunk), retire the lane(s)
+gitman land --all           # fold the WHOLE forest bottom-up (child→parent→trunk) in one command
 gitman abandon [<lane>]     # discard a lane
 ```
 
@@ -65,8 +66,9 @@ isn't a live lane (`gitman start T` first); a flat name (no `/`) roots on trunk 
 subtask <leaf>`** is the ergonomic fan-out: while on `T`, `subtask api` creates `T/api` stacked on
 `T`, carrying `T`'s tree. `land <child>` folds the child **into its base** (the parent lane advances);
 a base with a live child refuses to land/abandon until the child is folded in ("fold the child in
-first"). Land bottom-up: children before their parents. `--onto <lane>` is retained only as an
-optional assertion that must equal the name-parent.
+first"). Land bottom-up: children before their parents — or `gitman land --all` to fold the whole
+forest bottom-up (child→parent→trunk) in one command, each level its own undo checkpoint. `--onto
+<lane>` is retained only as an optional assertion that must equal the name-parent.
 
 `switch` is the lane-**navigation** verb: when `@` leaves a lane without ending it (a sibling `start`
 in the same workspace stranded yours; you landed one of several lanes), `gitman switch <lane>` puts

@@ -193,7 +193,7 @@ verbs. Anything not listed is deferred until friction proves it.
 | `seed` | `gitman seed -m <desc>` | One-shot: make a fresh repo's first commit on trunk, leaving a clean `@`. Refuses once trunk has history. | `jj describe` @ + bookmark trunk |
 | `sync` | `gitman sync [--all]` | Fetch **lane** branches + rebase the current lane (or `--all` lanes) onto its **base** (parent lane head, or **local** trunk — never advances trunk). `--all` orders parent→child. A conflicting stacked rebase is left on its prior base (non-blocking). | `jj git fetch <lanes>` + `jj rebase` |
 | `publish` | `gitman publish` | Push the current lane; branch = lane name. Verify hook first. | `jj git push` (forge extra: + open/update PR) |
-| `land` | `gitman land [<lane>…]` | Fold lane(s) into their **base** — the parent lane (advance the parent bookmark) or **local** trunk (advance trunk, the one local trunk-advance). Refuses a lane with a live child (fold the child in first); multi-arg orders child→parent. | rebase + ff base/trunk + bookmark/workspace cleanup |
+| `land` | `gitman land [<lane>…] [--all]` | Fold lane(s) into their **base** — the parent lane (advance the parent bookmark) or **local** trunk (advance trunk, the one local trunk-advance). Refuses a lane with a live child (fold the child in first); multi-arg orders child→parent. **`--all`** folds the whole forest **bottom-up** (child→parent→trunk), each level its own tx/undo checkpoint (fractal lanes, D3). | rebase + ff base/trunk + bookmark/workspace cleanup |
 | `abandon` | `gitman abandon [<lane>]` | Discard a lane (terminal). | `jj abandon` + bookmark delete + workspace cleanup |
 | `pull` | `gitman pull [--dry-run]` | Integrate a genuinely-moved `origin/<trunk>`: fetch, content-aware FF / rebase un-pushed lands onto origin (never dropping work), rebase/retire surviving lanes, repark `@`. | `jj git fetch` + content relation + explicit trunk FF/rebase + survivor retire + repark |
 | `push` | `gitman push [--reset-origin]` | Publish local trunk → origin as a strict fast-forward (refuses non-FF → `pull`). `--reset-origin` lifts the gate (lease-safe migration escape). | `ws.git_push(<remote>, <trunk>)` (force-with-lease engine; strict-FF is a gitman policy) |
@@ -209,15 +209,17 @@ verbs. Anything not listed is deferred until friction proves it.
 blocked / off-canonical) · `2` infra/config (no remote, auth, jj/git missing, outside
 devenv, no version source) · `3` invalid usage.
 
-**Fractal lanes (recursive task-decomposition), Phase 2A shipped:** the whole model is *making the
+**Fractal lanes (recursive task-decomposition), Phase 2 shipped:** the whole model is *making the
 2-level (trunk + lanes) tree n-level by replacing the constant "trunk" with "this node's parent."* A
 lane name is a `/`-path (`T`, `T/api`, `T/api/handler`) and its **base is its name-parent** — a pure
 namespace lookup (D1), which retired Phase-1's DAG-ancestry base search and closed its "child-behind-
 its-base" gap by construction (I3′). `subtask <leaf>` fans out a child under the current lane;
 `land`/`sync`/`status` are parent-aware (fold a node into its base, `parentHead..node` reporting, the
-indented `↳ on <parent>` tree), and a base with a live child refuses to land/abandon. **Deferred:**
-`land --all` (bottom-up forest fold — PR-B), and Phase 3's parallel-agent workspace-per-subtask
-fan-out/fan-in + `abandon --recursive`.
+indented `↳ on <parent>` tree), and a base with a live child refuses to land/abandon. **`land --all`
+(2B)** folds the whole forest bottom-up (child→parent→trunk) — a *sequence* of one-level folds, each
+its own tx/undo checkpoint; internal folds move no trunk, only the root fold advances it (no new
+invariant exemption). **Deferred:** Phase 3's parallel-agent workspace-per-subtask fan-out/fan-in +
+`abandon --recursive`.
 
 **Deferred:** the forge extra's PR `land`/`pr-status`; fractal-lanes Phases 2–3 (above); `shape`
 (squash/reorder + **hunk-level/interactive**

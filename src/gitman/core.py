@@ -315,12 +315,19 @@ def _start_workspace(
     from gitman.lanes import ensure_unique, resolve_workspace_path
 
     wpath = resolve_workspace_path(session.repo_root, session.config, name)
-    # For an in-repo workspace (the default `.worktrees/<lane>`), self-ignore its parent so
-    # colocated git never reports the checkout as `?? .worktrees/` noise (jj-lib already never
-    # snapshots a nested workspace). Gated to in-repo only: an outside-repo override writes no
-    # stray .gitignore (§6). Both paths are resolved-absolute, so `in wpath.parents` is robust.
+    # For an in-repo workspace (the default `.worktrees/<lane>`), self-ignore the TOP in-repo
+    # container so colocated git never reports the checkout as `?? .worktrees/` noise (jj-lib
+    # already never snapshots a nested workspace). D7: a `/`-path name like `T/api` lands at
+    # `.worktrees/T/api`, whose *parent* is `.worktrees/T` — self-ignoring that would leave
+    # `.worktrees/` itself un-ignored. Walk up to the first ancestor directly under repo_root (the
+    # top `.worktrees/`) and ignore that; the `*` glob then covers every nested workspace. Gated to
+    # in-repo only: an outside-repo override writes no stray .gitignore (§6). Both paths are
+    # resolved-absolute, so `in wpath.parents` is robust.
     if session.repo_root in wpath.parents:
-        ensure_self_ignored_dir(wpath.parent)
+        top = wpath
+        while top.parent != session.repo_root:
+            top = top.parent
+        ensure_self_ignored_dir(top)
     with canonical_guard(session, "start") as canon:
         ensure_unique(session, trunk, name)
         # Resolve the base AFTER the precheck snapshot (inside the guard): name-derived (D1) — the
@@ -666,16 +673,36 @@ def do_publish(session: Session):
     )
 
 
-def do_land(session: Session, lane_args: list[str] | None):
+def do_land(session: Session, lane_args: list[str] | None, all_: bool = False):
     from pyjutsu import PyjutsuError
 
     from gitman.invariants import canonical_guard
     from gitman.lanes import children, lane_base, lane_depth, lane_names, require_current_lane
     from gitman.models import IntentResult
-    from gitman.state import _lane_index, _merge_tree_conflicts
+    from gitman.state import _lane_index, _merge_tree_conflicts, capture_state
 
     trunk = require_trunk(session.config)
-    targets = list(lane_args) if lane_args else [require_current_lane(session, trunk)]
+    if all_:
+        # Fractal lanes recursion (D3): `--all` folds the WHOLE forest bottom-up. It's not new
+        # machinery — it feeds every live lane through the exact per-lane guard loop below, which
+        # the depth-sort then orders child→parent. Mixing `--all` with positional names is ambiguous
+        # (which set?), so refuse it cleanly rather than silently pick one (build-time call, §7).
+        if lane_args:
+            raise GitmanError(
+                "`gitman land --all` folds the entire forest — don't also name lanes "
+                "(drop `--all` to land only those, or drop the names to land all).",
+                exit_code=3,
+            )
+        targets = sorted(lane_names(session, trunk))
+        if not targets:
+            return IntentResult(
+                intent="land",
+                outcome="NOOP",
+                messages=["no lanes to land."],
+                state=capture_state(session),
+            )
+    else:
+        targets = list(lane_args) if lane_args else [require_current_lane(session, trunk)]
     # Fractal lanes: `land` folds a node into its base (its parent lane, or trunk). Multi-arg sorts
     # child→parent (deepest first) so a batched `land base dep` folds `dep` in before `base` retires —
     # else the parent would refuse while its child is still live. Single-arg keeps caller order.
