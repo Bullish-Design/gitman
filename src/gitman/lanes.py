@@ -125,6 +125,16 @@ def lane_depth(session: Session, trunk: str, lane: str) -> int:
     return lane.count("/")
 
 
+def subtree(session: Session, trunk: str, lane: str) -> set[str]:
+    """Every live lane in `lane`'s subtree — `lane` itself plus all descendants by `/`-path (`T` →
+    {`T`, `T/api`, `T/api/handler`, `T/storage`}). Name-derived + total (D1): the membership test IS
+    the path prefix (`m == lane or m.startswith(lane + "/")`), never a DAG walk. Drives `abandon
+    --recursive`'s bottom-up cascade — sort the result by `lane_depth`, deepest first (as `land --all`
+    does), so a parent is only torn down after its children are gone (no orphan)."""
+    prefix = lane + "/"
+    return {m for m in lane_names(session, trunk) if m == lane or m.startswith(prefix)}
+
+
 def resolve_workspace_path(repo_root: Path, config: GitmanConfig, lane: str) -> Path:
     """Expand the [lanes].workspace_dir template ({repo}, {lane}) to an absolute path."""
     template = config.lanes.workspace_dir

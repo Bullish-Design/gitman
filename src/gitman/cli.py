@@ -204,11 +204,15 @@ def land(
 @app.command()
 def abandon(
     lane: Annotated[str | None, typer.Argument(help="Lane to discard (default: current).")] = None,
+    recursive: Annotated[
+        bool,
+        typer.Option("--recursive", "-r", help="Tear down the whole subtree bottom-up (child→parent)."),
+    ] = False,
 ) -> None:
-    """Discard a lane (terminal)."""
+    """Discard a lane (terminal); `--recursive` tears down its whole subtree bottom-up."""
     from gitman.core import do_abandon
 
-    _finish_intent(do_abandon(_session(), lane))
+    _finish_intent(do_abandon(_session(), lane, recursive))
 
 
 # --- M3 ------------------------------------------------------------------------------

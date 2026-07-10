@@ -194,7 +194,7 @@ verbs. Anything not listed is deferred until friction proves it.
 | `sync` | `gitman sync [--all]` | Fetch **lane** branches + rebase the current lane (or `--all` lanes) onto its **base** (parent lane head, or **local** trunk — never advances trunk). `--all` orders parent→child. A conflicting stacked rebase is left on its prior base (non-blocking). | `jj git fetch <lanes>` + `jj rebase` |
 | `publish` | `gitman publish` | Push the current lane; branch = lane name. Verify hook first. | `jj git push` (forge extra: + open/update PR) |
 | `land` | `gitman land [<lane>…] [--all]` | Fold lane(s) into their **base** — the parent lane (advance the parent bookmark) or **local** trunk (advance trunk, the one local trunk-advance). Refuses a lane with a live child (fold the child in first); multi-arg orders child→parent. **`--all`** folds the whole forest **bottom-up** (child→parent→trunk), each level its own tx/undo checkpoint (fractal lanes, D3). | rebase + ff base/trunk + bookmark/workspace cleanup |
-| `abandon` | `gitman abandon [<lane>]` | Discard a lane (terminal). | `jj abandon` + bookmark delete + workspace cleanup |
+| `abandon` | `gitman abandon [<lane>] [--recursive]` | Discard a lane (terminal); abandons only the lane's **own** commits (`base..lane`, so a stacked lane's parent survives). **`--recursive`** tears down the whole `/`-path subtree **bottom-up** (child→parent), each node its own tx/undo checkpoint; a foreign workspace an agent may still be in is forgotten but its dir is **kept** (never rmtree'd) (fractal lanes, D6). | `jj abandon` (`base..lane`) + bookmark delete + workspace cleanup |
 | `pull` | `gitman pull [--dry-run]` | Integrate a genuinely-moved `origin/<trunk>`: fetch, content-aware FF / rebase un-pushed lands onto origin (never dropping work), rebase/retire surviving lanes, repark `@`. | `jj git fetch` + content relation + explicit trunk FF/rebase + survivor retire + repark |
 | `push` | `gitman push [--reset-origin]` | Publish local trunk → origin as a strict fast-forward (refuses non-FF → `pull`). `--reset-origin` lifts the gate (lease-safe migration escape). | `ws.git_push(<remote>, <trunk>)` (force-with-lease engine; strict-FF is a gitman policy) |
 | `remote add` | `gitman remote add <url> [--name origin]` | Add a git remote (in-process; never touches git HEAD), bootstrapping trunk toward its first `push`. | `ws.add_remote` |
@@ -222,9 +222,13 @@ invariant exemption). **Parallel agents (3A) shipped:** N agents fan out subtask
 workspaces (`subtask --workspace`) and fold in from their own workspace — `land` refuses to fold a
 lane whose `@` is live in another workspace (never yanks a working dir), siblings left `N behind`
 catch up with their own `sync`, and `reconcile` refreshes a workspace whose `@` was rewritten out
-from under it. **Deferred:** `abandon --recursive` (the recursive teardown cascade).
+from under it. **`abandon --recursive` (3B) shipped:** the teardown mirror of `land --all` — a
+*sequence* of one-level `base..node` abandons, ordered deepest-first, each its own tx/undo checkpoint;
+bottom-up so no child is orphaned, trunk frozen throughout (no new invariant exemption), and a foreign
+workspace an agent may still be in is kept (never rmtree'd). **The fractal-lanes model is complete.**
 
-**Deferred:** the forge extra's PR `land`/`pr-status`; fractal-lanes Phases 2–3 (above); `shape`
+**Deferred:** the forge extra's PR `land`/`pr-status`; a `decompose <task> --into a,b,c` batch fan-out
+wrapper (loop `subtask` for now); a `reconcile` *repair* that re-roots an orphaned child; `shape`
 (squash/reorder + **hunk-level/interactive**
 split — the path-scoped `split` above shipped; only partial-file selection needs a native pyjutsu
 `split` binding), pre-release version metadata, pluggable forges.
@@ -273,6 +277,16 @@ $ gitman land T                                     # T → trunk (the root fold
   from its own dir keeps that (now parked, reusable) workspace — `cd` out and delete it, or start the
   next subtask in it. A reviewed flow opens a PR for CI/audit, but the trunk advance is still the
   local `land` (§8.1), not a forge merge button.
+- **Tear down a whole branch with `abandon <node> --recursive`.** When a subtree is a dead end, the
+  opt-in cascade discards it **bottom-up** (deepest child → … → the node), each node its own tx/undo
+  checkpoint (`gitman undo` reverses one node per call). It's the teardown mirror of `land --all`:
+  bottom-up ordering means a parent is only abandoned once its children are gone, so nothing is
+  orphaned and trunk stays frozen throughout. Each node abandons only its **own** commits
+  (`base..node`), so an in-flight sibling elsewhere is unaffected. A workspace child an agent may
+  still be editing is **kept** (its jj row forgotten, its dir left with a "cd there and delete it"
+  note) — the cascade never rmtrees a dir out from under a working agent, and never blocks on one.
+  Bare `abandon <node>` stays one-level: it refuses while the node has a live child (no implicit
+  cascade).
 
 ### 8.1 Trunk ↔ origin — the single local-authored model (`push` / `pull`)
 
@@ -657,6 +671,23 @@ The four prior open questions are now resolved by the lane model + the spike:
 - **`land` ordering** — landing several lanes that touch overlapping files: sequential rebase with
   per-lane conflict surfacing; the fold **stops** at the first conflict (partial-progress `BLOCKED`,
   prior folds committed, undo one level at a time — `land --all` §8/§7).
+
+**Resolved during implementation (Phase 3B — recursive teardown):**
+
+- **`abandon --recursive` cascade** → the teardown mirror of `land --all`: a *sequence* of one-level
+  abandons ordered deepest-first (child→parent), each its own tx/undo checkpoint. Bottom-up ordering
+  keeps the no-orphan invariant (a parent is torn down only after its children); no new
+  `_postcondition` exemption (each node moves no trunk, leaves no stray). Bare `abandon` stays
+  one-level (refuses a node with a live child).
+- **Abandon range is `base..node`, not `trunk..node`** — a single-node abandon discards only the
+  lane's *own* commits, so abandoning a stacked leaf no longer silently destroys its parent's work (a
+  Phase-1 latent data-loss bug, fixed with the cascade; for a flat lane base==trunk → unchanged).
+- **Foreign workspaces in a cascade are kept, not rmtree'd** — a workspace child of an abandoned
+  subtree may be one a concurrent agent is still editing, and gitman can't see another process's cwd;
+  the safe, consistent rule (never rmtree a `@` checked out elsewhere — same principle as the
+  `land`/`switch` guards) is to forget the jj row but leave the dir with a "cd there and delete it"
+  note. The cascade continues past it (never blocks). Bare `abandon <lane>` of a single named
+  workspace still removes its dir (an explicit, targeted teardown).
 
 **Genuinely still open (decide during implementation):**
 

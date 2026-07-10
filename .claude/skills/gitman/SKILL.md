@@ -57,7 +57,7 @@ gitman sync                 # rebase this lane onto its base (parent lane, or lo
 gitman publish              # push the lane (branch = lane name); verify hook runs first
 gitman land [<lane>...]     # fold lane(s) into their base (parent lane, or trunk), retire the lane(s)
 gitman land --all           # fold the WHOLE forest bottom-up (child→parent→trunk) in one command
-gitman abandon [<lane>]     # discard a lane
+gitman abandon [<lane>]     # discard a lane (add --recursive to tear down its whole subtree)
 ```
 
 **Decomposing a task into a tree — the `/`-path name IS the structure** (fractal lanes). A lane name
@@ -68,8 +68,10 @@ subtask <leaf>`** is the ergonomic fan-out: while on `T`, `subtask api` creates 
 `T`, carrying `T`'s tree. `land <child>` folds the child **into its base** (the parent lane advances);
 a base with a live child refuses to land/abandon until the child is folded in ("fold the child in
 first"). Land bottom-up: children before their parents — or `gitman land --all` to fold the whole
-forest bottom-up (child→parent→trunk) in one command, each level its own undo checkpoint. `--onto
-<lane>` is retained only as an optional assertion that must equal the name-parent.
+forest bottom-up (child→parent→trunk) in one command, each level its own undo checkpoint. To discard
+a whole branch of the tree, `gitman abandon <node> --recursive` tears it down bottom-up (child→parent),
+each node its own undo checkpoint; a workspace an agent may still be in is forgotten but its dir is
+kept, not deleted. `--onto <lane>` is retained only as an optional assertion that must equal the name-parent.
 
 **Parallel agents — fan out with `--workspace`, fold in from your own workspace.** `subtask <leaf>
 --workspace` (or `start <T/api> --workspace`) puts a child lane in its **own** `.worktrees/<lane>/`

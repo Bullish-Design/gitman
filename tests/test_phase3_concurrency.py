@@ -27,7 +27,7 @@ from pathlib import Path
 from pyjutsu import Workspace
 
 from gitman.config import GitmanConfig
-from gitman.core import GitmanError, do_land, do_save, do_start, do_subtask, do_sync
+from gitman.core import GitmanError, do_abandon, do_land, do_save, do_start, do_subtask, do_sync
 from gitman.reconcile import do_reconcile
 from gitman.session import Session
 from gitman.state import capture_state
@@ -313,6 +313,122 @@ def test_land_all_partial_progress_then_refuse(tmp_path: Path):
     final = capture_state(_sess(work))
     assert final.lanes == [] and final.canonical
     assert {"t.txt", "api.txt", "web.txt"} <= _trunk_paths_since(work, trunk0)
+
+
+# --- scenario 5: `abandon --recursive` — the D6 cascade -------------------------------
+
+
+def _build_subtree(work: Path):
+    """`T` (own work) + `T/api` + `T/api/handler` (depth 2) + `T/storage`, each a `--workspace` child
+    with its own committed file. Returns the three workspace paths."""
+    _init(work)
+    do_start(_sess(work), "T", False)
+    (work / "t.txt").write_text("t\n")
+    do_save(_sess(work), "T work")
+
+    do_subtask(_sess(work), "api", workspace=True)
+    do_subtask(_sess(work), "storage", workspace=True)
+    api_w = work / ".worktrees" / "T" / "api"
+    storage_w = work / ".worktrees" / "T" / "storage"
+    _edit_and_save(api_w, "api.txt", "api\n", "api work")
+    _edit_and_save(storage_w, "storage.txt", "storage\n", "storage work")
+
+    do_subtask(_sess(api_w), "handler", workspace=True)  # grandchild on T/api → depth 2
+    handler_w = work / ".worktrees" / "T" / "api" / "handler"
+    _edit_and_save(handler_w, "handler.txt", "h\n", "handler work")
+    return api_w, storage_w, handler_w
+
+
+def test_abandon_recursive_cascades_bottom_up(tmp_path: Path):
+    """§2.3 the cascade: `abandon T --recursive` tears down the whole `/`-path subtree bottom-up
+    (T/api/handler → T/api & T/storage → T), each node its own tx/undo checkpoint. Assert: the subtree
+    is GONE (no lane, no orphan, canonical), TRUNK FROZEN throughout (the no-new-exemption proof — an
+    abandon moves no trunk), and every workspace registration is forgotten. The base-relative abandon
+    means a parent's commits survive until the parent itself is torn down (no premature data loss)."""
+    work = tmp_path / "work"
+    work.mkdir()
+    api_w, storage_w, handler_w = _build_subtree(work)
+
+    trunk0 = _trunk(work)
+    r = do_abandon(_sess(work), "T", recursive=True)
+    assert r.outcome == "ABANDONED", r.messages
+    assert "subtree" in " ".join(r.messages)
+
+    final = capture_state(_sess(work))
+    assert final.lanes == [], [lane.name for lane in final.lanes]  # whole subtree gone, no orphan
+    assert final.canonical, final.off_canonical
+    assert _trunk(work) == trunk0, "trunk moved during the abandon cascade (abandon must freeze it)"
+    # every workspace registration is forgotten (only the default remains).
+    assert {w.name for w in Workspace.load(work).workspaces()} == {"default"}
+    # foreign workspace dirs are KEPT (never rmtree'd out from under a possibly-working agent).
+    for w in (api_w, storage_w, handler_w):
+        assert w.is_dir(), f"{w} should be kept (foreign warn-and-keep), not removed"
+    assert any("forgotten but kept" in n for n in r.notes), r.notes
+    # multi-node cascade → the one-undo-per-node note.
+    assert any("one lane at a time" in n for n in r.notes), r.notes
+
+
+def test_abandon_recursive_undo_reverses_one_node_at_a_time(tmp_path: Path):
+    """The cascade is a SEQUENCE of one-level abandons — `gitman undo` reverses exactly one node per
+    call (the root `T` was abandoned last, so it comes back first). Proves the per-node checkpoint."""
+    from gitman.core import do_undo
+
+    work = tmp_path / "work"
+    work.mkdir()
+    _build_subtree(work)
+
+    assert do_abandon(_sess(work), "T", recursive=True).outcome == "ABANDONED"
+    assert capture_state(_sess(work)).lanes == []
+
+    # One undo restores exactly the last-abandoned node (T), not the whole subtree.
+    do_undo(_sess(work), op=None, list_=False)
+    names = {lane.name for lane in capture_state(_sess(work)).lanes}
+    assert names == {"T"}, names
+    assert capture_state(_sess(work)).canonical
+
+
+def test_abandon_bare_still_refuses_live_child(tmp_path: Path):
+    """P3-D3: the bare form is UNCHANGED — `abandon T` with a live child refuses (exit 1) and points at
+    `--recursive`. No implicit cascade; `--recursive` is the only teardown path."""
+    work = tmp_path / "work"
+    work.mkdir()
+    _build_subtree(work)
+
+    try:
+        do_abandon(_sess(work), "T")  # no --recursive
+        raise AssertionError("bare abandon of a node with a live child should refuse")
+    except GitmanError as exc:
+        assert exc.exit_code == 1
+        assert "--recursive" in str(exc)
+    # nothing torn down — the subtree is intact and canonical.
+    assert {"T", "T/api", "T/api/handler", "T/storage"} <= {lane.name for lane in capture_state(_sess(work)).lanes}
+    assert capture_state(_sess(work)).canonical
+
+
+def test_abandon_recursive_keeps_cd_inside_workspace(tmp_path: Path):
+    """§7 the subtle correctness point: the cascade never rmtrees a dir an agent is standing in. With
+    the process cd'd inside `T/api`, `abandon T --recursive` forgets that workspace but KEEPS its dir,
+    emits the cd-inside note, and STILL completes the whole teardown (does not block on the occupied
+    dir)."""
+    work = tmp_path / "work"
+    work.mkdir()
+    api_w, _storage_w, _handler_w = _build_subtree(work)
+
+    import os
+
+    prev = os.getcwd()
+    os.chdir(api_w)  # model an agent cd'd inside the T/api workspace
+    try:
+        r = do_abandon(_sess(work), "T", recursive=True)
+    finally:
+        os.chdir(prev)
+
+    assert r.outcome == "ABANDONED", r.messages
+    assert api_w.is_dir()  # kept — not yanked from under us
+    assert any("cd'd inside" in n and str(api_w) in n for n in r.notes), r.notes
+    # the cascade still finished: the whole subtree is gone and canonical.
+    final = capture_state(_sess(work))
+    assert final.lanes == [] and final.canonical
 
 
 # --- scenario 6: depth ≥ 2 stale refresh via reconcile --------------------------------

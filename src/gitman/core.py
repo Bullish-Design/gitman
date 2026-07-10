@@ -134,7 +134,7 @@ def pick_remote(ws: Workspace) -> str:
     return names[0] if names else "origin"
 
 
-def _cleanup_workspace(session: Session, lane: str) -> list[str]:
+def _cleanup_workspace(session: Session, lane: str, keep_foreign: bool = False) -> list[str]:
     """Forget a retired lane's workspace and remove its dir — unless the caller is cd'd
     inside it (then forget but keep the dir, and say so). Never blocks. Publishes its own jj
     op → only call inside a `canonical_guard` body. See plan / concept §20.
@@ -144,7 +144,15 @@ def _cleanup_workspace(session: Session, lane: str) -> list[str]:
     (e.g. the old `../{repo}-{lane}` sibling) is cleaned at its real location instead of being
     orphaned. `.path` must be read BEFORE `forget_workspace` (forget drops the row) and is a `str`
     (wrap in `Path`). Only a corrupted/out-of-band-removed store yields `path is None` → fall back
-    to the config recompute (prior behavior)."""
+    to the config recompute (prior behavior).
+
+    `keep_foreign` (fractal-lanes P3-D3, the `abandon --recursive` cascade): when the retired lane is
+    a *foreign* workspace — a registered workspace other than this session's — forget its jj row but
+    KEEP the on-disk dir with a note, never `rmtree` it. gitman cannot see another agent's cwd, so a
+    workspace child of an abandoned subtree may be one a concurrent agent is still editing; the safe,
+    consistent rule (never rmtree a `@` checked out elsewhere — the same principle as the `land`/
+    `switch` cross-workspace guards) is to leave the dir for its owner to delete. The cascade continues
+    past it. `keep_foreign=False` (bare `abandon`, `land`, `pull`) is byte-for-byte the prior behavior."""
     from gitman.lanes import resolve_workspace_path
 
     if lane == session.ws.name:
@@ -165,9 +173,24 @@ def _cleanup_workspace(session: Session, lane: str) -> list[str]:
         return []  # not a workspace lane — nothing to do
     wpath = Path(rec.path) if rec.path is not None else resolve_workspace_path(session.repo_root, session.config, lane)
     notes: list[str] = []
-    session.ws.forget_workspace(lane)
     cwd = Path.cwd()
     inside = cwd == wpath or wpath in cwd.parents
+    if keep_foreign:
+        # `rec` exists and `lane != session.ws.name` (early-returned above) → `lane` is a foreign
+        # workspace. Forget its jj row but keep the dir: an agent may still be working in it, and we
+        # never rmtree a dir out from under one. The cd-inside note is nicer when it applies.
+        session.ws.forget_workspace(lane)
+        if inside:
+            notes.append(
+                f"workspace {wpath} forgotten but kept (you are cd'd inside; `cd {session.repo_root}`, then delete it)."
+            )
+        else:
+            notes.append(
+                f"workspace {wpath} forgotten but kept ('{lane}' may be checked out by another agent — "
+                f"`cd {wpath}` and delete it when done)."
+            )
+        return notes
+    session.ws.forget_workspace(lane)
     if inside:
         notes.append(
             f"workspace {wpath} forgotten but kept (you are cd'd inside; `cd {session.repo_root}`, then delete it)."
@@ -854,41 +877,114 @@ def do_land(session: Session, lane_args: list[str] | None, all_: bool = False):
     )
 
 
-def do_abandon(session: Session, lane: str | None):
+def _abandon_range(session: Session, trunk: str, target: str) -> None:
+    """Abandon a lane's OWN commits (`base..target`) and delete its bookmark, in one transaction.
+
+    The range is `base..target`, not `trunk..target`: a stacked lane's `trunk..target` also spans its
+    parent's commits, so abandoning it would silently destroy the *parent's* work (a Phase-1 latent
+    bug — no test asserted the parent survived abandoning a stacked leaf). Abandoning only `base..target`
+    (base = the name-derived parent lane, or trunk for a flat lane) moves this lane's bookmark back onto
+    its base commit, so `delete_bookmark` then succeeds with no strays, and the parent is untouched. For
+    a flat lane base==trunk → byte-for-byte the prior behavior. This base-relative atom is also what
+    makes the `--recursive` cascade correct: bottom-up, a parent is still live when its child is
+    abandoned, so each child's base resolves and only the child's commits are removed. Target by
+    commit_id (via `_target`) so a divergent change can't dead-end the abandon (issue 06 §G2). Call
+    inside a `canonical_guard` body."""
+    from gitman.lanes import lane_base
+
+    base = lane_base(session, trunk, target) or trunk
+    with session.ws.transaction("gitman:abandon", auto_snapshot=False) as tx:
+        for c in session.view().log(f"{base}..{target}"):
+            tx.abandon(_target(c))
+        tx.delete_bookmark(target)
+
+
+def do_abandon(session: Session, lane: str | None, recursive: bool = False):
     from gitman.invariants import canonical_guard
-    from gitman.lanes import children, lane_names, require_current_lane
+    from gitman.lanes import children, lane_depth, lane_names, require_current_lane, subtree
     from gitman.models import IntentResult
 
     trunk = require_trunk(session.config)
     target = lane or require_current_lane(session, trunk)
-    with canonical_guard(session, "abandon") as canon:
-        if target not in lane_names(session, trunk):
-            raise GitmanError(f"no such lane '{target}'.", exit_code=3)
-        # A base with a live dependent can't be discarded — its child would be orphaned off a commit
-        # about to vanish. Refuse (exit 1); Phase 1 has no cascade (that's a Phase-3 `--recursive` flag).
-        kids = children(session, trunk, target)
-        if kids:
-            raise GitmanError(
-                f"lane '{target}' has a live child stacked on it ({', '.join(sorted(kids))}) — "
-                f"abandon or land the child first.",
-                exit_code=1,
-            )
-        # Abandoning every trunk..lane change moves the lane bookmark back onto trunk's commit,
-        # so delete_bookmark then succeeds (no strays). Target by commit_id (via `_target`) so a
-        # divergent change in the range can't dead-end the abandon (issue 06 §G2).
-        with session.ws.transaction("gitman:abandon", auto_snapshot=False) as tx:
-            for c in session.view().log(f"{trunk}..{target}"):
-                tx.abandon(_target(c))
-            tx.delete_bookmark(target)
-        canon.notes += _cleanup_workspace(session, target)
+    if target not in lane_names(session, trunk):
+        raise GitmanError(f"no such lane '{target}'.", exit_code=3)
+
+    if not recursive:
+        # ── bare abandon (P2 behavior, byte-for-byte): one node, refuse a live child ──
+        with canonical_guard(session, "abandon") as canon:
+            # A base with a live dependent can't be discarded — its child would be orphaned off a
+            # commit about to vanish. Refuse (exit 1); the opt-in cascade is `--recursive`.
+            kids = children(session, trunk, target)
+            if kids:
+                raise GitmanError(
+                    f"lane '{target}' has a live child stacked on it ({', '.join(sorted(kids))}) — "
+                    f"abandon or land the child first (or `gitman abandon {target} --recursive`).",
+                    exit_code=1,
+                )
+            _abandon_range(session, trunk, target)
+            canon.notes += _cleanup_workspace(session, target)
+        return IntentResult(
+            intent="abandon",
+            outcome="ABANDONED",
+            lane=target,
+            messages=[f"discarded lane '{target}'."],
+            notes=canon.notes,
+            undo_command="gitman undo",
+            state=canon.state,
+        )
+
+    # ── `abandon --recursive` (P3-D3): tear down the whole subtree bottom-up ──
+    # This is `land --all` for teardown: a sequence of one-level abandons, each its own tx/undo
+    # checkpoint, ordered deepest-first (child→parent) so a parent is only abandoned after its children
+    # are gone — no orphan, no new invariant exemption (`invariants.py` untouched; each node is the
+    # existing single-abandon tx, which moves no trunk). Foreign workspaces are kept (never rmtree'd),
+    # so the cascade never yanks a dir from a working agent and never blocks.
+    targets = sorted(subtree(session, trunk, target), key=lambda m: lane_depth(session, trunk, m), reverse=True)
+    abandoned: list[str] = []
+    notes: list[str] = []
+    last_undo: str | None = None
+    last_state = None
+    blocked: GitmanError | None = None
+    for node in targets:
+        try:
+            with canonical_guard(session, "abandon") as canon:
+                if node not in lane_names(session, trunk):
+                    raise GitmanError(f"no such lane '{node}'.", exit_code=3)
+                _abandon_range(session, trunk, node)
+                canon.notes += _cleanup_workspace(session, node, keep_foreign=True)
+            abandoned.append(node)
+            notes += canon.notes
+            last_undo = canon.undo_command
+            last_state = canon.state
+        except GitmanError as exc:
+            blocked = exc
+            break
+
+    if blocked is not None:
+        msgs = [f"abandoned: {', '.join(abandoned)}" if abandoned else "abandoned: none", str(blocked)]
+        if len(abandoned) > 1:
+            notes = notes + [f"`gitman undo` reverts one lane at a time — run it {len(abandoned)}× to undo all."]
+        return IntentResult(
+            intent="abandon",
+            outcome="BLOCKED",
+            messages=msgs,
+            notes=notes,
+            exit_code=blocked.exit_code,
+            undo_command=last_undo,
+            state=last_state,
+        )
     return IntentResult(
         intent="abandon",
         outcome="ABANDONED",
         lane=target,
-        messages=[f"discarded lane '{target}'."],
-        notes=canon.notes,
-        undo_command="gitman undo",
-        state=canon.state,
+        messages=[f"discarded subtree '{target}' ({len(abandoned)} lane(s): {', '.join(abandoned)})."],
+        notes=(
+            notes + [f"`gitman undo` reverts one lane at a time — run it {len(abandoned)}× to undo all."]
+            if len(abandoned) > 1
+            else notes
+        ),
+        undo_command=last_undo,
+        state=last_state,
     )
 
 
