@@ -34,3 +34,6 @@ uv.lock
 
 # retired old-gitman code, kept for reference only
 archive/
+
+# machine-local agent state (per-machine permission grants; never shared)
+.claude/settings.local.json
