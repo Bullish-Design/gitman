@@ -159,18 +159,38 @@ def _assert_fresh(session: Session) -> None:
         raise StaleWorkingCopyError("working copy is stale — run `gitman reconcile`.")
 
 
-def precheck_canonical(session: Session) -> RepoState:
+def precheck_canonical(session: Session, intent: str | None = None) -> RepoState:
     """Refuse to start when already off-canonical → exit 1. Returns the before-state (carrying
     `trunk_before`). Imported lazily to avoid a state↔invariants import cycle. `capture_state`
     calls `fresh_view()` → this is the explicit snapshot that fixes `op_before`'s parent."""
     from gitman.state import capture_state
 
-    before = capture_state(session)
+    # Snapshot the pre-`capture_state` `@` (no snapshot yet — `session.view()` is the head): its
+    # commit id lets the dirty-`@` guard below tell a *dirty* trunk-`@` (on-disk edits pending) from
+    # the legitimate clean bootstrap `@`==trunk.
+    pre_wc = session.view().working_copy()
+    on_trunk_pre = session.config.trunk in pre_wc.bookmarks
+
+    before = capture_state(session)  # fresh_view() snapshots any on-disk edits into `@`
     if not before.canonical:
         raise GitmanError(
             f"refusing: repo is off-canonical ({before.off_canonical}) — run `gitman reconcile`.",
             exit_code=1,
         )
+    # Dirty trunk-`@` guard (13-RC2 backstop), scoped to the trunk-advancing intent (`land`): a `@`
+    # that *coincides* with trunk AND carries *dirty* on-disk edits would fold that dirt into trunk.
+    # "Dirty" = the snapshot above rewrote `@` (pre != post commit id). A clean `@`==trunk — the
+    # bootstrap state before the first `start`, or the default workspace while a secondary workspace
+    # does the work — is NOT dirty and lands fine. Only a genuinely dirty trunk-`@` (reachable only
+    # via out-of-band edits; gitman itself can't leave `@` on trunk, per the postcondition) is refused.
+    if intent == "land" and on_trunk_pre:
+        post_wc = session.view().working_copy()
+        if pre_wc.commit_id != post_wc.commit_id:  # snapshot rewrote @ → on-disk edits existed
+            raise GitmanError(
+                f"working copy @ is the trunk commit '{session.config.trunk}' and carries uncommitted "
+                f"edits — `gitman start <name>` to move this work into a lane before landing.",
+                exit_code=1,
+            )
     return before
 
 
@@ -181,11 +201,25 @@ def _postcondition(session: Session, intent: str, trunk_before: str | None, op_b
     # `adopt` is the second sanctioned trunk-advancing intent (I5 widens to land OR adopt): it lets
     # the forge-merged `origin/<trunk>` advance stand instead of reverting it as a stray trunk move.
     trunk_moved = (after.trunk.commit_id != trunk_before) and intent not in ("land", "adopt")
-    if not after.canonical or trunk_moved:
+    # New invariant — `@` never coincides with trunk, enforced at the trunk-advancing intent
+    # (`land`): after a land, the landing session's `@` must sit on a fresh child of the advanced
+    # trunk (the repark), never *on* trunk — else the next snapshot amends trunk (13-RC2/RC3/RC4).
+    # Scoped to `land` because a session's `@` legitimately sits on trunk elsewhere (the bootstrap
+    # `@`==trunk before the first `start`, or the default workspace while work runs in a secondary
+    # one). `adopt` is exempt (out of scope for Tier 1 — it doesn't repark `@`).
+    at_on_trunk = (
+        intent == "land"
+        and after.trunk.commit_id is not None
+        and session.view().working_copy().commit_id == after.trunk.commit_id
+    )
+    if not after.canonical or trunk_moved or at_on_trunk:
         session.ws.restore_operation(op_before)
-        reason = after.off_canonical or (
-            f"trunk moved outside a land ({trunk_before} → {after.trunk.commit_id})"
-        )
+        if at_on_trunk and after.canonical and not trunk_moved:
+            reason = f"working copy @ coincides with trunk '{after.trunk.name}' after land (repark failed)"
+        else:
+            reason = after.off_canonical or (
+                f"trunk moved outside a land ({trunk_before} → {after.trunk.commit_id})"
+            )
         raise GitmanError(f"reverted: {reason}; no change applied.", exit_code=1)
     return after
 
@@ -211,9 +245,9 @@ def _export_colocated_git(session: Session) -> list[str]:
     """
     from pyjutsu import PyjutsuError
 
+    notes: list[str] = []
     try:
         session.ws.git_export()
-        return []
     except PyjutsuError:
         from gitman.state import colocated_ref_desync
 
@@ -223,7 +257,15 @@ def _export_colocated_git(session: Session) -> list[str]:
         except Exception:  # noqa: BLE001 — surfacing must never mask the (already-committed) intent
             stuck = []
         names = ", ".join(stuck) if stuck else "some bookmarks"
-        return [f"colocated git ref(s) stale for: {names} — run `gitman reconcile` to re-sync."]
+        notes.append(f"colocated git ref(s) stale for: {names} — run `gitman reconcile` to re-sync.")
+    # Total colocated sync (HEAD + index) after every mutation so raw-git tooling never lags jj
+    # (15-RC6). Best-effort and last: a non-colocated repo (or a rare sync failure) must never undo
+    # the already-committed, already-recorded intent.
+    try:
+        session.sync_colocated()
+    except PyjutsuError:
+        notes.append("colocated git checkout not re-synced — run `gitman reconcile` if raw git looks stale.")
+    return notes
 
 
 @dataclass
@@ -253,7 +295,7 @@ def canonical_tx(session: Session, intent: str) -> Iterator[Transaction]:
     """
     with repo_lock(session.repo_root):
         _assert_fresh(session)
-        before = precheck_canonical(session)
+        before = precheck_canonical(session, intent)
         trunk_before = before.trunk.commit_id
         op_before = session.ws.head_operation()  # after the snapshot → deterministic parent
         with session.ws.transaction(f"gitman:{intent}", auto_snapshot=False) as tx:
@@ -279,7 +321,7 @@ def canonical_guard(session: Session, intent: str) -> Iterator[Canon]:
     """
     with repo_lock(session.repo_root):
         _assert_fresh(session)
-        before = precheck_canonical(session)
+        before = precheck_canonical(session, intent)
         trunk_before = before.trunk.commit_id
         op_before = session.ws.head_operation()
         canon = Canon(op_before=op_before)

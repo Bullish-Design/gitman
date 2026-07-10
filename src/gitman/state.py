@@ -119,26 +119,96 @@ def _remote_target(view: RepoView, name: str) -> str | None:
     return None
 
 
-def _trunk_remote_relation(session: Session, view: RepoView, trunk: str) -> tuple[int, int, str | None]:
-    """(behind, ahead, remote) of the local trunk bookmark vs its `<trunk>@<remote>` row.
+def _merge_tree_relation(repo_root: Path, local_sha: str, origin_sha: str) -> tuple[bool, bool] | None:
+    """`(forge_has_new, local_has_new)` by content — the read-only realization of adopt's
+    "empty-after-rebase" test, via a colocated-git 3-way merge tree.
 
-    `behind` = forge commits on `<trunk>@<remote>` not yet local (the forge-merge gap `gitman adopt`
-    closes); `ahead` = local trunk commits not yet pushed. Returns zeros + the remote name when no
-    remote is configured or the remote trunk hasn't been fetched yet (no network — reads the last
-    fetch's tracking ref).
+    `git merge-tree --write-tree A B` performs a real 3-way merge of `A` and `B` (auto merge-base)
+    and prints the merged tree's oid. Comparing that tree to each tip's tree answers the content
+    question that SHA-ancestry can't:
+      * `forge_has_new` = merged tree ≠ `local`'s tree → the merge added content beyond local ⇒
+        `origin` holds content absent from local (genuine forge work).
+      * `local_has_new` = merged tree ≠ `origin`'s tree → local holds content absent from origin.
+    A re-hash twin (content-equal, hash-divergent) merges to a tree equal to *both* tips ⇒ both
+    False ⇒ in-sync — the whole point (kills the 15-RC2 data-loss `adopt` hint). A merge *conflict*
+    (rc 1) means both sides changed the same lines incompatibly ⇒ genuinely diverged (both True).
+
+    jj commit ids ARE the colocated git SHAs, so `A`/`B` are the pyjutsu-resolved commit ids (never
+    the git ref names — jj's remote-tracking refs aren't guaranteed under `refs/remotes/*`). Returns
+    None on any unexpected git failure (never crashes `status`); the caller falls back to `None`
+    (unknown) relation. This is the one content-comparison surface; a future pyjutsu content
+    primitive (project-13 P4, deferred) would move it fully in-process.
+    """
+    import subprocess
+
+    def _tree(sha: str) -> str | None:
+        proc = subprocess.run(
+            ["git", "rev-parse", f"{sha}^{{tree}}"], cwd=repo_root, capture_output=True, text=True
+        )
+        return proc.stdout.strip() if proc.returncode == 0 else None
+
+    local_tree = _tree(local_sha)
+    origin_tree = _tree(origin_sha)
+    if local_tree is None or origin_tree is None:
+        return None
+    proc = subprocess.run(
+        ["git", "merge-tree", "--write-tree", local_sha, origin_sha],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode == 1:  # merge conflict → both sides changed the same content
+        return True, True
+    if proc.returncode != 0:  # unexpected (bad object, ancient git, …) — don't guess, report unknown
+        return None
+    merged_tree = proc.stdout.splitlines()[0].strip() if proc.stdout.strip() else ""
+    if not merged_tree:
+        return None
+    return merged_tree != local_tree, merged_tree != origin_tree
+
+
+def _trunk_content_relation(
+    session: Session, view: RepoView, trunk: str
+) -> tuple[str | None, int, int, str | None]:
+    """`(relation, behind, ahead, remote)` of local trunk vs its `<trunk>@<remote>` row.
+
+    `relation` is the honest, twin-proof signal — one of `in-sync` / `local-ahead` / `forge-ahead`
+    / `diverged`, or None when there's no remote / the remote trunk isn't fetched / the content
+    check couldn't run. `behind`/`ahead` are the *ancestry* counts (display-only). Ancestry answers
+    the unambiguous cases directly; only the both-ahead case (a re-hash twin OR a real divergence)
+    needs the content merge-tree. No network — reads the last fetch's tracking ref.
     """
     from gitman.core import pick_remote
 
     if not session.ws.remotes():
-        return 0, 0, None
+        return None, 0, 0, None
     remote = pick_remote(session.ws)
     try:
-        view.resolve(f"{trunk}@{remote}")
+        origin = view.resolve(f"{trunk}@{remote}")
     except RevsetError:
-        return 0, 0, remote  # remote trunk not fetched yet
+        return None, 0, 0, remote  # remote trunk not fetched yet
     behind = len(view.log(f"{trunk}..{trunk}@{remote}"))
     ahead = len(view.log(f"{trunk}@{remote}..{trunk}"))
-    return behind, ahead, remote
+    if behind == 0 and ahead == 0:
+        return "in-sync", 0, 0, remote
+    if behind == 0:
+        return "local-ahead", 0, ahead, remote
+    if ahead == 0:
+        return "forge-ahead", behind, 0, remote
+    # Both ahead by ancestry: could be a content-equal twin (in-sync/local-ahead) or a real
+    # divergence. Only the content merge-tree can tell — SHA ancestry can't.
+    local = view.resolve(trunk)
+    content = _merge_tree_relation(session.repo_root, local.commit_id, origin.commit_id)
+    if content is None:
+        return "diverged", behind, ahead, remote  # unknowable content → the safe (never-adopt) call
+    forge_has_new, local_has_new = content
+    if forge_has_new and local_has_new:
+        return "diverged", behind, ahead, remote
+    if forge_has_new:
+        return "forge-ahead", behind, ahead, remote
+    if local_has_new:
+        return "local-ahead", behind, ahead, remote
+    return "in-sync", behind, ahead, remote
 
 
 def _git_refs_heads(repo_root: Path) -> dict[str, str]:
@@ -245,13 +315,16 @@ def capture_state(session: Session) -> RepoState:
             f"configured trunk '{trunk_name}' not found — run `gitman doctor`.", exit_code=2
         ) from exc
 
-    # Trunk vs its remote-tracking branch (status honesty — surfaces the forge-merge gap that
-    # `gitman adopt` closes). Reads the *last fetch's* `<trunk>@<remote>` row; no network here.
-    behind_remote, ahead_remote, remote_name = _trunk_remote_relation(session, view, trunk_name)
+    # Trunk vs its remote-tracking branch — a *content-aware* relation (twin-proof; no network,
+    # reads the last fetch's `<trunk>@<remote>` row). `relation` is the honest signal; the
+    # behind/ahead counts are display-only ancestry.
+    relation, behind_remote, ahead_remote, remote_name = _trunk_content_relation(session, view, trunk_name)
     trunk_ref = TrunkRef(
         name=trunk_name,
         change_id=trunk_commit.change_id,
         commit_id=trunk_commit.commit_id,
+        remote=remote_name,
+        relation=relation,
         behind_remote=behind_remote,
         ahead_remote=ahead_remote,
     )
@@ -338,10 +411,18 @@ def capture_state(session: Session) -> RepoState:
         notes.append("working copy is stale — run `gitman reconcile`.")
     if not session.ws.remotes():
         notes.append("no git remote — publish/release unavailable.")
-    if behind_remote:
+    # Content-aware trunk↔origin note. NO `run gitman adopt` on a twin (that hint drove the
+    # 15-RC2 data loss). `adopt` is only suggested for a *genuine* forge-ahead — there local has no
+    # content to lose, so a fast-forward adopt is non-destructive. `diverged` gets no adopt (it
+    # could drop local commits); `local-ahead`/`in-sync` need no note.
+    if relation == "forge-ahead":
         notes.append(
-            f"local {trunk_name} is {behind_remote} behind {remote_name}/{trunk_name} "
-            f"— run `gitman adopt` to adopt the forge-merged trunk."
+            f"{remote_name}/{trunk_name} has new commits local lacks — `gitman adopt` to integrate them."
+        )
+    elif relation == "diverged":
+        notes.append(
+            f"local {trunk_name} and {remote_name}/{trunk_name} have diverged (each holds content the "
+            f"other lacks) — reconcile before integrating."
         )
     if current_lane is None and _orphan_working_copy(view, wc, trunk_name):
         notes.append("working copy @ has unbookmarked work — `gitman start <name>` to adopt it into a lane.")

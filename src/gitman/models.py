@@ -54,7 +54,14 @@ class TrunkRef(BaseModel):
     name: str
     change_id: str | None = None
     commit_id: str | None = None
-    # ahead/behind of the local trunk bookmark vs its remote tracking branch.
+    # The remote `<trunk>@<remote>` is compared against — None when no remote / not fetched.
+    remote: str | None = None
+    # Content-aware relation to `<trunk>@<remote>`: "in-sync" | "local-ahead" | "forge-ahead"
+    # | "diverged", or None when unknown (no remote, unfetched, or the content check failed).
+    # This is the honest signal (survives re-hash twins); the counts below are display-only.
+    relation: str | None = None
+    # ahead/behind *by ancestry* of the local trunk bookmark vs its remote tracking branch —
+    # kept for the count display only. A re-hash twin reads N/N here yet is content-in-sync.
     behind_remote: int = 0
     ahead_remote: int = 0
 

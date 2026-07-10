@@ -26,15 +26,21 @@ def _diff_str(ins: int, dels: int) -> str:
 
 
 def _remote_relation(trunk) -> str:
-    """The `(… origin)` suffix on the trunk line — only when a remote trunk is known."""
-    bits = []
-    if trunk.behind_remote:
-        bits.append(f"{trunk.behind_remote} behind")
-    if trunk.ahead_remote:
-        bits.append(f"{trunk.ahead_remote} ahead")
-    if not bits:
+    """The `(… <remote>)` suffix on the trunk line — the content-aware relation, only when a
+    remote trunk is known (`trunk.relation` set). Named for the actual remote, never a hard-coded
+    `origin`."""
+    if not trunk.remote or not trunk.relation:
         return ""
-    return f"  ({', '.join(bits)} origin)"
+    r = trunk.remote
+    if trunk.relation == "in-sync":
+        return f"  (in sync with {r})"
+    if trunk.relation == "local-ahead":
+        return f"  ({trunk.ahead_remote} ahead {r})"
+    if trunk.relation == "forge-ahead":
+        return f"  ({trunk.behind_remote} behind {r})"
+    if trunk.relation == "diverged":
+        return f"  (diverged from {r}: {trunk.behind_remote} behind, {trunk.ahead_remote} ahead)"
+    return ""
 
 
 def _lane_line(lane: Lane, current: str | None) -> str:

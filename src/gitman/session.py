@@ -101,3 +101,13 @@ class Session:
     def is_stale(self) -> bool:
         """Whether this workspace's on-disk `@` lags the repo's current `@` (plan §8 / decision #8)."""
         return self.ws.is_stale()
+
+    def sync_colocated(self) -> None:
+        """Force the colocated git checkout (detached `HEAD` + `.git/index`) to track `@`'s parent.
+
+        pyjutsu 0.10.0 rebuilds the git index **unconditionally**, so a stale index that misled raw
+        `git status`/`check-ignore` (15-RC6) is repaired even when nothing else changed. Idempotent
+        and `@`-neutral — the guard tail calls it after every mutating intent so raw-git tooling
+        sharing the `.git` never lags jj. No-op on a non-colocated repo (raises `GitError`; the
+        caller swallows it best-effort)."""
+        self.ws.sync_colocated()

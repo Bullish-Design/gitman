@@ -277,8 +277,10 @@ def do_switch(session: Session, name: str):
         )
     # Refuse to orphan an undescribed draft: if `@` carries no lane bookmark yet has on-disk work,
     # switching away would strand it nowhere-named. Named lanes are safe (preserved as today's
-    # accidental `start` already does). (verb: save/start/abandon)
-    if cur is None and not session.view().working_copy().is_empty:
+    # accidental `start` already does). `fresh_view()` snapshots first so a *loose on-disk* edit on a
+    # parked empty `@` (e.g. the fresh child left by `land`'s repark) is seen here, not missed until
+    # the tx snapshot strands it. (verb: save/start/abandon)
+    if cur is None and not session.fresh_view().working_copy().is_empty:
         raise GitmanError(
             "uncommitted work on an unnamed change would be stranded — "
             "`gitman save -m …` (if it's a lane), `gitman start <name>` (to name it), "
@@ -557,6 +559,11 @@ def do_land(session: Session, lane_args: list[str] | None):
             with canonical_guard(session, "land") as canon:
                 if lane not in lane_names(session, trunk):
                     raise GitmanError(f"no such lane '{lane}'.", exit_code=3)
+                # Is `@` sitting on the lane we're about to fold in? If so, advancing trunk to the
+                # lane head leaves `@` *coinciding* with trunk — we must repark it onto a fresh
+                # child of the advanced trunk (the `@`-never-on-trunk invariant; fixes the
+                # stranded/dirty-`@` of 13-RC2/RC3/RC4). Landing a lane `@` isn't on needs no repark.
+                on_landed_lane = session.view().working_copy().commit_id == session.view().resolve(lane).commit_id
                 with session.ws.transaction("gitman:land", auto_snapshot=False) as tx:
                     rebased = tx.rebase(lane, onto=trunk, mode="branch")
                     if rebased.has_conflict:
@@ -566,6 +573,8 @@ def do_land(session: Session, lane_args: list[str] | None):
                         )
                     tx.set_bookmark(trunk, lane)  # advance trunk to the lane head (verified)
                     tx.delete_bookmark(lane)  # retire the lane
+                    if on_landed_lane:
+                        tx.new(trunk)  # repark @ onto a fresh empty child of the advanced trunk
                 canon.notes += _cleanup_workspace(session, lane)
             # Postcondition passed (guard exited cleanly) → the land is committed. The remote-branch
             # cleanup runs AFTER the postcondition so a postcondition revert never leaves the local
