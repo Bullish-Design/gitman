@@ -218,8 +218,11 @@ its-base" gap by construction (I3′). `subtask <leaf>` fans out a child under t
 indented `↳ on <parent>` tree), and a base with a live child refuses to land/abandon. **`land --all`
 (2B)** folds the whole forest bottom-up (child→parent→trunk) — a *sequence* of one-level folds, each
 its own tx/undo checkpoint; internal folds move no trunk, only the root fold advances it (no new
-invariant exemption). **Deferred:** Phase 3's parallel-agent workspace-per-subtask fan-out/fan-in +
-`abandon --recursive`.
+invariant exemption). **Parallel agents (3A) shipped:** N agents fan out subtasks into their own
+workspaces (`subtask --workspace`) and fold in from their own workspace — `land` refuses to fold a
+lane whose `@` is live in another workspace (never yanks a working dir), siblings left `N behind`
+catch up with their own `sync`, and `reconcile` refreshes a workspace whose `@` was rewritten out
+from under it. **Deferred:** `abandon --recursive` (the recursive teardown cascade).
 
 **Deferred:** the forge extra's PR `land`/`pr-status`; fractal-lanes Phases 2–3 (above); `shape`
 (squash/reorder + **hunk-level/interactive**
@@ -228,35 +231,48 @@ split — the path-scoped `split` above shipped; only partial-file selection nee
 
 ## 8. Lane & workspace flow (parallel agents)
 
-The motivating case: several agents chase several fixes simultaneously, then merge back.
+The motivating case: several agents chase several subtasks of one task simultaneously, then fold back.
+The fractal fan-out/fan-in (Phase 3A) is the shipped shape:
 
 ```bash
-# three agents, three lanes, three isolated working copies
-agent1$ gitman start fix-auth-test    --workspace   # → ../repo-fix-auth-test/,    lane+branch "fix-auth-test"
-agent2$ gitman start fix-billing-test --workspace   # → ../repo-fix-billing-test/, lane+branch "fix-billing-test"
-agent3$ gitman start fix-cart-test    --workspace   # → ../repo-fix-cart-test/,    lane+branch "fix-cart-test"
+# a task lane `T`, three subtasks, three isolated working copies (one agent each)
+$ gitman start T                                    # the task lane (own work allowed on it)
+$ gitman subtask api     --workspace                # → .worktrees/T/api/,     lane "T/api"
+$ gitman subtask storage --workspace                # → .worktrees/T/storage/, lane "T/storage"
+$ gitman subtask web     --workspace                # → .worktrees/T/web/,     lane "T/web"
 
 # each agent works in its own workspace dir — no contention over @
-agent1$ gitman save -m "fix: tolerate missing auth header"
-agent1$ gitman publish                                # pushes branch fix-auth-test (forge extra also opens PR)
-
-# merge back — local trunk-based, or via PRs (forge extra)
-$ gitman land fix-auth-test fix-billing-test          # rebase each onto trunk, ff trunk, retire lanes+workspaces
-$ gitman abandon fix-cart-test                        # gave up on that one
+agent-api$     cd .worktrees/T/api     && …edit… && gitman save -m "api handler"
+# fold in FROM YOUR OWN WORKSPACE — advances the shared parent T under the others
+agent-api$     gitman land                          # T/api → T (from inside .worktrees/T/api)
+agent-storage$ cd .worktrees/T/storage && gitman sync   # catch up: T moved; rebase onto it
+agent-storage$ gitman land                          # T/storage → T
+# the coordinator folds the finished task up
+$ gitman land T                                     # T → trunk (the root fold; trunk advances only here)
 ```
 
-- **`--workspace`** runs the lane in its own `jj workspace` (separate directory, shared
-  repo). That's how true parallelism avoids stepping on a single `@`; it also matches how
-  parallel agents are spawned anyway (separate working dirs). Without `--workspace`,
-  `start` creates the lane in the current working copy (serial, single-agent flow).
+- **`--workspace`** runs the lane in its own `jj workspace` — an isolated in-repo
+  `.worktrees/<lane>/` checkout (self-ignored so colocated git never reports it), sharing the one
+  repo. That's how true parallelism avoids stepping on a single `@`, and it matches how parallel
+  agents are spawned anyway (separate working dirs). Without `--workspace`, `subtask`/`start` creates
+  the lane in the current working copy (serial, single-agent flow).
 - **The brief repo lock** (I4) only bites on operations that touch shared state (trunk
-  advance, op-log head, bookmark namespace). Per-lane editing is contention-free, so
-  parallelism is real. Concurrent lane *creation* with the same name is resolved once,
-  under the lock, at creation (refuse or suffix) — never an ambiguity downstream.
-- **`land`** is the sanctioned local trunk-advance (I5): it rebases the lane onto current trunk,
-  fast-forwards trunk to include it, then deletes the bookmark and forgets the workspace. This is
-  *the* merge — a reviewed flow opens a PR for CI/audit, but the trunk advance is still the local
-  `land` (§8.1), not a forge merge button.
+  advance, op-log head, bookmark namespace) and is anchored at the **shared** repo root, so every
+  workspace contends on one lockfile. Per-lane editing is contention-free, so parallelism is real;
+  concurrent mutating intents simply serialize (a live holder → exit 2). Concurrent lane *creation*
+  with the same name is resolved once, under the lock, at creation — never an ambiguity downstream.
+- **Fan in from the lane's own workspace.** `land`/`land --all` **refuse** to fold a lane whose `@`
+  is checked out live in another workspace — folding it there would rewrite its `@` and remove the
+  dir out from under a working agent. `cd` to the lane's workspace and `gitman land` (the `@` reparks
+  locally); the sweep names and skips any lane it can't safely fold. gitman **never** reaches into
+  another workspace's `@`: a sibling left `N behind` the advanced parent refreshes itself with its
+  own `gitman sync`; a workspace whose `@` was rewritten out from under it (a sibling's fold, a
+  `pull`) shows stale and is repaired by `gitman reconcile` **from inside it**.
+- **`land`** is the sanctioned local trunk-advance (I5): it folds the lane into its base (parent lane
+  or trunk), advancing the base by change-id, then retires the lane. Folding a `--workspace` lane
+  from its own dir keeps that (now parked, reusable) workspace — `cd` out and delete it, or start the
+  next subtask in it. A reviewed flow opens a PR for CI/audit, but the trunk advance is still the
+  local `land` (§8.1), not a forge merge button.
 
 ### 8.1 Trunk ↔ origin — the single local-authored model (`push` / `pull`)
 
@@ -564,9 +580,9 @@ report ends with an inline **Undo** line. `status` is a uniform lane enumeration
 ```text
 Gitman status — CANONICAL · 3 lanes
 trunk: main @ def456  (in sync with origin)
-* fix-auth-test     draft      1 change,  +18 −4   · ws ../repo-fix-auth-test  (you are here)
+* fix-auth-test     draft      1 change,  +18 −4   · ws .worktrees/fix-auth-test  (you are here)
   fix-billing-test  published  1 change,  +30 −2   · PR #41
-  fix-cart-test     draft      2 changes, +60 −9   · ws ../repo-fix-cart-test
+  fix-cart-test     draft      2 changes, +60 −9   · ws .worktrees/fix-cart-test
 Next: edit · `gitman publish` · `gitman land fix-billing-test`
 ```
 
@@ -627,13 +643,22 @@ The four prior open questions are now resolved by the lane model + the spike:
 4. **Multiple local changes** → I2 + lanes: not hidden and not a soup — every change is a
    named, listable lane; `status` is a uniform enumeration; parallelism via workspaces.
 
+**Resolved during implementation (Phase 3A — parallel agents):**
+
+- **Lock mechanism / how aggressively `land` serializes** → an explicit O_EXCL lockfile at the
+  **shared** repo root (I4, `invariants.py:repo_lock`); every workspace contends on the one file.
+  Editing is lock-free; only the brief mutating transactions serialize, so concurrent fan-in is just
+  serialized one-level folds — **no second lock, no queueing/backoff**. A live holder → exit 2.
+- **Workspace cleanup semantics** → auto-`forget` + `rmtree` on `land`/`abandon` when folding from
+  *another* workspace's perspective; **keep** the dir (forget-but-say-so) if this process is cd'd
+  inside it; and when you fold a lane **from its own workspace**, the workspace is **kept** (never
+  forget the dir the session is bound to) as a clean, reusable checkout. Folding a lane whose `@` is
+  live in *another* workspace is **refused** outright (you never yank a working agent's dir).
+- **`land` ordering** — landing several lanes that touch overlapping files: sequential rebase with
+  per-lane conflict surfacing; the fold **stops** at the first conflict (partial-progress `BLOCKED`,
+  prior folds committed, undo one level at a time — `land --all` §8/§7).
+
 **Genuinely still open (decide during implementation):**
 
-- **Lock mechanism** — jj op-log concurrency vs an explicit lockfile for I4 under parallel
-  agents; how aggressively `land` serializes.
-- **Workspace cleanup semantics** — auto-`forget` on `land`/`abandon` vs leave the dir;
-  what to do if an agent is still cd'd into a landed workspace.
 - **`reconcile` UX** — how much it decides automatically vs asks, given it runs in an
   agent (non-interactive) context.
-- **`land` ordering** — landing several lanes that touch overlapping files: sequential
-  rebase with conflict surfacing per lane, and stop-vs-continue on the first conflict.

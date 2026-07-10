@@ -83,20 +83,35 @@ def test_worktrees_dir_is_self_ignored(tmp_path: Path):
 # --- cleanup removes the in-repo dir --------------------------------------------------
 
 
-def test_land_removes_in_repo_workspace(tmp_path: Path):
+def test_land_workspace_lane_from_its_own_workspace(tmp_path: Path):
+    """Fractal-lanes P3-D2: a `--workspace` lane folds in from ITS OWN workspace. Landing it from the
+    parent/default workspace is REFUSED (that would rmtree a live agent's dir out from under it); the
+    sanctioned path is `gitman land` inside the lane's workspace. There the lane folds into trunk and
+    the workspace is left as a clean, reusable checkout (you `cd` out and delete it) — gitman never
+    forgets the workspace it's operating from."""
     repo = tmp_path / "repo"
     repo.mkdir()
     _repo(repo)
+    wpath = repo / ".worktrees" / "wlane"
     do_start(_sess(repo), "wlane", workspace=True)
-    (repo / ".worktrees" / "wlane" / "f.txt").write_text("base\nfeat\n")
-    sub = Workspace.load(repo / ".worktrees" / "wlane")
-    sub.snapshot()
-    do_save(Session.load(repo / ".worktrees" / "wlane", GitmanConfig(trunk="main")), "feat work")
+    (wpath / "f.txt").write_text("base\nfeat\n")
+    Workspace.load(wpath).snapshot()
+    do_save(Session.load(wpath, GitmanConfig(trunk="main")), "feat work")
 
-    do_land(_sess(repo), ["wlane"])
+    # Parent-land of the live workspace-lane is refused (guard: checked out in another workspace).
+    r = do_land(_sess(repo), ["wlane"])
+    assert r.outcome == "BLOCKED"
+    assert r.exit_code == 1
+    assert "another workspace" in " ".join(r.messages)
+    assert (wpath).is_dir()  # untouched — not yanked from under the agent
+    assert "wlane" in {lane.name for lane in capture_state(_sess(repo)).lanes}
 
-    assert not (repo / ".worktrees" / "wlane").exists()
-    assert "wlane" not in {w.name for w in Workspace.load(repo).workspaces()}
+    # Land from the lane's OWN workspace → folds into trunk; the (parked) workspace is kept.
+    r = do_land(Session.load(wpath, GitmanConfig(trunk="main")), ["wlane"])
+    assert r.outcome == "LANDED", r.messages
+    assert "wlane" not in {lane.name for lane in capture_state(_sess(repo)).lanes}  # lane folded away
+    assert "wlane" in {w.name for w in Workspace.load(repo).workspaces()}  # workspace kept (reusable)
+    assert wpath.is_dir()
 
 
 def test_abandon_removes_in_repo_workspace(tmp_path: Path):

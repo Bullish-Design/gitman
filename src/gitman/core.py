@@ -147,6 +147,19 @@ def _cleanup_workspace(session: Session, lane: str) -> list[str]:
     to the config recompute (prior behavior)."""
     from gitman.lanes import resolve_workspace_path
 
+    if lane == session.ws.name:
+        # Landing/abandoning the lane FROM WITHIN its own workspace (the sanctioned fractal-lanes
+        # fan-in — P3-D2 refuses folding it from anywhere else). We can't forget the workspace this
+        # very session is bound to: `forget_workspace` drops its row, and the guard's postcondition
+        # would then read a workspace with no working-copy commit and crash. The fold already
+        # reparked `@` onto a fresh child of the base (the `on_landed_lane` repark), so the workspace
+        # is left as a clean, reusable checkout on the base — `cd` out and delete it, or start the
+        # next subtask in it. Leaving it is correct: you never yank the dir you're standing in.
+        return [
+            f"workspace kept (you landed '{lane}' from inside it; `cd {session.repo_root}` and "
+            f"delete it, or reuse it)."
+        ]
+
     rec = next((w for w in session.ws.workspaces() if w.name == lane), None)
     if rec is None:
         return []  # not a workspace lane — nothing to do
@@ -729,6 +742,22 @@ def do_land(session: Session, lane_args: list[str] | None, all_: bool = False):
                     raise GitmanError(
                         f"lane '{lane}' has a live child stacked on it ({', '.join(sorted(kids))}) — "
                         f"fold the child in first (`gitman land {sorted(kids)[0]}`).",
+                        exit_code=1,
+                    )
+                # Fractal-lanes concurrency (P3-D2): refuse to fold a lane whose `@` is checked out
+                # LIVE in another workspace. Folding it would rewrite/retire its commit and
+                # `_cleanup_workspace` would rmtree that dir out from under a working agent — losing
+                # unsaved edits. gitman never touches a `@` in a foreign workspace (the same rule
+                # `do_switch` enforces, core.py:430-436). Keys on `w.name != session.ws.name`, so a
+                # lane checked out in THIS workspace is the normal path (`@` reparks locally below).
+                # Composes with `land --all`'s partial-progress BLOCKED shape: bottom-up so any
+                # already-folded descendants stay folded; the occupied lane and everything above it
+                # is skipped, and the message names it.
+                other_ws = {w.name for w in session.ws.workspaces()} - {session.ws.name}
+                if lane in other_ws:
+                    raise GitmanError(
+                        f"lane '{lane}' is checked out in another workspace — land it from that "
+                        f"workspace (`cd` to its dir), or park it first.",
                         exit_code=1,
                     )
                 base = lane_base(session, trunk, lane)  # None → trunk-based (exactly today's land)

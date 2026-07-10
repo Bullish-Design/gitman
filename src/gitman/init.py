@@ -66,6 +66,7 @@ A **lane** is one unit of work: a named bookmark (= git branch) on trunk, kept l
 gitman start <name>         # begin a lane (add --workspace to isolate it in its own dir)
 gitman start <T/api>        # STACK a lane on `T`: a `/`-path name's base IS its name-parent
 gitman subtask <leaf>       # fan out `<current-lane>/<leaf>` (≡ `start <cur>/<leaf>`) — decompose a task
+gitman subtask <leaf> --workspace   # …in its OWN workspace dir, for a parallel agent to work it
 gitman switch <lane>        # resume a parked lane: move @ back onto an existing lane's change
 gitman split --paths <sel> --into <lane>   # carve entangled paths into a second sibling lane
 # ...edit files...
@@ -88,6 +89,18 @@ a base with a live child refuses to land/abandon until the child is folded in ("
 first"). Land bottom-up: children before their parents — or `gitman land --all` to fold the whole
 forest bottom-up (child→parent→trunk) in one command, each level its own undo checkpoint. `--onto
 <lane>` is retained only as an optional assertion that must equal the name-parent.
+
+**Parallel agents — fan out with `--workspace`, fold in from your own workspace.** `subtask <leaf>
+--workspace` (or `start <T/api> --workspace`) puts a child lane in its **own** `.worktrees/<lane>/`
+dir, so N agents work N subtasks with no contention over `@`; the report prints the `cd` target.
+Editing is lock-free and parallel; only the brief `land`/`sync`/`start` transactions serialize (on
+one shared repo lock). Fold in **from the lane's own workspace** (`cd` there, `gitman land`): gitman
+**refuses** to fold a lane whose `@` is live in another workspace — it won't yank a dir out from
+under a working agent (`land`/`land --all` name it and skip it; land it from its own dir, or park it
+first). Landing one child advances the shared parent, leaving siblings `N behind` — each catches up
+on its own schedule with `gitman sync` (gitman never reaches into another workspace's `@`). A
+workspace whose `@` was rewritten out from under it (a sibling's fold, a `pull`) shows stale; `gitman
+reconcile` from inside it refreshes it.
 
 `switch` is the lane-**navigation** verb: when `@` leaves a lane without ending it (a sibling `start`
 in the same workspace stranded yours; you landed one of several lanes), `gitman switch <lane>` puts
