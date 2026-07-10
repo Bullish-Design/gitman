@@ -168,7 +168,42 @@ def _cleanup_workspace(session: Session, lane: str) -> list[str]:
 # --- lane lifecycle intents (M2) -----------------------------------------------------
 
 
-def do_start(session: Session, name: str, workspace: bool):
+def _resolve_onto(session: Session, trunk: str, name: str, onto: str) -> tuple[str, str]:
+    """Resolve `--onto <lane|@>` → `(base_lane_name, base_head_commit_id)`; refuse (exit 3) otherwise.
+
+    MUST be called AFTER the precheck snapshot (i.e. inside the tx / guard body) so `@`'s own dirty
+    edits are folded into the base head before it's read — else a stacked lane would base on a stale
+    pre-edit commit and the ancestry link would break. `@` resolves to the current lane's head. Refuse
+    plain-`start` equivalents (`--onto <trunk>`), self-stacking, and a nonexistent / conflicted base."""
+    from gitman.lanes import current_lane, lane_names
+    from gitman.state import _conflicted_lanes
+
+    view = session.view()
+    if onto == "@":
+        cur = current_lane(session, trunk)
+        if cur is None:
+            raise GitmanError(
+                "`--onto @` but @ is not on a lane (it's on trunk) — use plain `gitman start`.",
+                exit_code=3,
+            )
+        onto = cur
+    if onto == trunk:
+        raise GitmanError(
+            f"`--onto {trunk}` is just `gitman start` — a lane on trunk; omit `--onto`.", exit_code=3
+        )
+    if onto == name:
+        raise GitmanError("a lane can't stack on itself.", exit_code=3)
+    if onto not in lane_names(session, trunk):
+        raise GitmanError(f"no such lane '{onto}' to stack onto.", exit_code=3)
+    if onto in _conflicted_lanes(view, trunk):
+        raise GitmanError(
+            f"lane '{onto}' is conflicted (diverged from origin) — `gitman reconcile` it before stacking.",
+            exit_code=3,
+        )
+    return onto, view.resolve(onto).commit_id
+
+
+def do_start(session: Session, name: str, workspace: bool, onto: str | None = None):
     from gitman.invariants import canonical_tx
     from gitman.lanes import current_lane, ensure_unique, lane_has_content
     from gitman.models import IntentResult
@@ -178,30 +213,40 @@ def do_start(session: Session, name: str, workspace: bool):
     notes: list[str] = []
     messages: list[str] = []
     if workspace:
-        _start_workspace(session, trunk, name, messages, notes)
+        _start_workspace(session, trunk, name, onto, messages, notes)
     else:
         with canonical_tx(session, "start") as tx:
             ensure_unique(session, trunk, name)
-            if _adoptable_work(session, trunk):
+            if onto is not None:
+                # Fractal lanes: base the new lane on <parent>'s head instead of trunk (the stacking
+                # atom). The issue-17 guardrail below is for the *trunk* path only — with `--onto` you
+                # are deliberately stacking on the un-landed lane, so it doesn't apply; and `--onto`
+                # supersedes the dirty-`@` adopt path (an explicit base wins).
+                base_name, base_commit = _resolve_onto(session, trunk, name, onto)
+                tx.new(base_commit)
+                tx.create_bookmark(name, "@")
+                messages.append(f"lane '{name}' stacked on '{base_name}'.")
+            elif _adoptable_work(session, trunk):
                 # In-progress edits already sit on a non-empty, unbookmarked change descended
                 # from trunk — adopt that change as the lane instead of orphaning it.
                 tx.create_bookmark(name, "@")
                 messages.append(f"adopted in-progress work into lane '{name}' on {trunk}.")
             else:
-                # Issue-17 guardrail: a new lane ALWAYS bases on trunk — lanes don't stack. If `@` is
-                # currently on a named lane that holds saved, un-landed work, that lane's tree is NOT
-                # in the new base, so the working copy reverts to trunk (silently, pre-guardrail). State
-                # the base explicitly and point at the fix. Non-blocking (a trunk-based sibling is a
-                # legitimate choice — that's what parallel lanes / `split` are), so this is a note, not
-                # a refusal. Distinct from `_adoptable_work` above (a dirty *unbookmarked* `@`); computed
+                # Issue-17 guardrail: a plain `start` bases on trunk. If `@` is currently on a named
+                # lane that holds saved, un-landed work, that lane's tree is NOT in the new base, so the
+                # working copy reverts to trunk (silently, pre-guardrail). State the base explicitly and
+                # point at the two fixes — land the lane first (sibling on trunk), or stack on it with
+                # `--onto`. Non-blocking (a trunk-based sibling is a legitimate choice), so it's a note,
+                # not a refusal. Distinct from `_adoptable_work` (a dirty *unbookmarked* `@`); computed
                 # before `tx.new` moves `@` off the current lane.
                 cur = current_lane(session, trunk)
                 if cur is not None and lane_has_content(session, trunk, cur):
                     base_sha = session.view().resolve(trunk).commit_id[:12]
                     notes.append(
                         f"'{name}' is based on trunk {base_sha}; the un-landed lane '{cur}' is NOT in "
-                        f"that base — `gitman land {cur}` first (lanes don't stack; `start` always bases "
-                        f"on trunk). Its saved changes live on '{cur}', not on disk."
+                        f"that base — `gitman land {cur}` first (a sibling on trunk), or "
+                        f"`gitman start {name} --onto {cur}` to stack on it. Its saved changes live on "
+                        f"'{cur}', not on disk."
                     )
                 tx.new(trunk)
                 tx.create_bookmark(name, "@")
@@ -217,13 +262,16 @@ def do_start(session: Session, name: str, workspace: bool):
     )
 
 
-def _start_workspace(session: Session, trunk: str, name: str, messages: list[str], notes: list[str]) -> None:
+def _start_workspace(
+    session: Session, trunk: str, name: str, onto: str | None, messages: list[str], notes: list[str]
+) -> None:
     """`start --workspace`: add a secondary workspace, then put its `@` on a new lane bookmark.
 
     `add_workspace` publishes its own op and bases the new `@` on root, so a sub-workspace tx
-    re-bases it onto trunk and creates the lane (which lands on the shared op-log → visible from
-    the default workspace). On any failure, remove the half-made workspace dir and re-raise; the
-    guard's `except` restores `op_before`, forgetting the workspace record."""
+    re-bases it onto trunk (or, with `--onto`, the parent lane's head — the stacking atom in an
+    isolated workspace, the fractal-lanes fan-out default) and creates the lane (which lands on the
+    shared op-log → visible from the default workspace). On any failure, remove the half-made
+    workspace dir and re-raise; the guard's `except` restores `op_before`, forgetting the record."""
     from pyjutsu import Workspace
 
     from gitman.invariants import canonical_guard, ensure_self_ignored_dir
@@ -238,16 +286,24 @@ def _start_workspace(session: Session, trunk: str, name: str, messages: list[str
         ensure_self_ignored_dir(wpath.parent)
     with canonical_guard(session, "start") as canon:
         ensure_unique(session, trunk, name)
+        # Resolve the base AFTER the precheck snapshot (inside the guard): trunk by default, or the
+        # `--onto` parent head. A commit id is workspace-global, so the sub-workspace tx can name it.
+        if onto is not None:
+            base_name, base_ref = _resolve_onto(session, trunk, name, onto)
+        else:
+            base_name, base_ref = trunk, trunk
         try:
             session.ws.add_workspace(str(wpath), name=name)  # own op; new @ on root
             sub = Workspace.load(wpath)
             with sub.transaction("gitman:start", auto_snapshot=False) as tx:
-                tx.new(trunk)  # put the new workspace's @ on trunk
+                tx.new(base_ref)  # put the new workspace's @ on trunk (or the parent head)
                 tx.create_bookmark(name, "@")
         except Exception:
             shutil.rmtree(wpath, ignore_errors=True)  # drop the half-made workspace dir
             raise
-    messages.append(f"lane '{name}' created on {trunk}.")
+    messages.append(
+        f"lane '{name}' stacked on '{base_name}'." if onto is not None else f"lane '{name}' created on {trunk}."
+    )
     notes.append(f"workspace at {wpath} — `cd {wpath}` to work in it.")
     notes.extend(canon.notes)
 
@@ -555,14 +611,20 @@ def do_land(session: Session, lane_args: list[str] | None):
     from pyjutsu import PyjutsuError
 
     from gitman.invariants import canonical_guard
-    from gitman.lanes import lane_names, require_current_lane
+    from gitman.lanes import children, lane_base, lane_depth, lane_names, require_current_lane
     from gitman.models import IntentResult
-    from gitman.state import _lane_index
+    from gitman.state import _lane_index, _merge_tree_conflicts
 
     trunk = require_trunk(session.config)
     targets = list(lane_args) if lane_args else [require_current_lane(session, trunk)]
+    # Fractal lanes: `land` folds a node into its base (its parent lane, or trunk). Multi-arg sorts
+    # child→parent (deepest first) so a batched `land base dep` folds `dep` in before `base` retires —
+    # else the parent would refuse while its child is still live. Single-arg keeps caller order.
+    if len(targets) > 1:
+        targets = sorted(targets, key=lambda lane: lane_depth(session, trunk, lane), reverse=True)
 
     landed: list[str] = []
+    targets_map: dict[str, str] = {}  # lane → where it folded (trunk, or a base lane)
     notes: list[str] = []
     last_undo: str | None = None
     last_state = None
@@ -574,22 +636,57 @@ def do_land(session: Session, lane_args: list[str] | None):
             with canonical_guard(session, "land") as canon:
                 if lane not in lane_names(session, trunk):
                     raise GitmanError(f"no such lane '{lane}'.", exit_code=3)
-                # Is `@` sitting on the lane we're about to fold in? If so, advancing trunk to the
-                # lane head leaves `@` *coinciding* with trunk — we must repark it onto a fresh
-                # child of the advanced trunk (the `@`-never-on-trunk invariant; fixes the
-                # stranded/dirty-`@` of 13-RC2/RC3/RC4). Landing a lane `@` isn't on needs no repark.
-                on_landed_lane = session.view().working_copy().commit_id == session.view().resolve(lane).commit_id
-                with session.ws.transaction("gitman:land", auto_snapshot=False) as tx:
-                    rebased = tx.rebase(lane, onto=trunk, mode="branch")
-                    if rebased.has_conflict:
+                # A node can't fold up while a dependent still stacks on it (Model P fan-in: fold the
+                # child in first). Refuse with a pointer at the child's own land (exit 1).
+                kids = children(session, trunk, lane)
+                if kids:
+                    raise GitmanError(
+                        f"lane '{lane}' has a live child stacked on it ({', '.join(sorted(kids))}) — "
+                        f"fold the child in first (`gitman land {sorted(kids)[0]}`).",
+                        exit_code=1,
+                    )
+                base = lane_base(session, trunk, lane)  # None → trunk-based (exactly today's land)
+                target = base if base is not None else trunk
+                targets_map[lane] = target
+                view = session.view()
+                # Is `@` sitting on the lane we're about to fold in? If so, advancing the target to the
+                # lane head leaves `@` *coinciding* with the target — repark it onto a fresh child (the
+                # `@`-never-on-the-just-moved-node invariant; generalizes the 13-RC2/RC3/RC4 trunk repark).
+                on_landed_lane = view.working_copy().commit_id == view.resolve(lane).commit_id
+                if base is None:
+                    # ── fold into trunk: byte-for-byte today's land ──
+                    with session.ws.transaction("gitman:land", auto_snapshot=False) as tx:
+                        rebased = tx.rebase(lane, onto=trunk, mode="branch")
+                        if rebased.has_conflict:
+                            raise GitmanError(
+                                f"lane '{lane}' conflicts with trunk — `gitman resolve`, then `gitman land {lane}`.",
+                                exit_code=1,
+                            )
+                        tx.set_bookmark(trunk, lane)  # advance trunk to the lane head (verified)
+                        tx.delete_bookmark(lane)  # retire the lane
+                        if on_landed_lane:
+                            tx.new(trunk)  # repark @ onto a fresh empty child of the advanced trunk
+                else:
+                    # ── fold a node into its non-trunk base lane (advance the *base*, not trunk) ──
+                    # This cross-base rebase hits the `mode="branch"` footgun: the returned Commit carries
+                    # a STALE pre-rewrite commit_id AND stale has_conflict when the lane has a descendant
+                    # `@`. So pre-check the merge textually (git merge-tree) and reference the folded tip
+                    # by CHANGE-id, never the returned commit id. (Tier-2 discipline; [[pyjutsu-mp1-rough-edges]].)
+                    base_head = view.resolve(base).commit_id
+                    lane_head = view.resolve(lane).commit_id
+                    lane_change = view.resolve(lane).change_id
+                    if _merge_tree_conflicts(session.repo_root, lane_head, base_head) is not False:
                         raise GitmanError(
-                            f"lane '{lane}' conflicts with trunk — `gitman resolve`, then `gitman land {lane}`.",
+                            f"lane '{lane}' conflicts with its base '{base}' — `gitman sync`, resolve, "
+                            f"then `gitman land {lane}`.",
                             exit_code=1,
                         )
-                    tx.set_bookmark(trunk, lane)  # advance trunk to the lane head (verified)
-                    tx.delete_bookmark(lane)  # retire the lane
-                    if on_landed_lane:
-                        tx.new(trunk)  # repark @ onto a fresh empty child of the advanced trunk
+                    with session.ws.transaction("gitman:land", auto_snapshot=False) as tx:
+                        tx.rebase(lane, onto=base, mode="branch")
+                        tx.set_bookmark(base, lane_change)  # advance the base to the folded lane head
+                        tx.delete_bookmark(lane)  # retire the node
+                        if on_landed_lane:
+                            tx.new(base)  # repark @ off the just-folded node onto a fresh base child
                 canon.notes += _cleanup_workspace(session, lane)
             # Postcondition passed (guard exited cleanly) → the land is committed. The remote-branch
             # cleanup runs AFTER the postcondition so a postcondition revert never leaves the local
@@ -623,10 +720,15 @@ def do_land(session: Session, lane_args: list[str] | None):
             undo_command=last_undo,
             state=last_state,
         )
+    landed_desc = [
+        lane if targets_map.get(lane, trunk) == trunk else f"{lane}→{targets_map[lane]}" for lane in landed
+    ]
     return IntentResult(
         intent="land",
         outcome="LANDED",
-        messages=[f"landed {', '.join(landed)} into {trunk}."],
+        messages=[f"landed {', '.join(landed_desc)} into {trunk}."]
+        if all(targets_map.get(lane, trunk) == trunk for lane in landed)
+        else [f"folded {', '.join(landed_desc)}."],
         notes=(
             notes + [f"`gitman undo` reverts one lane at a time — run it {len(landed)}× to undo all."]
             if len(landed) > 1
@@ -639,7 +741,7 @@ def do_land(session: Session, lane_args: list[str] | None):
 
 def do_abandon(session: Session, lane: str | None):
     from gitman.invariants import canonical_guard
-    from gitman.lanes import lane_names, require_current_lane
+    from gitman.lanes import children, lane_names, require_current_lane
     from gitman.models import IntentResult
 
     trunk = require_trunk(session.config)
@@ -647,6 +749,15 @@ def do_abandon(session: Session, lane: str | None):
     with canonical_guard(session, "abandon") as canon:
         if target not in lane_names(session, trunk):
             raise GitmanError(f"no such lane '{target}'.", exit_code=3)
+        # A base with a live dependent can't be discarded — its child would be orphaned off a commit
+        # about to vanish. Refuse (exit 1); Phase 1 has no cascade (that's a Phase-3 `--recursive` flag).
+        kids = children(session, trunk, target)
+        if kids:
+            raise GitmanError(
+                f"lane '{target}' has a live child stacked on it ({', '.join(sorted(kids))}) — "
+                f"abandon or land the child first.",
+                exit_code=1,
+            )
         # Abandoning every trunk..lane change moves the lane bookmark back onto trunk's commit,
         # so delete_bookmark then succeeds (no strays). Target by commit_id (via `_target`) so a
         # divergent change in the range can't dead-end the abandon (issue 06 §G2).
@@ -671,8 +782,9 @@ def do_abandon(session: Session, lane: str | None):
 
 def do_sync(session: Session, all_: bool):
     from gitman.invariants import canonical_guard
-    from gitman.lanes import current_lane, lane_names
+    from gitman.lanes import current_lane, lane_base, lane_depth, lane_names
     from gitman.models import IntentResult
+    from gitman.state import _merge_tree_conflicts
 
     trunk = require_trunk(session.config)
     if all_:
@@ -686,6 +798,7 @@ def do_sync(session: Session, all_: bool):
     messages: list[str] = []
     notes: list[str] = []
     conflicted: list[str] = []
+    synced: list[str] = []
     with canonical_guard(session, "sync") as canon:
         if session.ws.remotes() and targets:
             # Fetch the lane branches ONLY — never trunk. A full `git_fetch` auto-fast-forwards the
@@ -697,29 +810,56 @@ def do_sync(session: Session, all_: bool):
             session.ws.git_fetch(pick_remote(session.ws), bookmarks=sorted(targets))  # own op
             messages.append("fetched remote.")
         elif not session.ws.remotes():
-            notes.append("no remote — rebasing onto local trunk only.")
+            notes.append("no remote — rebasing onto the local base (trunk or parent lane) only.")
         # A fetch can prune a lane whose remote branch was deleted server-side (e.g.
         # `gh pr merge --delete-branch`): jj drops the un-diverged local bookmark too, so a later
         # `tx.rebase(lane, …)` would raise "Revision <lane> doesn't exist". Re-read the survivors
         # AFTER the fetch and skip vanished lanes with a note instead of wedging (sharp edge #1).
         surviving = lane_names(session, trunk)
-        todo = [lane for lane in targets if lane in surviving]
         for lane in targets:
             if lane not in surviving:
                 notes.append(
                     f"lane '{lane}' no longer exists (remote branch deleted) — nothing to sync; "
                     f"`gitman pull` to retire it."
                 )
-        if todo:
-            with session.ws.transaction("gitman:sync", auto_snapshot=False) as tx:
-                for lane in todo:
+        # Fractal lanes: each lane rebases onto its OWN base (parent lane head, or trunk), in a
+        # separate tx so a rebased parent is current before its child rebases onto it. Order
+        # parent→child (shallowest first) for `--all`.
+        todo = sorted(
+            (lane for lane in targets if lane in surviving),
+            key=lambda lane: (lane_depth(session, trunk, lane), lane),
+        )
+        for lane in todo:
+            base = lane_base(session, trunk, lane)
+            if base is None:
+                # trunk-based: today's behavior — a conflicting rebase is *materialized* into the lane
+                # (non-blocking) for `gitman resolve`, exactly as before stacking.
+                with session.ws.transaction("gitman:sync", auto_snapshot=False) as tx:
                     rebased = tx.rebase(lane, onto=trunk, mode="branch")
                     if rebased.has_conflict:
                         conflicted.append(lane)  # DO NOT raise — sync is non-blocking
-    if todo:
-        messages.append(f"rebased {', '.join(todo)} onto {trunk}.")
+                synced.append(lane)
+            else:
+                # stacked: rebase onto the parent head. The cross-base `mode="branch"` footgun makes the
+                # return's has_conflict unreliable, and committing a conflicted stacked rebase would
+                # materialize markers into tracked source — so pre-check textually and, on conflict,
+                # leave the lane on its prior base untouched (§4; the `pull` survivor pattern).
+                view = session.view()
+                base_head = view.resolve(base).commit_id
+                lane_head = view.resolve(lane).commit_id
+                if _merge_tree_conflicts(session.repo_root, lane_head, base_head) is not False:
+                    conflicted.append(lane)  # left on prior base — do not rebase / materialize
+                    continue
+                with session.ws.transaction("gitman:sync", auto_snapshot=False) as tx:
+                    tx.rebase(lane, onto=base, mode="branch")
+                synced.append(lane)
+    if synced:
+        messages.append(f"rebased {', '.join(synced)}.")
     if conflicted:
-        notes.append(f"conflicts in {', '.join(conflicted)} — not blocked; `gitman resolve`, then continue.")
+        notes.append(
+            f"conflicts in {', '.join(conflicted)} — not blocked; `gitman resolve` (a stacked lane is "
+            f"left on its prior base — sync its base, then re-sync), then continue."
+        )
     return IntentResult(
         intent="sync",
         outcome="CONFLICT" if conflicted else "SYNCED",

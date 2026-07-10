@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 from gitman.config import GitmanConfig
 from gitman.core import GitmanError
-from gitman.state import _lane_index
+from gitman.state import _base_of, _lane_index, _resolvable_lane_heads
 
 if TYPE_CHECKING:
     from gitman.session import Session
@@ -45,6 +45,43 @@ def lane_has_content(session: Session, trunk: str, lane: str) -> bool:
     (`Commit.is_empty`), the same predicate `state.capture_state` uses for `change_count`.
     """
     return any(not c.is_empty for c in session.view().log(f"{trunk}..{lane}"))
+
+
+# --- fractal lanes: stacking derivation (Phase 1) ------------------------------------
+# base/children/depth are DAG-derived from the current view — never a stored side-car (I3). The pure
+# ancestry logic lives in `state._base_of`; these are the session-facing wrappers core.py drives.
+
+
+def lane_base(session: Session, trunk: str, lane: str) -> str | None:
+    """The lane `lane` is stacked on (its base), or None if based on trunk. See `state._base_of`."""
+    view = session.view()
+    return _base_of(view, lane, _resolvable_lane_heads(view, trunk))
+
+
+def children(session: Session, trunk: str, lane: str) -> set[str]:
+    """Live lanes stacked *directly* on `lane` (their base == `lane`). Empty for a leaf lane.
+
+    Drives the land/abandon "fold/abandon the child first" refusals — a base with a live dependent
+    can't retire until the dependent is folded in (Model P: fan-in to parent)."""
+    view = session.view()
+    heads = _resolvable_lane_heads(view, trunk)
+    return {m for m in heads if m != lane and _base_of(view, m, heads) == lane}
+
+
+def lane_depth(session: Session, trunk: str, lane: str) -> int:
+    """Number of base-hops from `lane` up to trunk (0 = trunk-based). Orders multi-lane land/sync:
+    land folds child→parent (deepest first), sync rebases parent→child (shallowest first)."""
+    view = session.view()
+    heads = _resolvable_lane_heads(view, trunk)
+    depth, cur, seen = 0, lane, set()
+    while cur in heads and cur not in seen:
+        seen.add(cur)
+        base = _base_of(view, cur, heads)
+        if base is None:
+            break
+        depth += 1
+        cur = base
+    return depth
 
 
 def resolve_workspace_path(repo_root: Path, config: GitmanConfig, lane: str) -> Path:

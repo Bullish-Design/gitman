@@ -112,11 +112,15 @@ def status() -> None:
 def start(
     name: Annotated[str, typer.Argument(help="The lane's readable name (= bookmark = branch).")],
     workspace: Annotated[bool, typer.Option("--workspace", help="Isolate the lane in its own jj workspace.")] = False,
+    onto: Annotated[
+        str | None,
+        typer.Option("--onto", help="Stack the new lane on <lane>'s head (or `@`) instead of trunk."),
+    ] = None,
 ) -> None:
-    """Create a lane: a new change on trunk + bookmark <name>."""
+    """Create a lane: a new change on trunk (or on <lane> with --onto) + bookmark <name>."""
     from gitman.core import do_start
 
-    _finish_intent(do_start(_session(), name, workspace))
+    _finish_intent(do_start(_session(), name, workspace, onto))
 
 
 @app.command()

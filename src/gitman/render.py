@@ -54,6 +54,8 @@ def _lane_line(lane: Lane, current: str | None) -> str:
         plural = "change" if lane.change_count == 1 else "changes"
         counts = f"{lane.change_count} {plural}, {_diff_str(lane.insertions, lane.deletions)}"
     extra = []
+    if lane.base:
+        extra.append(f"↳ on {lane.base}")  # fractal lanes: this lane is stacked on <base>
     if lane.workspace:
         extra.append(f"ws {lane.workspace}")
     if lane.conflict and lane.head is not None:
@@ -61,7 +63,7 @@ def _lane_line(lane: Lane, current: str | None) -> str:
     if lane.pr:
         extra.append(f"PR #{lane.pr.number}")
     if lane.behind:
-        extra.append(f"{lane.behind} behind trunk")
+        extra.append(f"{lane.behind} behind {lane.base or 'trunk'}")
     if here:
         extra.append("you are here")
     tail = ("   · " + "  · ".join(extra)) if extra else ""

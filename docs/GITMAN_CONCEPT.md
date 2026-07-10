@@ -181,14 +181,14 @@ verbs. Anything not listed is deferred until friction proves it.
 | Intent | Signature | What it does | Underneath |
 |---|---|---|---|
 | `status` | `gitman status [--json]` | Canonical/off-canonical report: trunk + all lanes. | `jj log`/`op log`/`workspace list` (+git numstat) |
-| `start` | `gitman start <name> [--workspace]` | Create a lane (new change on trunk + bookmark `<name>`); `--workspace` isolates it. | `jj new <trunk>` + `jj bookmark create` (+ `jj workspace add`) |
+| `start` | `gitman start <name> [--workspace] [--onto <lane>]` | Create a lane (new change on trunk + bookmark `<name>`); `--workspace` isolates it; `--onto <lane\|@>` **stacks** it on that lane's head (fractal lanes — the working copy carries the parent's tree). | `jj new <trunk\|parent-head>` + `jj bookmark create` (+ `jj workspace add`) |
 | `switch` | `gitman switch <lane>` | Move `@` onto an existing lane's change to resume it (navigation, never mutates trunk). Refuses to strand an unnamed dirty `@`; reports a lane checked out in another workspace. | `jj edit <lane>` |
 | `split` | `gitman split --paths <sel>… --into <lane> [-m <desc>]` | Partition the current lane's single change into two sibling lanes on trunk: the carved paths onto new lane `<into>`, the remainder on the original. `@` stays on the remainder; never mutates trunk. Path-scoped (whole files); refuses a multi-change/non-trunk-rooted lane, an empty match, or a whole-change match. | `jj new <trunk>` + `jj restore` ×2 + bookmark |
 | `save` | `gitman save [-m <desc>]` | Describe the current lane's change. | `jj describe` |
 | `seed` | `gitman seed -m <desc>` | One-shot: make a fresh repo's first commit on trunk, leaving a clean `@`. Refuses once trunk has history. | `jj describe` @ + bookmark trunk |
-| `sync` | `gitman sync [--all]` | Fetch **lane** branches + rebase the current lane (or `--all` lanes) onto **local** trunk (never advances trunk). | `jj git fetch <lanes>` + `jj rebase` |
+| `sync` | `gitman sync [--all]` | Fetch **lane** branches + rebase the current lane (or `--all` lanes) onto its **base** (parent lane head, or **local** trunk — never advances trunk). `--all` orders parent→child. A conflicting stacked rebase is left on its prior base (non-blocking). | `jj git fetch <lanes>` + `jj rebase` |
 | `publish` | `gitman publish` | Push the current lane; branch = lane name. Verify hook first. | `jj git push` (forge extra: + open/update PR) |
-| `land` | `gitman land [<lane>…]` | Fold lane(s) into **local** trunk, advance trunk, retire the lane(s). The one local trunk-advance. | rebase + ff trunk + bookmark/workspace cleanup |
+| `land` | `gitman land [<lane>…]` | Fold lane(s) into their **base** — the parent lane (advance the parent bookmark) or **local** trunk (advance trunk, the one local trunk-advance). Refuses a lane with a live child (fold the child in first); multi-arg orders child→parent. | rebase + ff base/trunk + bookmark/workspace cleanup |
 | `abandon` | `gitman abandon [<lane>]` | Discard a lane (terminal). | `jj abandon` + bookmark delete + workspace cleanup |
 | `pull` | `gitman pull [--dry-run]` | Integrate a genuinely-moved `origin/<trunk>`: fetch, content-aware FF / rebase un-pushed lands onto origin (never dropping work), rebase/retire surviving lanes, repark `@`. | `jj git fetch` + content relation + explicit trunk FF/rebase + survivor retire + repark |
 | `push` | `gitman push [--reset-origin]` | Publish local trunk → origin as a strict fast-forward (refuses non-FF → `pull`). `--reset-origin` lifts the gate (lease-safe migration escape). | `ws.git_push(<remote>, <trunk>)` (force-with-lease engine; strict-FF is a gitman policy) |
@@ -204,9 +204,15 @@ verbs. Anything not listed is deferred until friction proves it.
 blocked / off-canonical) · `2` infra/config (no remote, auth, jj/git missing, outside
 devenv, no version source) · `3` invalid usage.
 
-**Deferred:** the forge extra's PR `land`/`pr-status`; **lane stacking** (`start --onto <lane>` to base
-a new lane on an un-landed lane's head, with bottom-up `land` ordering — the issue-17 guardrail below
-already prevents the silent-revert trap without it); `shape` (squash/reorder + **hunk-level/interactive**
+**Fractal lanes (recursive task-decomposition), Phase 1 shipped:** `start --onto <lane>` bases a new
+lane on another lane's head — the whole model is *making the 2-level (trunk + lanes) tree n-level by
+replacing the constant "trunk" with "this node's parent."* `land`/`sync`/`status` are parent-aware at
+one level (fold a node into its base, `parentHead..node` reporting, `↳ on <parent>`), and a base with a
+live child refuses to land/abandon. Phases 2–3 (deferred) add the `/`-path name hierarchy, recursion,
+`decompose` fan-out, and parallel-agent workspace-per-subtask fan-in.
+
+**Deferred:** the forge extra's PR `land`/`pr-status`; fractal-lanes Phases 2–3 (above); `shape`
+(squash/reorder + **hunk-level/interactive**
 split — the path-scoped `split` above shipped; only partial-file selection needs a native pyjutsu
 `split` binding), pre-release version metadata, pluggable forges.
 

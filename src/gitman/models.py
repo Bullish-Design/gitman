@@ -78,12 +78,13 @@ class Lane(BaseModel):
     """A named unit of work = a jj bookmark (= git branch) on a trunk descendant."""
 
     name: str  # = bookmark = git branch (readable)
+    base: str | None = None  # the lane this one is stacked on (fractal lanes); None = based on trunk
     state: LaneState = LaneState.draft
     head: Change | None = None  # None for a *conflicted* lane bookmark — it names no single commit
     workspace: str | None = None  # isolated workspace dir, if any
     conflict: bool = False
-    ahead: int = 0  # changes vs trunk
-    behind: int = 0  # commits trunk is ahead of the lane
+    ahead: int = 0  # changes vs the base (a stacked lane's own range parentHead..head)
+    behind: int = 0  # commits the base (trunk or parent lane) is ahead of the lane
     change_count: int = 1
     # Lane-total diff numbers (summed over trunk..head), for the status report.
     insertions: int = 0

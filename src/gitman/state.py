@@ -109,6 +109,51 @@ def _conflicted_lanes(view: RepoView, trunk: str) -> dict[str, list[str]]:
     }
 
 
+def _resolvable_lane_heads(view: RepoView, trunk: str) -> dict[str, str]:
+    """`{lane_name: head_commit_id}` for every live, non-conflicted lane (≠ trunk).
+
+    The input to the DAG base-derivation (`_base_of`): a conflicted lane names no single commit, so
+    it can't participate as a base (skip it). One `bookmarks()` read via `_lane_index` + one resolve
+    per lane."""
+    local, _ = _lane_index(view)
+    conflicted = _conflicted_lanes(view, trunk)
+    heads: dict[str, str] = {}
+    for name in local - {trunk}:
+        if name in conflicted:
+            continue
+        heads[name] = view.resolve(name).commit_id
+    return heads
+
+
+def _base_of(view: RepoView, lane: str, lane_heads: dict[str, str]) -> str | None:
+    """The name of the lane `lane` is stacked on (its base), or None if it's based on trunk.
+
+    Fractal-lanes Phase 1: the base is **DAG-derived, never stored** (consistent with I3 — structure
+    from bookmarks, no side-car). Among all OTHER live lanes whose head is a proper ancestor of
+    `lane`'s head, the base is the *closest* — the candidate that is itself a descendant of every
+    other candidate. jj auto-rebases a stacked child onto its base's head on every rewrite (verified),
+    so a live child always sits on top of its base head and this ancestry test holds. (A child left
+    *behind* an advanced base — the sibling-fan-in case — loses the ancestry link under flat names;
+    that is Phase-2's name-path job, out of Phase-1 scope.)
+
+    `lane_heads` is `_resolvable_lane_heads(view, trunk)` — pass it in so a whole-repo `capture_state`
+    resolves each head once rather than per-lane."""
+    lane_head = lane_heads.get(lane)
+    if lane_head is None:
+        return None
+    candidates = {
+        n: h
+        for n, h in lane_heads.items()
+        if n != lane and h != lane_head and view.log(f"{h} & ::{lane_head}")
+    }
+    if not candidates:
+        return None
+    for name, head in candidates.items():
+        if all(view.log(f"{oh} & ::{head}") for other, oh in candidates.items() if other != name):
+            return name
+    return None  # no unique closest ancestor-lane (degenerate) → treat as trunk-based
+
+
 def _remote_target(view: RepoView, name: str) -> str | None:
     """The single commit id of the `<name>@<remote>` tracking row (the lane's *pushed* side), if a
     real remote (not the colocated `git` backing) tracks it. The remote-tracking row is never
@@ -376,6 +421,10 @@ def capture_state(session: Session) -> RepoState:
     # `gitman reconcile`), never resolved — else the lane loop below crashes the whole capture, and
     # with it the precheck of every guarded intent (issue 11). Detected once, up front.
     conflicted = _conflicted_lanes(view, trunk_name)
+    # Fractal-lanes F2: a lane's own stats are `parentHead..name`, not `trunk..name` — for a stacked
+    # lane the latter double-counts its whole base chain as its own work. Derive each lane's base
+    # (DAG, no side-car) once from a shared lane-head map, and range against the base head (or trunk).
+    lane_heads = _resolvable_lane_heads(view, trunk_name)
 
     lanes: list[Lane] = []
     for name in sorted(local_names - {trunk_name}):
@@ -392,9 +441,11 @@ def capture_state(session: Session) -> RepoState:
             continue
         head = view.resolve(name)
         change = _change(head, view.diff_stat(name))
-        range_changes = view.log(f"{trunk_name}..{name}")
+        base = _base_of(view, name, lane_heads)
+        base_ref = base if base is not None else trunk_name  # parentHead (a bookmark name resolves)
+        range_changes = view.log(f"{base_ref}..{name}")
         ahead = len(range_changes)
-        behind = len(view.log(f"{name}..{trunk_name}"))
+        behind = len(view.log(f"{name}..{base_ref}"))  # commits the base holds that the lane lacks
         files = ins = dels = 0
         for c in range_changes:
             st = view.diff_stat(c.commit_id)
@@ -405,6 +456,7 @@ def capture_state(session: Session) -> RepoState:
         lanes.append(
             Lane(
                 name=name,
+                base=base,
                 state=LaneState.published if name in published else LaneState.draft,
                 head=change,
                 workspace=name if name in workspace_names else None,

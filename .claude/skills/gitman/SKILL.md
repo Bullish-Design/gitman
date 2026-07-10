@@ -45,20 +45,24 @@ A **lane** is one unit of work: a named bookmark (= git branch) on trunk, kept l
 
 ```
 gitman start <name>         # begin a lane (add --workspace to isolate it in its own dir)
+gitman start <name> --onto <lane>   # STACK a new lane on <lane>'s head (build on un-landed work)
 gitman switch <lane>        # resume a parked lane: move @ back onto an existing lane's change
 gitman split --paths <sel> --into <lane>   # carve entangled paths into a second sibling lane
 # ...edit files...
 gitman save -m "<message>"  # describe the current change
-gitman status               # see trunk + all lanes (canonical or off-canonical)
-gitman sync                 # rebase this lane onto local trunk (fetches lane branches)
+gitman status               # see trunk + all lanes (canonical; a stacked lane shows `↳ on <base>`)
+gitman sync                 # rebase this lane onto its base (parent lane, or local trunk)
 gitman publish              # push the lane (branch = lane name); verify hook runs first
-gitman land [<lane>...]     # fold lane(s) into trunk LOCALLY, advance trunk, retire the lane(s)
+gitman land [<lane>...]     # fold lane(s) into their base (parent lane, or trunk), retire the lane(s)
 gitman abandon [<lane>]     # discard a lane
 ```
 
-**Lanes don't stack — `start` always bases on trunk.** To build on an un-landed lane, `gitman land`
-it first (its saved changes are in trunk after). If you `start` a new lane while sitting on an
-un-landed lane, its report warns you: the current lane's tree is *not* in the new (trunk-based) lane.
+**Stacking a lane on un-landed work — `gitman start <name> --onto <lane>`** (fractal lanes). By
+default `start` bases on trunk (and warns if you leave an un-landed lane, whose tree is *not* in the
+new trunk-based lane). To build *on top of* an un-landed lane instead, `--onto <lane>` bases the new
+lane on that lane's head, so the working copy carries its tree. `land <child>` then folds the child
+**into its base** (the parent lane advances); a base with a live child refuses to land/abandon until
+the child is folded in ("fold the child in first"). Land bottom-up: children before their parents.
 
 `switch` is the lane-**navigation** verb: when `@` leaves a lane without ending it (a sibling `start`
 in the same workspace stranded yours; you landed one of several lanes), `gitman switch <lane>` puts
@@ -102,7 +106,7 @@ gitman version bump <major|minor|patch>
 gitman release [<level>|--version X.Y.Z]   # (bump →) tag vX.Y.Z → push tag
 ```
 
-This repo's version lives at: pyproject.toml (`version = "X.Y.Z"`)
+This repo's version lives at: {version_location}
 
 ## Exit codes
 
