@@ -676,7 +676,7 @@ def do_sync(session: Session, all_: bool):
             # Fetch the lane branches ONLY — never trunk. A full `git_fetch` auto-fast-forwards the
             # local trunk bookmark to a moved `origin/<trunk>`, which the canonical_guard
             # postcondition then reverts as "trunk moved outside a land" (the real wedge). Trunk
-            # advancement is `gitman adopt`'s job, by design. Bookmark-scoped fetch keeps sync's
+            # advancement is `gitman pull`'s job, by design. Bookmark-scoped fetch keeps sync's
             # narrow contract ("rebase lanes onto *local* trunk") and still prunes a server-deleted
             # in-filter lane (validated). (verb: adopt)
             session.ws.git_fetch(pick_remote(session.ws), bookmarks=sorted(targets))  # own op
@@ -693,7 +693,7 @@ def do_sync(session: Session, all_: bool):
             if lane not in surviving:
                 notes.append(
                     f"lane '{lane}' no longer exists (remote branch deleted) — nothing to sync; "
-                    f"`gitman adopt` to retire it."
+                    f"`gitman pull` to retire it."
                 )
         if todo:
             with session.ws.transaction("gitman:sync", auto_snapshot=False) as tx:
@@ -716,15 +716,15 @@ def do_sync(session: Session, all_: bool):
     )
 
 
-# --- forge-PR adoption: `gitman adopt` (the second trunk-advancing intent) ------------
+# --- trunk↔origin verbs: pull / push / remote add / untrack (Tier 2, project 21) ------
 
 
 def _trunk_diverged_no_ff(view, trunk: str, origin_trunk, remote: str) -> bool:
     """True if a *resolvable* (non-conflicted) local trunk can't fast-forward to the forge head —
     origin is ahead AND local is ahead (a real divergence). Distinguishes this from the clean
-    ancestor case (behind only → the fetch auto-FFs) and the local-ahead case (ahead only → nothing
-    to adopt; never move trunk backward). Uses the resolved forge-head commit id, not the
-    `<trunk>@<remote>` row, so it's robust. See do_adopt — the diverged-not-conflicted gap."""
+    ancestor case (behind only → FF) and the local-ahead case (ahead only → nothing to pull; never
+    move trunk backward). Uses the resolved forge-head commit id, not the `<trunk>@<remote>` row, so
+    it's robust. See do_pull — the diverged-not-conflicted gap."""
     behind = len(view.log(f"{trunk}..{origin_trunk.commit_id}"))  # forge commits not local
     ahead = len(view.log(f"{origin_trunk.commit_id}..{trunk}"))  # local commits not on the forge head
     return behind > 0 and ahead > 0
@@ -738,10 +738,10 @@ def _retire_lane(session: Session, trunk: str, lane: str, published_before: set[
     """
     from pyjutsu import PyjutsuError
 
-    # Target by commit_id (via `_target`): _retire_lane runs in the exact post-`git_import` adopt
+    # Target by commit_id (via `_target`): _retire_lane runs in the exact post-`git_import` pull
     # window where keep-ref divergence is introduced, so a bare change_id could dead-end here (issue
     # 06 §G2).
-    with session.ws.transaction("gitman:adopt-retire", auto_snapshot=False) as tx:
+    with session.ws.transaction("gitman:pull-retire", auto_snapshot=False) as tx:
         for c in session.view().log(f"{trunk}..{lane}"):
             tx.abandon(_target(c))
         tx.delete_bookmark(lane)
@@ -767,8 +767,8 @@ def _resolve_conflicted_lane(
 
     A conflicted lane names two commits (its local side + its diverged pushed side), so its name
     can't be resolved as a revset — `set_bookmark`/`delete_bookmark` act on it structurally, the way
-    `do_adopt`'s `--force` resolves a conflicted *trunk*. This is `reconcile`'s helper (the sole verb
-    that clears conflicted lanes); the policy is work-preserving and undoable:
+    a conflicted *trunk* bookmark must be cleared by commit-id rather than name. This is `reconcile`'s
+    helper (the sole verb that clears conflicted lanes); the policy is work-preserving and undoable:
 
       * `abandon`, or the lane is fully forge-merged (pushed side ∈ trunk AND no extra local
         commits) → **retire**: abandon any local-only commits the merge superseded (by commit-id —
@@ -780,7 +780,7 @@ def _resolve_conflicted_lane(
     The pushed (remote-tracking) side is left on `<lane>@<remote>`: with the local bookmark resolved
     there's nothing left to conflict against, and a still-live remote branch is harmless (a later
     `git fetch --prune` or forge delete clears it). reconcile stays a *local* recovery — it never
-    pushes a branch deletion (that's `adopt`/`land`'s forge job).
+    pushes a branch deletion (that's `pull`/`land`'s forge job).
     """
     from gitman.state import _conflicted_lanes, _remote_target
 
@@ -828,14 +828,14 @@ def _reconcile_lane_against_adopted_trunk(
     conflicts: list[str],
     notes: list[str],
 ) -> None:
-    """Reconcile one surviving lane against the freshly-adopted trunk (content-based, not SHA).
+    """Reconcile one surviving lane against the freshly-pulled trunk (content-based, not SHA).
 
     Cases, on one emptiness-after-rebase test (works across squash N→1, rebase-merge N→N re-hashed,
     and merge-commit ancestry — independent of SHA/change-id):
       * `trunk..lane` already empty  → lane is an ancestor of the new trunk → retire (no rebase).
       * rebase onto trunk conflicts  → **roll the rebase back**, leave the lane on its prior base,
         mark CONFLICT (non-blocking). Committing a conflicted rebase would let a checkout (e.g. `@`
-        on this lane, or end-of-adopt `update_stale`) materialize jj conflict markers into tracked
+        on this lane, or end-of-pull `update_stale`) materialize jj conflict markers into tracked
         source on disk — which can corrupt files adopt itself depends on and brick the CLI (gap C).
         The lane stays valid (just behind trunk); the user resolves it with an explicit `gitman
         sync`, or abandons it if the conflict is because the lane is an already-merged duplicate.
@@ -846,14 +846,14 @@ def _reconcile_lane_against_adopted_trunk(
     rebased here: rebasing a lane that shares an un-merged ancestor with its diverged pushed side
     drags that side along and orphans it as a stray (which the postcondition then reverts). Clearing
     a conflicted bookmark is `reconcile`'s job (it can retire it or preserve un-pushed work without
-    orphaning a side), so refuse with a clean pointer and let the guard roll the adopt back (issue 11).
+    orphaning a side), so refuse with a clean pointer and let the guard roll the pull back (issue 11).
     """
     from gitman.state import _conflicted_lanes
 
     if lane in _conflicted_lanes(session.view(), trunk):
         raise GitmanError(
             f"lane '{lane}' diverged from its pushed branch (conflicted bookmark) — run "
-            f"`gitman reconcile` to retire/resolve it, then re-run `gitman adopt`.",
+            f"`gitman reconcile` to retire/resolve it, then re-run `gitman pull`.",
             exit_code=1,
         )
 
@@ -863,7 +863,7 @@ def _reconcile_lane_against_adopted_trunk(
         return
 
     try:
-        with session.ws.transaction("gitman:adopt-rebase", auto_snapshot=False) as tx:
+        with session.ws.transaction("gitman:pull-rebase", auto_snapshot=False) as tx:
             rebased_head = tx.rebase(lane, onto=trunk, mode="branch")
             if rebased_head.has_conflict:
                 raise _SurvivorConflict  # abort the tx → lane untouched, no conflicted checkout
@@ -884,15 +884,79 @@ def _reconcile_lane_against_adopted_trunk(
         notes.append(f"rebased onto trunk: {lane}")
 
 
-def _adopt_dry_run(session: Session, trunk: str, remote: str):
-    """Report the adoption plan without mutating: fetch (then roll the fetch back so the op leaves no
-    net change), classify, restore. Opens no adopt transaction. See plan §2 / BUILD_PLAN §3b.7."""
+def _integrate_trunk(
+    session: Session, trunk: str, local_tip: str, origin_tip: str, notes: list[str]
+) -> str:
+    """Move local trunk to integrate `origin_tip` (the fetched `<trunk>@<remote>`), preserving local
+    work. Handles both a *resolvable* and a *conflicted* trunk bookmark (jj marks the local trunk
+    bookmark conflicted whenever the fetch finds it genuinely diverged — both sides carry real
+    content); either way we act by commit-id, which resolves the conflict. Returns one of `in-sync`
+    (no move / kept local) · `ff` (fast-forwarded to origin) · `rebased` (local lands rebased onto
+    origin). Raises `_SurvivorConflict` if the trunk rebase conflicts (caller aborts the pull → the
+    guard rolls everything back). Runs its own tx inside an already-open `canonical_guard`.
+
+    The content question (twin-proof, via the merge-tree) decides which move, never SHA ancestry:
+      * origin holds nothing local lacks (twin / local-ahead) → **keep local** (pin the bookmark to
+        the local side; content-equal, no real forge advance).
+      * origin strictly ahead by content, local has nothing origin lacks → **fast-forward** to origin.
+      * both hold real content (genuine divergence) → **rebase** the local lands (and their
+        descendant lanes) onto origin, preserving every local commit — the single model never drops
+        local work (this replaces the deleted `adopt --force` hard-set-and-drop).
+    """
+    from gitman.state import _merge_tree_relation
+
+    if local_tip == origin_tip:
+        return "in-sync"  # the fetch already fast-forwarded local trunk onto origin
+    content = _merge_tree_relation(session.repo_root, local_tip, origin_tip)
+    forge_has_new, local_has_new = content if content is not None else (True, True)
+    if not forge_has_new:
+        # local ⊇ origin (twin or local-ahead): keep local. `set_bookmark` by commit-id also clears a
+        # conflicted bookmark. Trunk content doesn't advance, so report in-sync (a later push ships it).
+        with session.ws.transaction("gitman:pull-keep-local", auto_snapshot=False) as tx:
+            tx.set_bookmark(trunk, local_tip)
+        return "in-sync"
+    if not local_has_new:
+        # origin strictly ahead by content: fast-forward local trunk to the forge head.
+        with session.ws.transaction("gitman:pull-ff", auto_snapshot=False) as tx:
+            tx.set_bookmark(trunk, origin_tip)
+        notes.append(f"advanced {trunk} → {origin_tip[:12]} (fast-forward onto origin).")
+        return "ff"
+    # Genuine divergence: rebase the local lands `origin_tip..local_tip` (+ their descendant lanes,
+    # per the model's "rebase lands/lanes onto the newer origin trunk") onto origin, preserving every
+    # local commit. A conflict must abort BEFORE mutating: the branch-mode `tx.rebase` return value's
+    # `has_conflict` is unreliable when the land carries a descendant `@` (it reports the stale
+    # pre-rewrite commit), and committing a conflicted rebase would materialize markers into the `@`
+    # checkout (gap C). So pre-check the merge textually with `git merge-tree`; if it conflicts, refuse
+    # (→ `_SurvivorConflict` → the pull rolls back, nothing touched).
+    from gitman.state import _merge_tree_conflicts
+
+    if _merge_tree_conflicts(session.repo_root, local_tip, origin_tip) is not False:
+        raise _SurvivorConflict  # conflict, or unknowable (git error) → don't risk a corrupt trunk
+    # Reference the rebased land tip by its stable CHANGE-id: `tx.rebase` returns a Commit carrying the
+    # *pre-rewrite* commit-id (it re-resolves to the abandoned commit), so setting the bookmark by that
+    # commit-id would orphan the real rebased land as a stray. The change-id resolves to the new commit.
+    local_change = session.ws.head().resolve(local_tip).change_id
+    with session.ws.transaction("gitman:pull-rebase-trunk", auto_snapshot=False) as tx:
+        tx.rebase(local_tip, onto=origin_tip, mode="branch")
+        tx.set_bookmark(trunk, local_change)  # resolve/move the bookmark onto the rebased land tip
+    # Safety net: if a conflict slipped through the merge-tree pre-check (e.g. an intermediate commit
+    # in a multi-commit land), the committed trunk would be conflicted — refuse so the guard rolls back
+    # (restoring the clean `@`) rather than leaving a conflicted trunk.
+    if session.ws.head().resolve(trunk).has_conflict:
+        raise _SurvivorConflict
+    notes.append(f"rebased local trunk lands onto {trunk}@origin ({origin_tip[:12]}).")
+    return "rebased"
+
+
+def _pull_dry_run(session: Session, trunk: str, remote: str):
+    """Report the pull plan without mutating: fetch (then roll the fetch back so the op leaves no net
+    change), classify by content, restore. Opens no pull transaction."""
     from pyjutsu.errors import RevsetError
 
     from gitman.invariants import repo_lock
     from gitman.lanes import lane_names
     from gitman.models import IntentResult
-    from gitman.state import _conflicted_lanes, _trunk_conflicted, capture_state
+    from gitman.state import _conflicted_lanes, _merge_tree_relation, _trunk_conflicted, capture_state
 
     messages: list[str] = []
     with repo_lock(session.repo_root):
@@ -902,33 +966,41 @@ def _adopt_dry_run(session: Session, trunk: str, remote: str):
             session.ws.git_fetch(remote)
             view = session.view()
             try:
-                origin_trunk = view.resolve(f"{trunk}@{remote}")
+                origin_tip = view.resolve(f"{trunk}@{remote}").commit_id
             except RevsetError:
-                messages.append(f"no {trunk}@{remote} — nothing to adopt; is the trunk pushed?")
-                return IntentResult(intent="adopt", outcome="PLAN", messages=messages, exit_code=1)
+                messages.append(f"no {trunk}@{remote} — nothing to pull; is the trunk pushed?")
+                return IntentResult(intent="pull", outcome="PLAN", messages=messages, exit_code=1)
             surviving = set(lane_names(session, trunk))
-            # A *conflicted* trunk makes any `{trunk}..` revset raise, so classify divergence FIRST
-            # and skip the survivor preview when diverged (it needs `--force` to resolve trunk before
-            # survivors can be reconciled). Without this guard the survivor loop's `view.log` crashed
-            # the dry run with a RevsetError instead of reporting the plan (round-09 rehearsal).
-            diverged = _trunk_conflicted(view, trunk) or _trunk_diverged_no_ff(view, trunk, origin_trunk, remote)
-            if diverged:
-                messages.append(f"trunk diverged from {remote} — needs `--force` (drops divergent local commits).")
+            # Read the local trunk tip structurally so a *conflicted* trunk bookmark (genuine
+            # divergence) doesn't crash the preview with a RevsetError.
+            trunk_conflicted = _trunk_conflicted(view, trunk)
+            if trunk_conflicted:
+                targets = [
+                    t for b in view.bookmarks()
+                    if b.name == trunk and b.remote is None for t in b.target_ids
+                ]
+                local_tip = next((t for t in targets if t != origin_tip), targets[0] if targets else origin_tip)
             else:
-                # `behind` = forge commits not yet local; trunk only advances when origin is strictly
-                # ahead (a fetch never moves trunk backward, so local-ahead means trunk stays put).
-                behind = len(view.log(f"{trunk}..{trunk}@{remote}"))
-                if behind:
-                    head = origin_trunk.commit_id[:12]
-                    messages.append(f"would advance {trunk} → {head} ({behind} forge commit(s)).")
-                elif lanes_before == surviving:
-                    messages.append(f"already current: local {trunk} is up to date with {trunk}@{remote}.")
+                local_tip = view.resolve(trunk).commit_id
+            if local_tip == origin_tip:
+                messages.append(f"already current: local {trunk} is up to date with {trunk}@{remote}.")
+            else:
+                content = _merge_tree_relation(session.repo_root, local_tip, origin_tip)
+                forge_has_new, local_has_new = content if content is not None else (True, True)
+                if not forge_has_new:
+                    messages.append(
+                        f"{trunk} already holds origin's content (twin/local-ahead) — reconcile lanes only."
+                    )
+                elif not local_has_new:
+                    messages.append(f"would fast-forward {trunk} → {origin_tip[:12]}.")
                 else:
-                    messages.append(f"{trunk} already current — would reconcile lanes only.")
+                    messages.append(f"would rebase local trunk lands onto {trunk}@{remote} ({origin_tip[:12]}).")
             for lane in sorted(lanes_before - surviving):
                 messages.append(f"would retire (forge-merged, branch deleted): {lane}")
-            if diverged:
-                messages.append("survivor-lane preview unavailable until trunk is resolved (`--force`).")
+            # Survivor-lane preview needs a resolvable trunk (its `{trunk}..` revsets); skip when the
+            # trunk bookmark is conflicted (the real pull resolves it first).
+            if trunk_conflicted:
+                messages.append("survivor-lane preview unavailable until the diverged trunk is integrated.")
             else:
                 conflicted_lanes = _conflicted_lanes(view, trunk)
                 for lane in sorted(surviving):
@@ -941,7 +1013,7 @@ def _adopt_dry_run(session: Session, trunk: str, remote: str):
         finally:
             session.ws.restore_operation(op_before)  # undo the fetch's FF/prune → no net mutation
     return IntentResult(
-        intent="adopt",
+        intent="pull",
         outcome="PLAN",
         messages=messages,
         notes=["dry run — nothing changed; re-run without `--dry-run` to apply."],
@@ -949,10 +1021,12 @@ def _adopt_dry_run(session: Session, trunk: str, remote: str):
     )
 
 
-def do_adopt(session: Session, *, force: bool, dry_run: bool):
-    """Adopt a forge-merged trunk: fetch, let the local trunk advance to `origin/<trunk>`, rebase
-    survivors, retire merged lanes. The second intent the canonical_guard postcondition exempts from
-    the trunk-frozen rule (I5: trunk advances via `land` OR `adopt`). See ISSUE/PLAN/BUILD_PLAN §07.
+def do_pull(session: Session, *, dry_run: bool = False):
+    """Integrate a moved `origin/<trunk>`: fetch, advance/rebase local trunk (content-aware, never
+    dropping local work), rebase-or-retire surviving lanes, repark `@`. The single-model successor to
+    `adopt` — one of the two intents the canonical_guard postcondition exempts from the trunk-frozen
+    rule (I5: trunk advances via `land` OR `pull`). A re-hash twin never triggers a trunk move (the
+    content gate). See `.scratch/projects/21-trunk-model-tier2/PLAN.md` §4.
     """
     from pyjutsu.errors import RevsetError
 
@@ -963,11 +1037,11 @@ def do_adopt(session: Session, *, force: bool, dry_run: bool):
 
     trunk = require_trunk(session.config)
     if not session.ws.remotes():
-        raise GitmanError("no git remote — nothing to adopt.", exit_code=2)
+        raise GitmanError("no git remote — run `gitman remote add <url>` first.", exit_code=2)
     remote = pick_remote(session.ws)
 
     if dry_run:
-        return _adopt_dry_run(session, trunk, remote)
+        return _pull_dry_run(session, trunk, remote)
 
     # Pre-fetch facts — the fetch will move trunk and prune lanes under us.
     local_trunk_before = session.view().resolve(trunk).commit_id
@@ -979,61 +1053,36 @@ def do_adopt(session: Session, *, force: bool, dry_run: bool):
     conflicts: list[str] = []
     notes: list[str] = []
     try:
-        with canonical_guard(session, "adopt") as canon:
+        with canonical_guard(session, "pull") as canon:
             session.ws.git_fetch(remote)  # own op: FFs trunk (clean), prunes deleted lanes, may stale @
             view = session.view()
             try:
-                origin_trunk = view.resolve(f"{trunk}@{remote}")
+                origin_tip = view.resolve(f"{trunk}@{remote}").commit_id
             except RevsetError as exc:
                 raise GitmanError(
-                    f"no {trunk}@{remote} — nothing to adopt; is the trunk pushed?", exit_code=1
+                    f"no {trunk}@{remote} — nothing to pull; is the trunk pushed?", exit_code=1
                 ) from exc
 
-            # Trunk needs a hard-set when it can't reach the forge head by fast-forward — i.e. local
-            # trunk has commit(s) the forge head lacks. jj surfaces that two ways: a *conflicted*
-            # bookmark (resolve raises), OR a plain diverged bookmark (resolvable, but origin is ahead
-            # AND local is ahead — e.g. local trunk carries a re-hashed duplicate of a commit the forge
-            # already has). The fetch auto-FFs only the clean ancestor case; both diverged shapes need
-            # `--force`. The local-only commits (origin_head..local_before) would strand as strays after
-            # the hard-set, so abandon them in the same tx.
-            diverged = _trunk_conflicted(view, trunk) or _trunk_diverged_no_ff(view, trunk, origin_trunk, remote)
-            if diverged:
-                if not force:
-                    raise GitmanError(
-                        f"local {trunk} diverged from {remote} (local commits the forge head lacks). "
-                        f"Push them first, or re-run with `--force` to hard-set {trunk} to {remote} "
-                        f"(drops the divergent local commits; undoable).",
-                        exit_code=1,
-                    )
-                # Abandon by COMMIT id, not change id: a re-hashed duplicate makes the local change
-                # *divergent* (one change-id, two commit-ids), so `abandon(change_id)` is ambiguous and
-                # raises. The commit-id names exactly the local-only revision to drop.
-                dropped = [
-                    c.commit_id
-                    for c in session.view().log(f"{origin_trunk.commit_id}..{local_trunk_before}")
+            # Read the local trunk tip structurally: jj marks the local bookmark *conflicted* on a
+            # genuine divergence, so `resolve(trunk)` would raise. `_integrate_trunk` acts by
+            # commit-id, resolving the conflict either way.
+            if _trunk_conflicted(view, trunk):
+                targets = [
+                    t for b in view.bookmarks()
+                    if b.name == trunk and b.remote is None for t in b.target_ids
                 ]
-                with session.ws.transaction("gitman:adopt-force", auto_snapshot=False) as tx:
-                    tx.set_bookmark(trunk, f"{trunk}@{remote}")  # take the forge head (resolves any conflict)
-                    for commit_id in dropped:
-                        tx.abandon(commit_id)
-                notes.append(
-                    f"forced {trunk} to {remote} — {len(dropped)} divergent local commit(s) dropped (undoable)."
-                )
+                local_tip = next((t for t in targets if t != origin_tip), targets[0] if targets else origin_tip)
             else:
-                # Clean fast-forward: origin is strictly ahead (local trunk is an ancestor of the
-                # forge head). The fetch *usually* auto-FFs the local trunk bookmark, but that is not
-                # guaranteed when the colocated git refs / jj tracking are desynced (round-09 gap A) —
-                # and a silently-stale trunk is the worst failure. Advance trunk EXPLICITLY so it never
-                # depends on the fetch: when origin is strictly ahead and trunk hasn't already reached
-                # it, set the bookmark to the forge head (a no-op when the fetch already advanced it).
-                # The postcondition exempts `adopt` from the trunk-frozen rule, so this stands.
-                local_trunk_now = view.resolve(trunk).commit_id
-                if local_trunk_now != origin_trunk.commit_id and not view.log(
-                    f"{origin_trunk.commit_id}..{trunk}"  # ahead == 0: never move trunk backward
-                ):
-                    with session.ws.transaction("gitman:adopt-ff", auto_snapshot=False) as tx:
-                        tx.set_bookmark(trunk, f"{trunk}@{remote}")
-                    notes.append(f"advanced {trunk} → {origin_trunk.commit_id[:12]} (explicit fast-forward).")
+                local_tip = view.resolve(trunk).commit_id
+
+            try:
+                _integrate_trunk(session, trunk, local_tip, origin_tip, notes)
+            except _SurvivorConflict as exc:
+                raise GitmanError(
+                    f"local {trunk} lands conflict with {remote}/{trunk} — resolve origin's changes by "
+                    f"hand, or `gitman reconcile`, then re-run `gitman pull`.",
+                    exit_code=1,
+                ) from exc
 
             surviving = set(lane_names(session, trunk))
             for lane in sorted(lanes_before - surviving):  # pruned by the fetch (forge-merged + deleted)
@@ -1048,13 +1097,21 @@ def do_adopt(session: Session, *, force: bool, dry_run: bool):
 
             if session.ws.is_stale():  # the fetch/abandons orphaned @ off a pruned/retired lane
                 session.ws.update_stale()
-                notes.append("refreshed the working copy onto the adopted trunk.")
+                notes.append("refreshed the working copy onto the pulled trunk.")
+            # `@`-never-on-trunk (the invariant now extended to `pull`): if the trunk move left `@`
+            # coinciding with trunk (e.g. update_stale checked out onto the advanced trunk), repark it
+            # onto a fresh empty child — mirroring `land`'s repark.
+            after_view = session.view()
+            if after_view.working_copy().commit_id == after_view.resolve(trunk).commit_id:
+                with session.ws.transaction("gitman:pull-repark", auto_snapshot=False) as tx:
+                    tx.new(trunk)
+                notes.append("reparked @ onto a fresh child of the pulled trunk.")
     except GitmanError as exc:
         return IntentResult(
-            intent="adopt",
+            intent="pull",
             outcome="BLOCKED",
             messages=[str(exc)],
-            notes=["nothing changed — the repo is back to its pre-adopt state."],
+            notes=["nothing changed — the repo is back to its pre-pull state."],
             exit_code=exc.exit_code,
         )
 
@@ -1063,14 +1120,14 @@ def do_adopt(session: Session, *, force: bool, dry_run: bool):
     if conflicts:
         outcome, exit_code = "CONFLICT", 1
     elif not changed:
-        outcome, exit_code = "ALREADY_CURRENT", 0
+        outcome, exit_code = "ALREADY-CURRENT", 0
     else:
-        outcome, exit_code = "ADOPTED", 0
+        outcome, exit_code = "PULLED", 0
 
     messages = []
     if trunk_after != local_trunk_before:
-        messages.append(f"adopted {remote}/{trunk} → {trunk} @ {trunk_after[:12] if trunk_after else '?'}.")
-    elif outcome == "ALREADY_CURRENT":
+        messages.append(f"pulled {remote}/{trunk} → {trunk} @ {trunk_after[:12] if trunk_after else '?'}.")
+    elif outcome == "ALREADY-CURRENT":
         messages.append(f"already current: local {trunk} == {remote}/{trunk}.")
     if retired:
         messages.append(f"retired {len(retired)} forge-merged lane(s): {', '.join(retired)}.")
@@ -1085,11 +1142,182 @@ def do_adopt(session: Session, *, force: bool, dry_run: bool):
     notes.append("`gitman undo` reverts trunk + lanes; the forge merge and deleted remote branches are not restored.")
 
     return IntentResult(
-        intent="adopt",
+        intent="pull",
         outcome=outcome,
         messages=messages,
         notes=notes,
         exit_code=exit_code,
+        undo_command="gitman undo",
+        state=canon.state,
+    )
+
+
+# --- push / remote add / untrack (Tier 2, project 21) ---------------------------------
+
+
+def do_push(session: Session, *, reset_origin: bool = False):
+    """Push local trunk to origin — content-gated strict fast-forward (a gitman *policy*: pyjutsu's
+    `git_push` is an unconditional force-with-lease, so gitman itself refuses a non-FF → `pull`).
+
+    Gate (everyday): `in-sync` → nothing to push; `local-ahead` → push; `forge-ahead`/`diverged`/
+    unknown → refuse → `pull`. `--reset-origin` lifts the gate (same `git_push` call) for a deliberate
+    one-shot overwrite of divergent origin residue — the engine's lease still blocks an out-of-band
+    clobber. The first push of a never-pushed trunk creates `origin/<trunk>` (bootstrap, project 18).
+    See PLAN §3. `@`-dirty-trunk is guarded in the precheck (extended to `push`)."""
+    from pyjutsu import PyjutsuError
+    from pyjutsu.errors import RevsetError
+
+    from gitman.invariants import canonical_guard
+    from gitman.models import IntentResult
+    from gitman.state import _trunk_content_relation
+
+    trunk = require_trunk(session.config)
+    if not session.ws.remotes():
+        raise GitmanError("no git remote — run `gitman remote add <url>` first.", exit_code=2)
+    remote = pick_remote(session.ws)
+
+    # Read the pre-push relation from the head view (NO snapshot — the precheck's dirty-`@` guard must
+    # still see an unsnapshotted dirty trunk-`@`). The relation compares trunk vs its tracking ref, so
+    # a dirty `@` doesn't affect it.
+    view = session.view()
+    try:
+        origin_tip = view.resolve(f"{trunk}@{remote}").commit_id
+    except RevsetError:
+        origin_tip = None  # trunk never pushed → first push creates it (allow_new)
+    relation, _behind, ahead, _remote = _trunk_content_relation(session, view, trunk)
+
+    if not reset_origin and origin_tip is not None:
+        if relation == "in-sync":
+            return IntentResult(
+                intent="push",
+                outcome="NOOP",
+                messages=[f"{trunk} is already in sync with {remote} — nothing to push."],
+            )
+        if relation != "local-ahead":  # forge-ahead / diverged / unknown → never lease-force over forge work
+            return IntentResult(
+                intent="push",
+                outcome="BLOCKED",
+                exit_code=1,
+                messages=[
+                    f"refusing to push: {remote}/{trunk} holds work local lacks ({relation or 'unknown'}) "
+                    f"— run `gitman pull` first (or `gitman push --reset-origin` to deliberately overwrite it)."
+                ],
+            )
+
+    notes: list[str] = []
+    try:
+        with canonical_guard(session, "push") as canon:
+            try:
+                session.ws.git_push(remote, trunk, allow_new=True)
+            except PyjutsuError as exc:
+                raise GitmanError(
+                    f"push rejected — {remote} moved since your last fetch (the lease failed); "
+                    f"run `gitman pull`, then `gitman push`.\n{exc}",
+                    exit_code=1,
+                ) from exc
+    except GitmanError as exc:
+        return IntentResult(
+            intent="push",
+            outcome="BLOCKED",
+            messages=[str(exc)],
+            notes=["nothing changed on the remote."],
+            exit_code=exc.exit_code,
+        )
+
+    tip = canon.state.trunk.commit_id if canon.state else None
+    notes.append("push is one-way: `gitman undo` reverts local state only, not the remote branch.")
+    return IntentResult(
+        intent="push",
+        outcome="RESET-ORIGIN" if reset_origin else "PUSHED",
+        messages=[f"pushed {trunk} → {remote} @ {tip[:12] if tip else '?'}."],
+        notes=notes,
+        undo_command="gitman undo",
+        state=canon.state,
+    )
+
+
+def do_remote_add(session: Session, url: str, name: str = "origin"):
+    """Add a git remote in-process (`ws.add_remote`) — never touches git HEAD, so it sidesteps the
+    detached-HEAD `gh` trap (18-RC2). Bootstraps a repo toward its first `gitman push`."""
+    from pyjutsu import PyjutsuError
+
+    from gitman.invariants import repo_lock, write_undo_checkpoint
+    from gitman.models import IntentResult
+    from gitman.state import capture_state
+
+    with repo_lock(session.repo_root):
+        op_before = session.ws.head_operation()
+        try:
+            session.ws.add_remote(name, url)
+        except PyjutsuError as exc:
+            raise GitmanError(f"could not add remote '{name}': {exc}", exit_code=2) from exc
+        write_undo_checkpoint(session.repo_root, op_before, "remote-add")
+
+    return IntentResult(
+        intent="remote-add",
+        outcome="REMOTE-ADDED",
+        messages=[f"added remote '{name}' → {url}."],
+        notes=["next: `gitman push` to publish trunk (creates the branch), or `gitman pull` to fetch."],
+        undo_command="gitman undo",
+        state=capture_state(session) if session.config.trunk else None,
+    )
+
+
+def _ensure_gitignore(repo_root: Path, paths: list[str]) -> list[str]:
+    """Ensure each of `paths` is an exact line in the repo-root `.gitignore` (create it if absent).
+    Returns the paths that were newly added. Keeps the next snapshot from re-tracking an untracked
+    file (jj evaluates gitignore before the auto-track fileset)."""
+    gitignore = repo_root / ".gitignore"
+    existing_lines = gitignore.read_text().splitlines() if gitignore.exists() else []
+    present = set(existing_lines)
+    added = [p for p in paths if p not in present]
+    if added:
+        body = "\n".join(existing_lines + added)
+        gitignore.write_text(body + "\n")
+    return added
+
+
+def do_untrack(session: Session, paths: list[str]):
+    """Stop tracking machine-local paths (`.claude/settings.local.json`) that were committed before
+    being gitignored, so they stop churning trunk/lanes (15-RC4/RC5). Ensures each path is
+    `.gitignore`d, then `ws.untrack_paths` removes it from `@`'s tree (the file stays on disk). Runs
+    on the current lane (the `.gitignore` edit + tree removal are real tracked changes → they must
+    live in a lane; trunk is frozen). See PLAN §5."""
+    from gitman.invariants import canonical_guard
+    from gitman.lanes import current_lane
+    from gitman.models import IntentResult
+
+    trunk = require_trunk(session.config)
+    if not paths:
+        raise GitmanError("`gitman untrack` needs at least one path.", exit_code=3)
+    if current_lane(session, trunk) is None:
+        raise GitmanError(
+            "not on a lane — untracking edits the tree, which must land via a lane. "
+            "`gitman start <name>` first.",
+            exit_code=1,
+        )
+
+    notes: list[str] = []
+    untracked_op = None
+    with canonical_guard(session, "untrack") as canon:
+        added = _ensure_gitignore(session.repo_root, paths)
+        session.ws.snapshot()  # fold the .gitignore edit into @ before untracking
+        untracked_op = session.ws.untrack_paths(paths)  # None if nothing was tracked
+        if added:
+            notes.append(f"added to .gitignore: {', '.join(added)}.")
+
+    if untracked_op is None:
+        messages = [f"nothing to untrack — {', '.join(paths)} not tracked (already ignored/absent)."]
+        outcome = "NOOP"
+    else:
+        messages = [f"untracked {', '.join(paths)} (removed from the tree; files kept on disk)."]
+        outcome = "UNTRACKED"
+    return IntentResult(
+        intent="untrack",
+        outcome=outcome,
+        lane=current_lane(session, trunk),
+        messages=messages,
+        notes=notes + ["land this lane to fold the untrack into trunk."],
         undo_command="gitman undo",
         state=canon.state,
     )

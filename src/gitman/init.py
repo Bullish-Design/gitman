@@ -67,11 +67,26 @@ gitman start <name>         # begin a lane (add --workspace to isolate it in its
 # ...edit files...
 gitman save -m "<message>"  # describe the current change
 gitman status               # see trunk + all lanes (canonical or off-canonical)
-gitman sync                 # fetch trunk + rebase this lane onto it
+gitman sync                 # rebase this lane onto local trunk (fetches lane branches)
 gitman publish              # push the lane (branch = lane name); verify hook runs first
 gitman land [<lane>...]     # fold lane(s) into trunk, advance trunk, retire the lane(s)
 gitman abandon [<lane>]     # discard a lane
 ```
+
+## Trunk ↔ origin (local-authored model)
+
+Trunk is **local-authored**: it advances only via `land`, and gitman is the sole writer of trunk
+SHAs. Origin is a mirror you reach by fast-forward `push`; `pull` integrates genuine origin moves.
+
+```
+gitman remote add <url>     # bootstrap a remote (in-process; never touches git HEAD)
+gitman push                 # fast-forward local trunk → origin (refuses non-FF → `gitman pull`)
+gitman pull                 # integrate a moved origin/<trunk> (rebases your un-pushed lands; never drops work)
+gitman untrack <path>       # stop tracking a machine-local file (gitignore + drop from the tree)
+```
+
+`gitman push --reset-origin` deliberately overwrites divergent origin residue (lease-safe; rare —
+for migrating a repo that already carries re-hash-twin residue).
 
 ## Safety net
 

@@ -177,13 +177,15 @@ def precheck_canonical(session: Session, intent: str | None = None) -> RepoState
             f"refusing: repo is off-canonical ({before.off_canonical}) — run `gitman reconcile`.",
             exit_code=1,
         )
-    # Dirty trunk-`@` guard (13-RC2 backstop), scoped to the trunk-advancing intent (`land`): a `@`
-    # that *coincides* with trunk AND carries *dirty* on-disk edits would fold that dirt into trunk.
-    # "Dirty" = the snapshot above rewrote `@` (pre != post commit id). A clean `@`==trunk — the
-    # bootstrap state before the first `start`, or the default workspace while a secondary workspace
-    # does the work — is NOT dirty and lands fine. Only a genuinely dirty trunk-`@` (reachable only
-    # via out-of-band edits; gitman itself can't leave `@` on trunk, per the postcondition) is refused.
-    if intent == "land" and on_trunk_pre:
+    # Dirty trunk-`@` guard (13-RC2 backstop), scoped to the trunk-consuming intents (`land` folds a
+    # lane into trunk; `push` ships trunk to origin): a `@` that *coincides* with trunk AND carries
+    # *dirty* on-disk edits would fold that dirt into trunk on the precheck snapshot — landing it, or
+    # pushing a dirtied trunk. "Dirty" = the snapshot above rewrote `@` (pre != post commit id). A
+    # clean `@`==trunk — the bootstrap state before the first `start`, or the default workspace while
+    # a secondary workspace does the work — is NOT dirty and proceeds fine. Only a genuinely dirty
+    # trunk-`@` (reachable only via out-of-band edits; gitman itself can't leave `@` on trunk, per the
+    # postcondition) is refused.
+    if intent in ("land", "push") and on_trunk_pre:
         post_wc = session.view().working_copy()
         if pre_wc.commit_id != post_wc.commit_id:  # snapshot rewrote @ → on-disk edits existed
             raise GitmanError(
@@ -198,27 +200,28 @@ def _postcondition(session: Session, intent: str, trunk_before: str | None, op_b
     from gitman.state import capture_state
 
     after = capture_state(session)
-    # `adopt` is the second sanctioned trunk-advancing intent (I5 widens to land OR adopt): it lets
-    # the forge-merged `origin/<trunk>` advance stand instead of reverting it as a stray trunk move.
-    trunk_moved = (after.trunk.commit_id != trunk_before) and intent not in ("land", "adopt")
-    # New invariant — `@` never coincides with trunk, enforced at the trunk-advancing intent
-    # (`land`): after a land, the landing session's `@` must sit on a fresh child of the advanced
+    # `land` and `pull` are the two sanctioned trunk-advancing intents (I5 widens to land OR pull):
+    # `land` folds a lane into local trunk; `pull` fast-forwards / rebases local trunk onto a moved
+    # `origin/<trunk>`. Both may legitimately move trunk, so neither is reverted as a stray move.
+    trunk_moved = (after.trunk.commit_id != trunk_before) and intent not in ("land", "pull")
+    # New invariant — `@` never coincides with trunk, enforced at the trunk-advancing intents
+    # (`land`, `pull`): after the move, the session's `@` must sit on a fresh child of the advanced
     # trunk (the repark), never *on* trunk — else the next snapshot amends trunk (13-RC2/RC3/RC4).
-    # Scoped to `land` because a session's `@` legitimately sits on trunk elsewhere (the bootstrap
-    # `@`==trunk before the first `start`, or the default workspace while work runs in a secondary
-    # one). `adopt` is exempt (out of scope for Tier 1 — it doesn't repark `@`).
+    # Scoped to those intents because a session's `@` legitimately sits on trunk elsewhere (the
+    # bootstrap `@`==trunk before the first `start`, or the default workspace while work runs in a
+    # secondary one).
     at_on_trunk = (
-        intent == "land"
+        intent in ("land", "pull")
         and after.trunk.commit_id is not None
         and session.view().working_copy().commit_id == after.trunk.commit_id
     )
     if not after.canonical or trunk_moved or at_on_trunk:
         session.ws.restore_operation(op_before)
         if at_on_trunk and after.canonical and not trunk_moved:
-            reason = f"working copy @ coincides with trunk '{after.trunk.name}' after land (repark failed)"
+            reason = f"working copy @ coincides with trunk '{after.trunk.name}' after {intent} (repark failed)"
         else:
             reason = after.off_canonical or (
-                f"trunk moved outside a land ({trunk_before} → {after.trunk.commit_id})"
+                f"trunk moved outside a land/pull ({trunk_before} → {after.trunk.commit_id})"
             )
         raise GitmanError(f"reverted: {reason}; no change applied.", exit_code=1)
     return after

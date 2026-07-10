@@ -72,7 +72,7 @@ def render_status(state: RepoState) -> str:
     if not state.canonical:
         diverged = bool(state.off_canonical) and "diverged" in state.off_canonical
         recover = (
-            "Recover: `gitman adopt`  — adopt the forge-merged trunk (`--force` to take origin)."
+            "Recover: `gitman pull`  — rebase your local lands onto origin/<trunk>."
             if diverged
             else "Recover: `gitman reconcile`  — adopt it into a lane, or abandon it."
         )

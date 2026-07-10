@@ -1,10 +1,11 @@
-"""PR-2: `gitman adopt` — adopt a forge-merged trunk across squash / merge-commit / rebase
-re-hash, retire merged lanes (content-based), rebase survivors, refuse/force on divergence.
+"""`gitman pull` — integrate a moved origin/<trunk>: fetch, advance/rebase local trunk (never
+dropping local work), retire forge-merged lanes (content-based), rebase survivors. The single-model
+successor to `adopt` (project 21 Tier 2); the diverged case now REBASES un-pushed local lands onto
+origin instead of the deleted `adopt --force` drop.
 
-In-process over pyjutsu, two colocated repos (work + bare origin). Lanes are built with raw
-`ws` ops for precise commit counts; the forge side is simulated with raw git in throwaway
-clones. The intent under test is the real `do_adopt`.
-See .scratch/projects/07-forge-pr-trunk-reconcile/{ISSUE,PLAN,BUILD_PLAN}.md.
+In-process over pyjutsu, two colocated repos (work + bare origin). Lanes are built with raw `ws` ops
+for precise commit counts; the forge side is simulated with raw git in throwaway clones.
+See .scratch/projects/{07-forge-pr-trunk-reconcile,21-trunk-model-tier2}/.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ from pyjutsu import Workspace
 from pyjutsu.errors import RevsetError
 
 from gitman.config import GitmanConfig
-from gitman.core import do_adopt, do_undo
+from gitman.core import do_pull, do_undo
 from gitman.session import Session
 from gitman.state import capture_state
 
@@ -106,19 +107,19 @@ def _forge_merge_commit(remote: Path, tmp_path: Path, lane: str) -> None:
     _git("push", "origin", "HEAD:main", cwd=other)
 
 
-def _advance_main(remote: Path, tmp_path: Path) -> None:
+def _advance_main(remote: Path, tmp_path: Path, *, fn: str = "forge.txt", content: str = "forge\n") -> None:
     other = _clone(remote, tmp_path, "advance")
-    (other / "forge.txt").write_text("forge\n")
+    (other / fn).write_text(content)
     _git("add", ".", cwd=other)
     _git("commit", "-m", "forge moves trunk", cwd=other)
     _git("push", "origin", "HEAD:main", cwd=other)
 
 
-# --- 1. squash-merge headline (acceptance repro) -------------------------------------
+# --- 1. squash-merge headline (forge-ahead FF + retire) ------------------------------
 
 
-def test_adopt_squash_merge_headline(tmp_path: Path):
-    """Lane m0 (2 commits) → squash-merged on origin as a new SHA, branch deleted → `adopt`
+def test_pull_squash_merge_headline(tmp_path: Path):
+    """Lane m0 (2 commits) → squash-merged on origin as a new SHA, branch deleted → `pull`
     leaves CANONICAL · 0 lanes, local trunk == origin, doctor HEALTHY."""
     from gitman.doctor import run_doctor
 
@@ -126,9 +127,9 @@ def test_adopt_squash_merge_headline(tmp_path: Path):
     _make_lane(ws, work, "m0", [("a.txt", "A\n"), ("b.txt", "B\n")])
     _forge_squash(remote, tmp_path, [("a.txt", "A\n"), ("b.txt", "B\n")], delete="m0")
 
-    res = do_adopt(_sess(work), force=False, dry_run=False)
+    res = do_pull(_sess(work), dry_run=False)
 
-    assert res.outcome == "ADOPTED", res.messages
+    assert res.outcome == "PULLED", res.messages
     assert res.exit_code == 0
     state = capture_state(_sess(work))
     assert state.canonical
@@ -141,14 +142,14 @@ def test_adopt_squash_merge_headline(tmp_path: Path):
 # --- 2. merge-commit (lane SHAs preserved as ancestors) ------------------------------
 
 
-def test_adopt_merge_commit_retires_via_ancestry(tmp_path: Path):
+def test_pull_merge_commit_retires_via_ancestry(tmp_path: Path):
     work, remote, ws = _with_remote(tmp_path)
     _make_lane(ws, work, "m0", [("a.txt", "A\n")])
     _forge_merge_commit(remote, tmp_path, "m0")  # keeps the branch; lane SHAs become ancestors
 
-    res = do_adopt(_sess(work), force=False, dry_run=False)
+    res = do_pull(_sess(work), dry_run=False)
 
-    assert res.outcome == "ADOPTED", res.messages
+    assert res.outcome == "PULLED", res.messages
     state = capture_state(_sess(work))
     assert state.canonical
     assert "m0" not in {lane.name for lane in state.lanes}
@@ -158,15 +159,15 @@ def test_adopt_merge_commit_retires_via_ancestry(tmp_path: Path):
 # --- 3. rebase-merge (new SHAs, same content, branch kept) ---------------------------
 
 
-def test_adopt_rebase_merge_retires_via_emptiness(tmp_path: Path):
+def test_pull_rebase_merge_retires_via_emptiness(tmp_path: Path):
     work, remote, ws = _with_remote(tmp_path)
     _make_lane(ws, work, "m0", [("a.txt", "A\n"), ("b.txt", "B\n")])
     # forge replays the same content under new SHAs and KEEPS the branch
     _forge_squash(remote, tmp_path, [("a.txt", "A\n"), ("b.txt", "B\n")], delete=None)
 
-    res = do_adopt(_sess(work), force=False, dry_run=False)
+    res = do_pull(_sess(work), dry_run=False)
 
-    assert res.outcome == "ADOPTED", res.messages
+    assert res.outcome == "PULLED", res.messages
     state = capture_state(_sess(work))
     assert state.canonical
     assert "m0" not in {lane.name for lane in state.lanes}  # emptied-after-rebase → retired
@@ -176,94 +177,115 @@ def test_adopt_rebase_merge_retires_via_emptiness(tmp_path: Path):
 # --- 4. un-merged survivor alongside a merged lane -----------------------------------
 
 
-def test_adopt_keeps_unmerged_survivor(tmp_path: Path):
+def test_pull_keeps_unmerged_survivor(tmp_path: Path):
     work, remote, ws = _with_remote(tmp_path)
     _make_lane(ws, work, "merged", [("a.txt", "A\n")])
     _make_lane(ws, work, "survivor", [("s.txt", "S\n")])
     _forge_squash(remote, tmp_path, [("a.txt", "A\n")], delete="merged")  # only `merged` is on the forge
 
-    res = do_adopt(_sess(work), force=False, dry_run=False)
+    res = do_pull(_sess(work), dry_run=False)
 
-    assert res.outcome == "ADOPTED", res.messages
+    assert res.outcome == "PULLED", res.messages
     state = capture_state(_sess(work))
     assert state.canonical
     names = {lane.name for lane in state.lanes}
     assert names == {"survivor"}  # merged retired, survivor kept
     assert state.trunk.commit_id == _resolve(work, "main@origin")
-    # survivor was rebased onto the adopted trunk (its base is the new trunk)
+    # survivor was rebased onto the pulled trunk (its base is the new trunk)
     survivor = next(lane for lane in state.lanes if lane.name == "survivor")
     assert survivor.behind == 0
 
 
-# --- 5. diverged trunk: BLOCKED without --force, hard-set with --force ----------------
+# --- 5. diverged trunk: pull REBASES local lands onto origin (never drops) ------------
 
 
-def _make_diverged(work: Path, remote: Path, tmp_path: Path, ws: Workspace) -> None:
+def _make_diverged(work: Path, remote: Path, tmp_path: Path, ws: Workspace, *, fn: str = "local.txt") -> None:
     """Un-pushed local land + origin moved independently → fetch leaves a conflicted trunk."""
     with ws.transaction("local land") as tx:
         tx.new("main")
         tx.set_bookmark("main", "@")
         tx.describe("@", "local land (unpushed)")
-    (work / "local.txt").write_text("local\n")
+    (work / fn).write_text("local\n")
     ws.snapshot()
+    with ws.transaction("set main") as tx:
+        tx.set_bookmark("main", "@")
     with ws.transaction("park") as tx:
         tx.new("main")
-    _advance_main(remote, tmp_path)
+    _advance_main(remote, tmp_path)  # origin adds forge.txt (different file → no rebase conflict)
 
 
-def test_adopt_diverged_blocks_without_force(tmp_path: Path):
+def test_pull_diverged_rebases_local_lands(tmp_path: Path):
+    """Genuine divergence (un-pushed local land + origin moved, different files): pull rebases the
+    local land onto origin — trunk carries BOTH origin's and local's content, nothing dropped."""
     work, remote, ws = _with_remote(tmp_path)
     _make_diverged(work, remote, tmp_path, ws)
-    trunk_before = _resolve(work, "main")
 
-    res = do_adopt(_sess(work), force=False, dry_run=False)
+    res = do_pull(_sess(work), dry_run=False)
 
-    assert res.outcome == "BLOCKED"
-    assert res.exit_code == 1
-    assert any("diverged" in m for m in res.messages)
-    # the fetch was rolled back → repo is canonical again, trunk untouched
+    assert res.outcome == "PULLED", res.messages
+    assert res.exit_code == 0
     state = capture_state(_sess(work))
     assert state.canonical
-    assert state.trunk.commit_id == trunk_before
+    # trunk is ahead of origin by exactly the rebased local land (origin is now a strict ancestor).
+    origin_tip = _resolve(work, "main@origin")
+    assert state.trunk.commit_id != origin_tip
+    ahead = _sess(work).view().log("main@origin..main")
+    assert len(ahead) == 1  # the preserved local land
+    # both contents are present on trunk's tree (nothing dropped)
+    show = subprocess.run(["git", "show", "main:local.txt"], cwd=work, capture_output=True, text=True)
+    assert show.returncode == 0 and show.stdout == "local\n"
+    show2 = subprocess.run(["git", "show", "main:forge.txt"], cwd=work, capture_output=True, text=True)
+    assert show2.returncode == 0
 
 
-def test_adopt_dry_run_on_diverged_trunk_blocks_not_crashes(tmp_path: Path):
-    """A conflicted trunk makes `{trunk}..` revsets raise. `adopt --dry-run` must classify the
-    divergence and report a clean PLAN (needs --force), not crash with a RevsetError (exit 3)."""
+def test_pull_diverged_dry_run_reports_rebase(tmp_path: Path):
+    """A conflicted trunk makes `{trunk}..` revsets raise. `pull --dry-run` must classify the
+    divergence and report a clean PLAN (would rebase), not crash with a RevsetError."""
     work, remote, ws = _with_remote(tmp_path)
     _make_diverged(work, remote, tmp_path, ws)
 
-    res = do_adopt(_sess(work), force=False, dry_run=True)  # must not raise RevsetError
+    res = do_pull(_sess(work), dry_run=True)  # must not raise RevsetError
 
     assert res.outcome == "PLAN"
     assert res.exit_code == 0  # dry run never fails
-    assert any("diverged" in m and "--force" in m for m in res.messages), res.messages
+    assert any("rebase local trunk lands" in m for m in res.messages), res.messages
 
 
-def test_adopt_diverged_force_takes_origin(tmp_path: Path):
+def test_pull_diverged_conflict_is_blocked_worktree_clean(tmp_path: Path):
+    """Divergence where local land and origin edit the SAME file incompatibly → the trunk rebase
+    conflicts → pull is BLOCKED (rolled back), the trunk never left conflicted, worktree untouched."""
     work, remote, ws = _with_remote(tmp_path)
-    _make_diverged(work, remote, tmp_path, ws)
+    # local land rewrites the ONLY line of f.txt (base → local)
+    with ws.transaction("local land") as tx:
+        tx.new("main")
+        tx.set_bookmark("main", "@")
+        tx.describe("@", "local edits f.txt")
+    (work / "f.txt").write_text("local\n")
+    ws.snapshot()
+    with ws.transaction("set main") as tx:
+        tx.set_bookmark("main", "@")
+    with ws.transaction("park") as tx:
+        tx.new("main")
+    trunk_before = _resolve(work, "main")
+    # origin rewrites the SAME line incompatibly (base → forge) → a genuine 3-way conflict
+    _advance_main(remote, tmp_path, fn="f.txt", content="forge\n")
 
-    res = do_adopt(_sess(work), force=True, dry_run=False)
+    res = do_pull(_sess(work), dry_run=False)
 
-    assert res.outcome == "ADOPTED", res.messages
+    assert res.outcome == "BLOCKED", res.messages
+    assert res.exit_code == 1
+    # rolled back: canonical, trunk untouched, no markers on disk
     state = capture_state(_sess(work))
     assert state.canonical
-    assert state.trunk.commit_id == _resolve(work, "main@origin")
-    # undoable
-    do_undo(_sess(work), op=None, list_=False)
-    assert capture_state(_sess(work)).trunk.commit_id != _resolve(work, "main@origin")
+    assert state.trunk.commit_id == trunk_before
+    content = (work / "f.txt").read_text()
+    assert not any(mk in content for mk in ("<<<<<<<", ">>>>>>>", "%%%%%%%", "+++++++")), content
 
 
-# --- 5b. diverged but NOT conflicted (re-hashed duplicate trunk commit) --------------
-
-
-def test_adopt_reconciles_rewritten_origin_trunk(tmp_path: Path):
-    """Origin rewrote/re-hashed trunk past a local commit (force-push). `adopt` must end with
-    local trunk == origin, canonical, the divergent local commit gone — whether jj auto-takes the
-    rewritten remote (no force needed) or pins the local bookmark (diverged → needs `--force`). The
-    force path here covers the gap where `adopt` only force-advanced a *conflicted* trunk; the
-    diverged-but-not-conflicted shape is also validated live against the gitman repo's own trunk."""
+def test_pull_reconciles_rewritten_origin_trunk(tmp_path: Path):
+    """Origin rewrote/re-hashed trunk past a local commit (force-push) AND added real new content.
+    Local's commit is a content twin of origin's rewrite (⊆ origin), so pull fast-forwards to origin,
+    dropping only the redundant twin — trunk == origin, canonical, no local content lost."""
     work, remote, ws = _with_remote(tmp_path)
     base = ws.head().resolve("main").commit_id
 
@@ -292,24 +314,22 @@ def test_adopt_reconciles_rewritten_origin_trunk(tmp_path: Path):
     _git("commit", "-m", "Z", cwd=other)
     _git("push", "-f", "origin", "main", cwd=other)
 
-    res = do_adopt(_sess(work), force=False, dry_run=False)
-    if res.outcome == "BLOCKED":  # jj pinned the local bookmark → diverged, needs the hard-set
-        res = do_adopt(_sess(work), force=True, dry_run=False)
-    assert res.outcome == "ADOPTED", res.messages
+    res = do_pull(_sess(work), dry_run=False)
+
+    assert res.outcome == "PULLED", res.messages
     state = capture_state(_sess(work))
     assert state.canonical
     assert state.trunk.commit_id == _resolve(work, "main@origin")
-    assert state.trunk.commit_id != local_c  # the divergent local commit is gone
+    assert state.trunk.commit_id != local_c  # the divergent (twin) local commit is gone
 
 
 # --- 5c. gap C: a conflicting survivor never corrupts the worktree -------------------
 
 
-def test_adopt_conflicting_survivor_leaves_worktree_clean(tmp_path: Path):
-    """A survivor lane whose content overlaps the adopted trunk must NOT have jj conflict markers
-    materialized into tracked source on disk (round-09 gap C — that corrupted core.py and bricked
-    the CLI). adopt advances trunk + retires merged lanes, but rolls back the conflicting rebase:
-    the lane stays on its prior base, unconflicted, worktree untouched."""
+def test_pull_conflicting_survivor_leaves_worktree_clean(tmp_path: Path):
+    """A survivor lane whose content overlaps the pulled trunk must NOT have jj conflict markers
+    materialized into tracked source on disk (round-09 gap C). pull advances trunk + retires merged
+    lanes, but rolls back the conflicting rebase: the lane stays on its prior base, worktree untouched."""
     work, remote, ws = _with_remote(tmp_path)
 
     # Build a survivor lane editing shared.txt, and LEAVE @ on it (the dangerous cd'd-on-lane shape).
@@ -330,7 +350,7 @@ def test_adopt_conflicting_survivor_leaves_worktree_clean(tmp_path: Path):
     _git("commit", "-m", "trunk edits shared.txt", cwd=other)
     _git("push", "origin", "HEAD:main", cwd=other)
 
-    res = do_adopt(_sess(work), force=False, dry_run=False)
+    res = do_pull(_sess(work), dry_run=False)
 
     assert res.outcome == "CONFLICT", res.messages
     assert res.exit_code == 1
@@ -350,14 +370,14 @@ def test_adopt_conflicting_survivor_leaves_worktree_clean(tmp_path: Path):
 # --- 6. --dry-run mutates nothing ----------------------------------------------------
 
 
-def test_adopt_dry_run_mutates_nothing(tmp_path: Path):
+def test_pull_dry_run_mutates_nothing(tmp_path: Path):
     work, remote, ws = _with_remote(tmp_path)
     _make_lane(ws, work, "m0", [("a.txt", "A\n")])
     _forge_squash(remote, tmp_path, [("a.txt", "A\n")], delete="m0")
     trunk_before = _resolve(work, "main")
     lanes_before = {lane.name for lane in capture_state(_sess(work)).lanes}
 
-    res = do_adopt(_sess(work), force=False, dry_run=True)
+    res = do_pull(_sess(work), dry_run=True)
 
     assert res.outcome == "PLAN"
     assert res.exit_code == 0
@@ -369,17 +389,17 @@ def test_adopt_dry_run_mutates_nothing(tmp_path: Path):
     assert {lane.name for lane in state.lanes} == lanes_before
 
 
-# --- 7. undo after adopt restores trunk + lanes --------------------------------------
+# --- 7. undo after pull restores trunk + lanes ---------------------------------------
 
 
-def test_adopt_undo_restores(tmp_path: Path):
+def test_pull_undo_restores(tmp_path: Path):
     work, remote, ws = _with_remote(tmp_path)
     _make_lane(ws, work, "m0", [("a.txt", "A\n")])
     trunk_before = _resolve(work, "main")
     _forge_squash(remote, tmp_path, [("a.txt", "A\n")], delete="m0")
 
-    do_adopt(_sess(work), force=False, dry_run=False)
-    assert _resolve(work, "main") != trunk_before  # adopted
+    do_pull(_sess(work), dry_run=False)
+    assert _resolve(work, "main") != trunk_before  # pulled
 
     do_undo(_sess(work), op=None, list_=False)
     state = capture_state(_sess(work))
@@ -387,21 +407,21 @@ def test_adopt_undo_restores(tmp_path: Path):
     assert "m0" in {lane.name for lane in state.lanes}  # lane restored
 
 
-# --- 8. ALREADY_CURRENT no-op --------------------------------------------------------
+# --- 8. ALREADY-CURRENT no-op --------------------------------------------------------
 
 
-def test_adopt_already_current(tmp_path: Path):
+def test_pull_already_current(tmp_path: Path):
     work, remote, ws = _with_remote(tmp_path)  # local trunk == origin/main, no lanes
     trunk_before = _resolve(work, "main")
 
-    res = do_adopt(_sess(work), force=False, dry_run=False)
+    res = do_pull(_sess(work), dry_run=False)
 
-    assert res.outcome == "ALREADY_CURRENT"
+    assert res.outcome == "ALREADY-CURRENT"
     assert res.exit_code == 0
     assert _resolve(work, "main") == trunk_before
 
 
-# --- 8b. gap A: adopt advances trunk even when the fetch does NOT auto-FF ------------
+# --- 8b. gap A: pull advances trunk even when the fetch does NOT auto-FF --------------
 
 
 class _NoFastForwardWS:
@@ -426,17 +446,17 @@ class _NoFastForwardWS:
         return getattr(self._real, name)
 
 
-def test_adopt_advances_trunk_when_fetch_does_not_ff(tmp_path: Path):
-    """Origin strictly ahead (clean FF), but the fetch leaves local trunk behind. adopt must
-    still advance trunk to origin via the explicit set_bookmark — deterministic, fetch-independent."""
+def test_pull_advances_trunk_when_fetch_does_not_ff(tmp_path: Path):
+    """Origin strictly ahead (clean FF), but the fetch leaves local trunk behind. pull must
+    still advance trunk to origin via the content FF branch — deterministic, fetch-independent."""
     work, remote, ws = _with_remote(tmp_path)
     _advance_main(remote, tmp_path)  # origin strictly ahead; local main is a strict ancestor
 
     sess = _sess(work)
     sess.ws = _NoFastForwardWS(sess.ws, "main")  # force the no-auto-FF desync
-    res = do_adopt(sess, force=False, dry_run=False)
+    res = do_pull(sess, dry_run=False)
 
-    assert res.outcome == "ADOPTED", res.messages
+    assert res.outcome == "PULLED", res.messages
     assert res.exit_code == 0
     assert _resolve(work, "main") == _resolve(work, "main@origin")  # advanced despite no auto-FF
     assert capture_state(_sess(work)).canonical
@@ -445,7 +465,7 @@ def test_adopt_advances_trunk_when_fetch_does_not_ff(tmp_path: Path):
 # --- 9. no remote → exit 2 -----------------------------------------------------------
 
 
-def test_adopt_no_remote_refuses(tmp_path: Path):
+def test_pull_no_remote_refuses(tmp_path: Path):
     from gitman.core import GitmanError
 
     work = tmp_path / "solo"
@@ -457,7 +477,7 @@ def test_adopt_no_remote_refuses(tmp_path: Path):
         tx.create_bookmark("main", "@")
 
     try:
-        do_adopt(_sess(work), force=False, dry_run=False)
+        do_pull(_sess(work), dry_run=False)
     except GitmanError as exc:
         assert exc.exit_code == 2
     else:

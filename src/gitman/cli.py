@@ -206,17 +206,55 @@ def sync(
 
 
 @app.command()
-def adopt(
-    force: Annotated[
-        bool,
-        typer.Option("--force", help="Hard-set trunk to origin even if local trunk diverged (drops un-pushed lands)."),
-    ] = False,
-    dry_run: Annotated[bool, typer.Option("--dry-run", help="Report the adoption plan without mutating.")] = False,
+def pull(
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Report the pull plan without mutating.")] = False,
 ) -> None:
-    """Adopt a forge-merged trunk: advance local trunk to origin/<trunk>, rebase survivors, retire merged lanes."""
-    from gitman.core import do_adopt
+    """Integrate a moved origin/<trunk>: fetch, advance/rebase local trunk (never dropping local work),
+    rebase/retire surviving lanes, repark @."""
+    from gitman.core import do_pull
 
-    _finish_intent(do_adopt(_session(), force=force, dry_run=dry_run))
+    _finish_intent(do_pull(_session(), dry_run=dry_run))
+
+
+@app.command()
+def push(
+    reset_origin: Annotated[
+        bool,
+        typer.Option(
+            "--reset-origin",
+            help="Lift the fast-forward gate: deliberately overwrite divergent origin/<trunk> (lease-safe).",
+        ),
+    ] = False,
+) -> None:
+    """Push local trunk to origin — content-gated strict fast-forward (refuses non-FF → `gitman pull`)."""
+    from gitman.core import do_push
+
+    _finish_intent(do_push(_session(), reset_origin=reset_origin))
+
+
+@app.command()
+def untrack(
+    paths: Annotated[list[str], typer.Argument(help="Repo-relative path(s) to stop tracking (files kept on disk).")],
+) -> None:
+    """Stop tracking machine-local path(s): gitignore + remove from the tree (on the current lane)."""
+    from gitman.core import do_untrack
+
+    _finish_intent(do_untrack(_session(), paths))
+
+
+remote_app = typer.Typer(help="Manage git remotes (in-process; never touches git HEAD).", no_args_is_help=True)
+app.add_typer(remote_app, name="remote")
+
+
+@remote_app.command("add")
+def remote_add(
+    url: Annotated[str, typer.Argument(help="The remote's fetch/push URL.")],
+    name: Annotated[str, typer.Option("--name", help="Remote name.")] = "origin",
+) -> None:
+    """Add a git remote, then bootstrap trunk toward its first `gitman push`."""
+    from gitman.core import do_remote_add
+
+    _finish_intent(do_remote_add(_session(), url, name))
 
 
 @app.command()

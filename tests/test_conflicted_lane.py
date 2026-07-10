@@ -6,9 +6,9 @@ and its *name* stops resolving as a revset. That used to crash `capture_state` �
 precheck of every guarded intent, *including* the recovery verbs — so the only way out was raw git.
 
 These tests pin the fix: reads are structural (no command crashes), `status`/`doctor` surface it,
-`reconcile` retires/resolves it, and `adopt` clears a lane the fetch conflicts mid-flight. In-process
+`reconcile` retires/resolves it, and `pull` clears a lane the fetch conflicts mid-flight. In-process
 over pyjutsu, two colocated repos (work + bare origin); the forge side is raw git in throwaway clones
-(mirrors `tests/test_adopt_integration.py`).
+(mirrors `tests/test_pull_integration.py`).
 See .scratch/projects/11-conflicted-bookmark-command-deadlock/{REPORT,ISSUE_ANALYSIS}.md.
 """
 
@@ -22,7 +22,7 @@ from pyjutsu import Workspace
 from pyjutsu.errors import RevsetError
 
 from gitman.config import GitmanConfig
-from gitman.core import GitmanError, do_abandon, do_adopt
+from gitman.core import GitmanError, do_abandon, do_pull
 from gitman.doctor import WARN, run_doctor
 from gitman.reconcile import do_reconcile
 from gitman.session import Session
@@ -106,7 +106,7 @@ def _make_conflicted(tmp_path: Path, *, fetch: bool = True) -> tuple[Path, Path,
     """Build a repo whose lane `L` has a conflicted bookmark (local tip ⟂ pushed tip).
 
     With `fetch=True` (status/reconcile/doctor cases) the divergence is materialized now; with
-    `fetch=False` (the adopt case) it's left for `adopt`'s own fetch to surface mid-flight.
+    `fetch=False` (the pull case) it's left for `pull`'s own fetch to surface mid-flight.
     """
     work, remote, ws = _with_remote(tmp_path)
     _make_lane(ws, work, "L", "shared.txt", "base lane\n")
@@ -201,12 +201,12 @@ def test_reconcile_abandon_retires_conflicted_lane(tmp_path: Path):
 # --- 5. the report's end-to-end recovery, fully through gitman (no raw git) -----------
 
 
-def test_adopt_defers_conflicted_lane_then_recovers(tmp_path: Path):
-    """The report's headline, done right: with a forge-merged lane conflicted, `adopt` REFUSES
+def test_pull_defers_conflicted_lane_then_recovers(tmp_path: Path):
+    """The report's headline, done right: with a forge-merged lane conflicted, `pull` REFUSES
     cleanly (pointing at reconcile) instead of bricking; `reconcile --abandon` retires the lane; then
-    `adopt` advances trunk to CANONICAL — the whole recovery stays inside gitman, no raw-git rescue."""
+    `pull` advances trunk to CANONICAL — the whole recovery stays inside gitman, no raw-git rescue."""
     work, remote, ws = _make_conflicted(tmp_path)  # persistent conflict (already fetched)
-    # forge also advanced trunk (the PR landed), so there is a trunk advance to adopt.
+    # forge also advanced trunk (the PR landed), so there is a trunk advance to pull.
     other = _clone(remote, tmp_path, "trunk")
     _git("checkout", "main", cwd=other)
     (other / "trunkfile.txt").write_text("forge trunk\n")
@@ -214,8 +214,8 @@ def test_adopt_defers_conflicted_lane_then_recovers(tmp_path: Path):
     _git("commit", "-m", "forge advances main", cwd=other)
     _git("push", "origin", "main", cwd=other)
 
-    # 1. adopt refuses cleanly — never a leaked revset crash (exit 3) or a brick.
-    blocked = do_adopt(_sess(work), force=False, dry_run=False)
+    # 1. pull refuses cleanly — never a leaked revset crash (exit 3) or a brick.
+    blocked = do_pull(_sess(work), dry_run=False)
     assert blocked.outcome == "BLOCKED", blocked.messages
     assert blocked.exit_code == 1
     assert "reconcile" in " ".join(blocked.messages).lower()
@@ -225,9 +225,9 @@ def test_adopt_defers_conflicted_lane_then_recovers(tmp_path: Path):
     assert rec.outcome == "RECONCILED", rec.messages
     assert _conflicted_lanes(_sess(work).fresh_view(), "main") == {}
 
-    # 3. adopt now advances trunk to the forge head, CANONICAL.
-    res = do_adopt(_sess(work), force=False, dry_run=False)
-    assert res.outcome == "ADOPTED", res.messages
+    # 3. pull now advances trunk to the forge head, CANONICAL.
+    res = do_pull(_sess(work), dry_run=False)
+    assert res.outcome == "PULLED", res.messages
     assert res.exit_code == 0
     state = capture_state(_sess(work))
     assert state.canonical

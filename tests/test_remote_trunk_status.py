@@ -84,7 +84,7 @@ def test_status_diverged_trunk_reports_not_crashes(tmp_path: Path):
 
     assert state.canonical is False
     assert "diverged" in state.off_canonical
-    assert any("adopt" in n for n in state.notes)
+    assert any("pull" in n for n in state.notes)
     # trunk commit is unknowable while conflicted — reported as such, not fabricated
     assert state.trunk.commit_id is None
     assert state.lanes == []

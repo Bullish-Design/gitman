@@ -167,6 +167,27 @@ def _merge_tree_relation(repo_root: Path, local_sha: str, origin_sha: str) -> tu
     return merged_tree != local_tree, merged_tree != origin_tree
 
 
+def _merge_tree_conflicts(repo_root: Path, a: str, b: str) -> bool | None:
+    """Whether a 3-way merge of commits `a` and `b` conflicts (textually) — `git merge-tree
+    --write-tree` returns rc 1 on a conflict, 0 on a clean merge. Used to decide, *before* a
+    destructive trunk rebase, whether rebasing local lands onto origin would conflict (the
+    branch-mode `tx.rebase` return value's `has_conflict` is unreliable when the land has a
+    descendant `@` — it reports the stale pre-rewrite commit). Returns None on any git failure."""
+    import subprocess
+
+    proc = subprocess.run(
+        ["git", "merge-tree", "--write-tree", a, b],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode == 1:
+        return True
+    if proc.returncode == 0:
+        return False
+    return None
+
+
 def _trunk_content_relation(
     session: Session, view: RepoView, trunk: str
 ) -> tuple[str | None, int, int, str | None]:
@@ -233,6 +254,21 @@ def _git_refs_heads(repo_root: Path) -> dict[str, str]:
             if len(parts) == 2:
                 refs[parts[0]] = parts[1]
     return refs
+
+
+def _tracked_but_ignored(repo_root: Path) -> list[str]:
+    """Paths that are BOTH tracked in colocated git AND matched by `.gitignore` — the machine-local
+    churn source (`.claude/settings.local.json`) that `gitman untrack` fixes (15-RC4/RC5). Uses git's
+    canonical query; returncode-checked, `[]` on any failure so `status` never crashes."""
+    import subprocess
+
+    proc = subprocess.run(
+        ["git", "ls-files", "--cached", "--ignored", "--exclude-standard"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+    )
+    return proc.stdout.splitlines() if proc.returncode == 0 else []
 
 
 def colocated_ref_desync(view: RepoView, repo_root: Path) -> tuple[list[tuple[str, str, str | None]], list[str]]:
@@ -305,7 +341,7 @@ def capture_state(session: Session) -> RepoState:
             lanes=[],
             conflicts=[],
             recent_ops=[_op(o) for o in view.operations(10)],
-            notes=[f"run `gitman adopt` (or `gitman adopt --force` to take {remote_name}) to reconcile."],
+            notes=[f"run `gitman pull` to rebase your local lands onto {remote_name}/{trunk_name}."],
         )
 
     try:
@@ -411,18 +447,27 @@ def capture_state(session: Session) -> RepoState:
         notes.append("working copy is stale — run `gitman reconcile`.")
     if not session.ws.remotes():
         notes.append("no git remote — publish/release unavailable.")
-    # Content-aware trunk↔origin note. NO `run gitman adopt` on a twin (that hint drove the
-    # 15-RC2 data loss). `adopt` is only suggested for a *genuine* forge-ahead — there local has no
-    # content to lose, so a fast-forward adopt is non-destructive. `diverged` gets no adopt (it
-    # could drop local commits); `local-ahead`/`in-sync` need no note.
+    # Content-aware trunk↔origin note (twin-proof — a re-hash twin reads in-sync/local-ahead, so it
+    # never fires). `forge-ahead` → `pull` (safe FF; local has nothing to lose). `diverged` → `pull`
+    # (it rebases local lands onto origin, preserving local work). `local-ahead` → `push` to publish.
     if relation == "forge-ahead":
         notes.append(
-            f"{remote_name}/{trunk_name} has new commits local lacks — `gitman adopt` to integrate them."
+            f"{remote_name}/{trunk_name} has new commits local lacks — `gitman pull` to integrate them."
         )
     elif relation == "diverged":
         notes.append(
             f"local {trunk_name} and {remote_name}/{trunk_name} have diverged (each holds content the "
-            f"other lacks) — reconcile before integrating."
+            f"other lacks) — `gitman pull` to rebase your lands onto origin."
+        )
+    elif relation == "local-ahead":
+        notes.append(
+            f"local {trunk_name} is ahead of {remote_name} — `gitman push` to publish it."
+        )
+    tracked_ignored = _tracked_but_ignored(repo_root)
+    if tracked_ignored:
+        shown = ", ".join(tracked_ignored[:5]) + (" …" if len(tracked_ignored) > 5 else "")
+        notes.append(
+            f"tracked but gitignored: {shown} — `gitman untrack <path>` to stop tracking (kills the churn)."
         )
     if current_lane is None and _orphan_working_copy(view, wc, trunk_name):
         notes.append("working copy @ has unbookmarked work — `gitman start <name>` to adopt it into a lane.")

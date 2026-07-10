@@ -76,7 +76,7 @@ def do_reconcile(session: Session, abandon_: bool):
         actions: list[str] = []
         # Conflicted lanes FIRST: clearing them is what unwedges the repo (issue 11), and retiring
         # one can orphan local commits, so strays must be (re-)scanned afterwards. Local recovery —
-        # don't push-delete the remote branch here (that's a forge action; `adopt` owns it).
+        # don't push-delete the remote branch here (that's a forge action; `pull`/`land` own it).
         if conflicted:
             for lane in sorted(conflicted):
                 _resolve_conflicted_lane(session, trunk, lane, abandon=abandon_, notes=actions)

@@ -110,9 +110,9 @@ def test_local_ahead_over_twin_base_no_adopt(tmp_path: Path):
     assert not any("adopt" in n for n in state.notes), state.notes
 
 
-def test_genuine_forge_ahead_hints_adopt(tmp_path: Path):
+def test_genuine_forge_ahead_hints_pull(tmp_path: Path):
     """Origin strictly ahead by content (local has nothing origin lacks) → `forge-ahead`, and here
-    `adopt` is a *safe* (non-destructive) hint — local loses nothing."""
+    `pull` is a *safe* (non-destructive) hint — local loses nothing (Tier 2 renamed adopt→pull)."""
     work, ws = _with_remote(tmp_path)
     base = ws.head().resolve("main").commit_id
     with ws.transaction("c1") as tx:
@@ -130,7 +130,7 @@ def test_genuine_forge_ahead_hints_adopt(tmp_path: Path):
     state = capture_state(_sess(work))
     assert state.canonical
     assert state.trunk.relation == "forge-ahead"
-    assert any("adopt" in n for n in state.notes), state.notes
+    assert any("pull" in n for n in state.notes), state.notes
 
 
 def test_no_remote_relation_is_none(tmp_path: Path):
