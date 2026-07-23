@@ -68,6 +68,15 @@ def do_release(session: Session, level: str | None, set_version: str | None):
     undo: str | None = None
 
     if new != current:
+        # H3/Option A: a bump would tag @ (the lane head), which `land` later rewrites,
+        # orphaning the tag off trunk. Refuse before bumping so no bump is left behind.
+        if not session.view().is_ancestor("@", trunk):
+            raise GitmanError(
+                "release <bump> would tag an unlanded lane commit that `land` will rewrite. "
+                "Run `gitman version bump <level>` -> `gitman land` -> `gitman release` "
+                "(tags trunk), or land this lane first.",
+                exit_code=1,
+            )
         # Bump on the current lane; the release point is the bump commit (the lane head).
         with canonical_guard(session, "release") as canon:
             lane = require_current_lane(session, trunk)
@@ -86,9 +95,20 @@ def do_release(session: Session, level: str | None, set_version: str | None):
             exit_code=1,
         )
     commit = head.commit_id
+    # H3/Option C: never tag a commit that isn't reachable from trunk (a tag that `land`
+    # would orphan). Guards the no-bump path and any future release point.
+    if not session.view().is_ancestor(commit, trunk):
+        raise GitmanError(
+            f"refusing to tag {commit}: not reachable from trunk '{trunk}' "
+            "(a release tag must sit on trunk's history). Land the change first.",
+            exit_code=1,
+        )
     session.ws.create_tag(tag, commit, f"Release {new}")  # GitError → exit 1 on fail
     messages.append(f"tagged {tag} @ {commit}")
-    notes.append("a git tag was created (`gitman undo` reverts this release — bump + tag — via the checkpoint).")
+    notes.append(
+        "a git tag was created on trunk (`gitman undo` reverts this release via the checkpoint; "
+        "a pushed tag is one-way)."
+    )
 
     if config.release.push_tag:
         if not session.ws.remotes():

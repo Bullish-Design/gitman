@@ -143,7 +143,8 @@ def test_release_creates_tag(tmp_path: Path):
     assert "v1.2.3" in tags
 
 
-def test_release_with_bump_tags_and_bumps(tmp_path: Path):
+def test_release_bump_on_lane_refused(tmp_path: Path):
+    """H3/Option A: release <bump> on a live lane is refused (exit 1); no tag, no bump left."""
     from gitman.init import do_init
     from gitman.release import do_release
     from gitman.version import read_version
@@ -152,13 +153,53 @@ def test_release_with_bump_tags_and_bumps(tmp_path: Path):
     do_init(_uninit_sess(tmp_path), trunk_opt=None)
     do_start(_isess(tmp_path), "rel", workspace=False)
 
-    res = do_release(_isess(tmp_path), level="minor", set_version=None)
-    assert res.outcome == "RELEASED"
+    with pytest.raises(GitmanError) as exc:
+        do_release(_isess(tmp_path), level="minor", set_version=None)
+    assert exc.value.exit_code == 1
+    # No tag was created.
+    assert (
+        subprocess.run(
+            ["git", "rev-parse", "-q", "--verify", "refs/tags/v1.3.0"], cwd=tmp_path, capture_output=True
+        ).returncode
+        != 0
+    )
+    # No bump left behind: version unchanged, lane still just the start change.
+    assert read_version(_isess(tmp_path).config, tmp_path) == "1.2.3"
+    assert capture_state(_isess(tmp_path)).lanes[0].change_count == 1
+
+
+def test_release_safe_flow_bump_land_release(tmp_path: Path):
+    """The documented safe flow: version bump -> land -> release tags a trunk-reachable commit."""
+    from gitman.core import do_land
+    from gitman.init import do_init
+    from gitman.release import do_release
+    from gitman.version import do_version, read_version
+
+    _fresh(tmp_path)
+    do_init(_uninit_sess(tmp_path), trunk_opt=None)
+    do_start(_isess(tmp_path), "rel", workspace=False)
+
+    do_version(_isess(tmp_path), "bump", "minor")  # bump on the lane
+    do_land(_isess(tmp_path), ["rel"])  # folds the bump commit onto trunk
     assert read_version(_isess(tmp_path).config, tmp_path) == "1.3.0"
+
+    res = do_release(_isess(tmp_path), level=None, set_version=None)  # no bump → tags trunk
+    assert res.outcome == "RELEASED"
     tags = subprocess.run(["git", "tag", "-l"], cwd=tmp_path, capture_output=True, text=True).stdout
     assert "v1.3.0" in tags
-    # The bump change is on the lane (start change + bump change).
-    assert capture_state(_isess(tmp_path)).lanes[0].change_count == 2
+
+
+def test_release_no_bump_passes_option_c(tmp_path: Path):
+    """No-bump release (tags trunk head) still passes the Option-C trunk-reachability assertion."""
+    from gitman.init import do_init
+    from gitman.release import do_release
+
+    _fresh(tmp_path)
+    do_init(_uninit_sess(tmp_path), trunk_opt=None)
+    res = do_release(_isess(tmp_path), level=None, set_version=None)
+    assert res.outcome == "RELEASED"
+    tags = subprocess.run(["git", "tag", "-l"], cwd=tmp_path, capture_output=True, text=True).stdout
+    assert "v1.2.3" in tags
 
 
 def test_release_verify_blocks_before_write(tmp_path: Path):
