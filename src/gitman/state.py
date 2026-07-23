@@ -416,6 +416,15 @@ def capture_state(session: Session) -> RepoState:
     lane_heads = _resolvable_lane_heads(view, trunk_name)
     live = set(lane_heads)
 
+    # H1 (I5) divergence scan: a jj divergence is one change_id resolving to >1 *visible* commit.
+    # Compute the divergent change-ids once over the canonical universe (descendants of trunk = all
+    # lane work) — one extra `view.log`, matching the same universe `_stray_revset` walks. A lane is
+    # then `divergent` if any commit in its range (or its head) carries a divergent change-id.
+    from collections import Counter
+
+    visible = view.log(f"{trunk_name}..")
+    divergent_cids = {cid for cid, n in Counter(c.change_id for c in visible).items() if n > 1}
+
     lanes: list[Lane] = []
     for name in sorted(local_names - {trunk_name}):
         if name in conflicted:
@@ -440,6 +449,12 @@ def capture_state(session: Session) -> RepoState:
         orphaned = parent is not None and parent != trunk_name and parent not in local_names
         base_ref = base if base is not None else trunk_name  # parentHead (a bookmark name resolves)
         range_changes = view.log(f"{base_ref}..{name}")
+        # H1 (I5): a merge commit anywhere in the lane's range makes it non-linear; a divergent
+        # change-id under the lane (head or range) makes it divergent. Both ride reads already done.
+        non_linear = any(len(c.parent_ids) > 1 for c in range_changes)
+        divergent = head.change_id in divergent_cids or any(
+            c.change_id in divergent_cids for c in range_changes
+        )
         ahead = len(range_changes)
         behind = len(view.log(f"{name}..{base_ref}"))  # commits the base holds that the lane lacks
         files = ins = dels = 0
@@ -459,6 +474,8 @@ def capture_state(session: Session) -> RepoState:
                 head=change,
                 workspace=name if name in workspace_names else None,
                 conflict=head.has_conflict,
+                non_linear=non_linear,
+                divergent=divergent,
                 ahead=ahead,
                 behind=behind,
                 change_count=change_count,
@@ -490,6 +507,21 @@ def capture_state(session: Session) -> RepoState:
         # alone would print the same label twice and hide the divergence (issue 06 §G2).
         ids = ", ".join(f"{c.change_id} ({c.commit_id[:8]})" for c in strays)
         reasons.append(f"change(s) {ids} belong to no lane (edited outside Gitman?).")
+    # H1 (I5): non-linear / divergent lanes. Deliberately keyed on "non-linear" / "divergent" (not
+    # "diverged" — that word keys the trunk-`adopt` render path), each ending in `gitman reconcile`,
+    # mirroring the conflicted-lane string above so the recovery pointer is unambiguous.
+    non_linear_lanes = sorted(lane.name for lane in lanes if lane.non_linear)
+    if non_linear_lanes:
+        reasons.append(
+            f"lane(s) {', '.join(non_linear_lanes)} contain a merge commit (non-linear) — "
+            f"run `gitman reconcile`."
+        )
+    divergent_lanes = sorted(lane.name for lane in lanes if lane.divergent)
+    if divergent_lanes:
+        reasons.append(
+            f"lane(s) {', '.join(divergent_lanes)} have a divergent change-id "
+            f"(one change → multiple commits) — run `gitman reconcile`."
+        )
     off_canonical = " ".join(reasons) if reasons else None
 
     notes: list[str] = []

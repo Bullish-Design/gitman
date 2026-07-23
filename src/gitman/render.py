@@ -67,6 +67,10 @@ def _lane_line(lane: Lane, current: str | None) -> str:
         extra.append(f"ws {lane.workspace}")
     if lane.conflict and lane.head is not None:
         extra.append("CONFLICT (not blocked — resolve later)")
+    if lane.non_linear:
+        extra.append("NON-LINEAR (merge commit — `gitman reconcile`)")
+    if lane.divergent:
+        extra.append("DIVERGENT (change-id → multiple commits — `gitman reconcile`)")
     if lane.pr:
         extra.append(f"PR #{lane.pr.number}")
     if lane.behind:

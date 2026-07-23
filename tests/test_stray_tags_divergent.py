@@ -130,9 +130,13 @@ def test_reconcile_adopts_both_divergent_sides(tmp_path: Path):
     assert pre.canonical is False
 
     res = do_reconcile(Session.load(tmp_path, GitmanConfig(trunk="main")), abandon_=False)
-    assert res.outcome == "RECONCILED"
     state = capture_state(Session.load(tmp_path, GitmanConfig(trunk="main")))
-    assert state.canonical, state.off_canonical
+    # H1 (I5) DETECTION: adopting keeps the two sides sharing one change_id, so the repo is still
+    # honestly divergent — reconcile reports PARTIAL rather than falsely claiming success (the L9
+    # self-report the H1 guide §5/§8 anticipates; the divergent-side auto-heal is deferred D3/D4).
+    assert res.outcome == "PARTIAL"
+    assert state.canonical is False
+    assert "divergent" in (state.off_canonical or "")
     # Two distinct adopted lanes — one per divergent side. Keyed off commit_id, so the two sides
     # (which share a change_id) do NOT collide onto a single bookmark.
     adopted = sorted(lane.name for lane in state.lanes if lane.name.startswith("adopted-"))

@@ -85,6 +85,8 @@ class Lane(BaseModel):
     head: Change | None = None  # None for a *conflicted* lane bookmark — it names no single commit
     workspace: str | None = None  # isolated workspace dir, if any
     conflict: bool = False
+    non_linear: bool = False  # a merge commit sits in this lane's range (I5) — reconcile to linearize
+    divergent: bool = False  # a change-id in this lane resolves to >1 visible commit — reconcile
     ahead: int = 0  # changes vs the base (a stacked lane's own range parentHead..head)
     behind: int = 0  # commits the base (trunk or parent lane) is ahead of the lane
     change_count: int = 1
