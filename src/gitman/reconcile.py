@@ -23,15 +23,13 @@ def _heal_colocated_refs(session: Session) -> list[str]:
     """Re-sync colocated git refs to jj (the source of truth): force each out-of-sync live
     bookmark's `refs/heads/<name>` to its jj commit, delete every leftover ref with no jj
     bookmark, then `git_import()`+`git_export()` to reconcile jj's `@git` tracking. Setting refs
-    explicitly (vs. plain import) avoids resurrecting an abandoned lane. Raw `git update-ref` is
-    the sanctioned colocated-ref recovery surface (round-09 gap B; validated in probes).
+    explicitly (vs. plain import) avoids resurrecting an abandoned lane.
 
-    NB: kept on raw `git update-ref` rather than pyjutsu's `write_git_ref`/`delete_git_ref`
-    (project 14 P4) — the gix loose-ref write hits a directory/file conflict on fractal lane names
-    (`refs/heads/T` vs `refs/heads/T/api`) that `git update-ref` resolves via packed-refs. Adopt P4
-    here once the binding handles D/F ref names (pyjutsu project 14 follow-up)."""
-    import subprocess
-
+    Refs are healed in-process via pyjutsu's `write_git_ref`/`delete_git_ref` (project 14 P4). These
+    are D/F-safe as of pyjutsu 0.12.2: fractal lane names (a loose `refs/heads/T` shadowing
+    `refs/heads/T/api`) are routed through `packed-refs` exactly as `git update-ref` would, so no raw
+    git subprocess is needed here anymore. `delete_git_ref` is idempotent (an absent ref is a
+    no-op)."""
     from pyjutsu import PyjutsuError
 
     from gitman.state import _is_colocated, colocated_ref_desync
@@ -42,11 +40,9 @@ def _heal_colocated_refs(session: Session) -> list[str]:
     if not mismatched and not leftover:
         return []
     for name, jj_id, _git_id in mismatched:
-        subprocess.run(["git", "update-ref", f"refs/heads/{name}", jj_id],
-                       cwd=session.repo_root, capture_output=True)
+        session.ws.write_git_ref(name, jj_id)
     for name in leftover:
-        subprocess.run(["git", "update-ref", "-d", f"refs/heads/{name}"],
-                       cwd=session.repo_root, capture_output=True)
+        session.ws.delete_git_ref(name)
     try:
         session.ws.git_import()
         session.ws.git_export()
