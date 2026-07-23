@@ -700,6 +700,41 @@ surrounding `git_import()`/`git_export()` re-sync (lines 45–49) stays as-is.
    count reaches zero (only `tags.py`, independently retireable on 0.11.0, remains — retire it too);
    `doctor`'s "git on PATH" check can then be relaxed to optional.
 
+---
+
+## As-built notes & corrections (pyjutsu 0.12.0 shipped, gitman P1/P2/P3 adopted — 2026-07-23)
+
+The bindings shipped in **pyjutsu 0.12.0** (`bf319b4`) and gitman adopted **P1/P2/P3** (`5c58fdc`, the
+merge-tree/for-each-ref/ls-files/tree-rev-parse subprocesses retired). Two corrections to the sketches
+above, from actually building it:
+
+- **P1 Rust API (this guide guessed wrong).** The 0.42 explicit-base merge is **not**
+  `MergedTree::merge(a, base, b)` + `.id().hex()`. The real API is
+  `Merge::from_vec(vec![(a_tree, ""), (base_tree, ""), (b_tree, "")])` → `MergedTree::merge(terms).await`,
+  and the tree id comes from `merged.tree_ids()` (plural — a `MergedTree` can carry conflict sides)
+  reduced by a small `merge_tree_id_hex` helper, not `.id().hex()`. The auto-base path is
+  `merge_commit_trees(repo, &[a, b]).await` as sketched. Both paths shipped (explicit-base was NOT
+  deferred). `try_merge().tree_id` compares equal to a tip's `Commit.tree_id` for a clean/twin merge,
+  as intended.
+
+- **P4 shipped but is NOT adopted by gitman — directory/file conflict on fractal ref names.**
+  `write_git_ref` writes a **loose** gix ref, which fails (`GitError: … An IO error occurred while
+  applying an edit`) when a `/`-path lane collides at the ref level — writing `refs/heads/T/api` while
+  `refs/heads/T` exists as a loose ref (needs `T` to be a directory). Raw `git update-ref` resolves
+  this via packed-refs; the gix loose write does not. Since `reconcile`'s ref heal must handle fractal
+  lanes, **`reconcile.py:_heal_colocated_refs` was kept on raw `git update-ref`** (see its NB). So
+  gitman's raw-`git` surface is now: `gitshim.py` (empty-repo bootstrap + `symbolic-ref`) + this one
+  `reconcile` ref-write. **Follow-up (pyjutsu project 14b):** make `write_git_ref`/`delete_git_ref`
+  D/F-safe (repack the conflicting ref), then adopt P4 to reach raw-`git`-zero. The pyjutsu OVERVIEW
+  P4 section carries the same note + a `T`+`T/api` probe requirement.
+
+- **Wheelhouse/re-pin gotcha (for the next consumer bump).** Bumping gitman to a new pyjutsu required:
+  (1) `nix flake update pyjutsu` in **vendomat** (its `flake.lock` pins the wheel source) + commit;
+  (2) **`rm -rf gitman/.devenv`** to bust devenv's eval cache — `devenv update pyjutsu/vendomat` alone
+  did *not* move gitman's (rev-less, branch-tracked) pyjutsu input, so the old wheelhouse store path
+  kept resolving; (3) `uv sync`. Bump `pyproject.toml` floor to `pyjutsu>=0.12` so a stale wheel fails
+  loudly rather than silently resolving down.
+
 ## Anchors verified (both repos)
 
 - pyjutsu: `src/repo_view.rs:61` `resolve_single`, `:313` `diff_between`, `:330` `is_ancestor`,
