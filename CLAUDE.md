@@ -13,10 +13,13 @@ and mirrors its shape. The authority is `docs/GITMAN_CONCEPT.md`.
   environment, so **batch** commands into a single invocation. Use the `--` form so flags
   reach the command, not `devenv shell`.
 - **jj-lib is embedded in-process via [pyjutsu](../Pyjutsu)** (PyO3) — there is **no `jj` CLI**
-  on PATH and no `-T` templates. The jj 0.38 pin lives solely in pyjutsu; gitman inherits it.
-  `gitman doctor` asserts `pyjutsu.JJ_VERSION == pyjutsu.JJ_LIB_TARGET`, so a jj-lib drift fails
-  loudly. Reads go through `Session.view()` / `fresh_view()`; mutations through
-  `ws.transaction(...)`. `git` *is* on PATH — used only by `tags.py` (annotated tags).
+  on PATH and no `-T` templates. The jj-lib 0.42 pin lives solely in pyjutsu (currently 0.11.0);
+  gitman inherits it. `gitman doctor` asserts `pyjutsu.JJ_VERSION == pyjutsu.JJ_LIB_TARGET`, so a
+  jj-lib drift fails loudly. Reads go through `Session.view()` / `fresh_view()`; mutations through
+  `ws.transaction(...)`. `git` *is* on PATH — the remaining raw-subprocess surfaces are `tags.py`
+  (annotated tags — now retireable via pyjutsu 0.11.0 `create_tag`/`push_tag`), plus a few
+  colocated-git interop reads/writes in `state.py`/`reconcile.py` (merge-tree, `for-each-ref`,
+  `ls-files`, `update-ref`). Driving these to zero is scoped in pyjutsu project 14.
 - **Dogfood:** route version control through `gitman` (never raw `jj`/`git` — that breaks
   canonicity). `gitman doctor` checks the toolchain; `gitman status` reports canonicity.
 - **Dev verification** (lint + tests) is `devenv shell -- bash -c 'gitman:lint && gitman:test'`
@@ -43,7 +46,7 @@ src/gitman/
   session.py    the per-invocation Session — gitman's boundary onto pyjutsu (view/fresh_view)
   core.py       per-intent orchestration; devenv guard; repo lock; typed-error mapper
   lanes.py      lane registry (bookmarks) + workspace lifecycle (over a Session)
-  tags.py       colocated-git annotated tags — the one retained git-subprocess surface
+  tags.py       colocated-git annotated tags — a retained git-subprocess surface (retireable, 0.11.0)
   state.py      RepoState capture (composes one pyjutsu view + lanes)
   models.py     Pydantic v2 models (RepoState, Lane, Change, Conflict, TrunkRef, Op, ...)
   config.py     [tool.gitman] / gitman.toml policy (Pydantic-validated)
@@ -59,8 +62,11 @@ nix/gitman.nix  reusable devenv module (tasks + enterTest)
 - Keep the base package lean (pydantic + typer only). Heavy/optional integrations go under
   `src/gitman/advanced/` behind the `github` extra (the base never imports it).
 - pyjutsu is the engine: all jj reads/mutations go through a `Session` (`view()` for frozen
-  reads, `fresh_view()` to snapshot-then-read, `ws.transaction(...)` for mutations). The only
-  surviving raw subprocess is `tags.py` (annotated git tags — pyjutsu binds no tag write).
+  reads, `fresh_view()` to snapshot-then-read, `ws.transaction(...)` for mutations). The surviving
+  raw-git subprocesses are `tags.py` (annotated tags — retireable now that pyjutsu 0.11.0 binds
+  `create_tag`/`push_tag`) and a handful of colocated-git interop reads/writes in `state.py`
+  (`merge-tree`, `for-each-ref`, `ls-files`) and `reconcile.py` (`update-ref`); pyjutsu project 14
+  scopes the four bindings that retire the rest.
 - Exit codes: `0` ok · `1` VC decision needed · `2` infra/config · `3` invalid usage.
 - Every mutating report ends with an inline **Undo** line. Reports are compact and honest.
 - **`.scratch/projects/<NN-name>/`** holds **tracked** design docs — the per-project ISSUE / PLAN /
