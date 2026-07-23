@@ -123,7 +123,7 @@ def run_doctor(repo_root: Path, config: GitmanConfig | None = None) -> DoctorRep
         try:
             from gitman.state import colocated_ref_desync
 
-            mismatched, leftover = colocated_ref_desync(ws.head(), repo_root)
+            mismatched, leftover = colocated_ref_desync(ws.head(), ws)
         except Exception:  # noqa: BLE001 — a probe failure must not fail doctor
             mismatched, leftover = [], []
         if not mismatched and not leftover:

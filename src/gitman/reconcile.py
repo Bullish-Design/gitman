@@ -24,7 +24,12 @@ def _heal_colocated_refs(session: Session) -> list[str]:
     bookmark's `refs/heads/<name>` to its jj commit, delete every leftover ref with no jj
     bookmark, then `git_import()`+`git_export()` to reconcile jj's `@git` tracking. Setting refs
     explicitly (vs. plain import) avoids resurrecting an abandoned lane. Raw `git update-ref` is
-    the sanctioned colocated-ref recovery surface (round-09 gap B; validated in probes)."""
+    the sanctioned colocated-ref recovery surface (round-09 gap B; validated in probes).
+
+    NB: kept on raw `git update-ref` rather than pyjutsu's `write_git_ref`/`delete_git_ref`
+    (project 14 P4) — the gix loose-ref write hits a directory/file conflict on fractal lane names
+    (`refs/heads/T` vs `refs/heads/T/api`) that `git update-ref` resolves via packed-refs. Adopt P4
+    here once the binding handles D/F ref names (pyjutsu project 14 follow-up)."""
     import subprocess
 
     from pyjutsu import PyjutsuError
@@ -33,7 +38,7 @@ def _heal_colocated_refs(session: Session) -> list[str]:
 
     if not _is_colocated(session.repo_root):
         return []
-    mismatched, leftover = colocated_ref_desync(session.view(), session.repo_root)
+    mismatched, leftover = colocated_ref_desync(session.view(), session.ws)
     if not mismatched and not leftover:
         return []
     for name, jj_id, _git_id in mismatched:
@@ -100,7 +105,7 @@ def do_reconcile(session: Session, abandon_: bool):
         view = session.fresh_view()  # snapshot dirty @ first (now safe — no longer stale)
         conflicted = _conflicted_lanes(view, trunk)
         strays = find_strays(view, trunk)
-        mismatched, leftover = colocated_ref_desync(view, session.repo_root)
+        mismatched, leftover = colocated_ref_desync(view, session.ws)
         if not conflicted and not strays and not mismatched and not leftover and not refresh_notes:
             return IntentResult(
                 intent="reconcile", outcome="CLEAN", messages=["already canonical — no strays, refs in sync."]

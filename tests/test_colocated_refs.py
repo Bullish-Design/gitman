@@ -78,7 +78,7 @@ def test_detect_colocated_ref_desync(tmp_path: Path):
     work, ws = _colocated(tmp_path)
     feat_jj = _induce_desync(work, ws)
 
-    mismatched, leftover = colocated_ref_desync(ws.head(), work)
+    mismatched, leftover = colocated_ref_desync(ws.head(), ws)
     assert "gone" in leftover  # abandoned lane's lingering ref
     assert any(name == "feat" and jj == feat_jj for name, jj, _git in mismatched)
     # plain export raises because of the stuck leftover (the progressive-desync trigger)
@@ -129,7 +129,7 @@ def test_reconcile_heals_desync_without_resurrecting(tmp_path: Path):
     assert "feat" in locals_  # live bookmark preserved
     assert _gref(work, "refs/heads/gone") is None
     assert _gref(work, "refs/heads/feat") == feat_jj
-    mismatched, leftover = colocated_ref_desync(fresh, work)
+    mismatched, leftover = colocated_ref_desync(fresh, ws)
     assert not mismatched and not leftover
     # a clean export now succeeds, and doctor is back in sync
     ws.git_export()

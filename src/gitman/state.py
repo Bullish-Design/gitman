@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pyjutsu import RepoView
+from pyjutsu import RepoView, Workspace
 from pyjutsu.errors import RevsetError
 from pyjutsu.models import Commit, DiffStat, Operation
 
@@ -150,73 +150,50 @@ def _remote_target(view: RepoView, name: str) -> str | None:
     return None
 
 
-def _merge_tree_relation(repo_root: Path, local_sha: str, origin_sha: str) -> tuple[bool, bool] | None:
+def _merge_tree_relation(view: RepoView, local_sha: str, origin_sha: str) -> tuple[bool, bool] | None:
     """`(forge_has_new, local_has_new)` by content — the read-only realization of adopt's
-    "empty-after-rebase" test, via a colocated-git 3-way merge tree.
+    "empty-after-rebase" test, via pyjutsu's in-process 3-way merge (`RepoView.try_merge`, project
+    14 P1; formerly `git merge-tree --write-tree`).
 
-    `git merge-tree --write-tree A B` performs a real 3-way merge of `A` and `B` (auto merge-base)
-    and prints the merged tree's oid. Comparing that tree to each tip's tree answers the content
-    question that SHA-ancestry can't:
+    `try_merge(A, B)` does a real 3-way merge of `A` and `B` (auto merge-base) and returns the merged
+    tree's oid + a conflict flag. Comparing that tree to each tip's `Commit.tree_id` answers the
+    content question that SHA-ancestry can't:
       * `forge_has_new` = merged tree ≠ `local`'s tree → the merge added content beyond local ⇒
         `origin` holds content absent from local (genuine forge work).
       * `local_has_new` = merged tree ≠ `origin`'s tree → local holds content absent from origin.
     A re-hash twin (content-equal, hash-divergent) merges to a tree equal to *both* tips ⇒ both
     False ⇒ in-sync — the whole point (kills the 15-RC2 data-loss `adopt` hint). A merge *conflict*
-    (rc 1) means both sides changed the same lines incompatibly ⇒ genuinely diverged (both True).
+    means both sides changed the same lines incompatibly ⇒ genuinely diverged (both True).
 
     jj commit ids ARE the colocated git SHAs, so `A`/`B` are the pyjutsu-resolved commit ids (never
-    the git ref names — jj's remote-tracking refs aren't guaranteed under `refs/remotes/*`). Returns
-    None on any unexpected git failure (never crashes `status`); the caller falls back to `None`
-    (unknown) relation. This is the one content-comparison surface; a future pyjutsu content
-    primitive (project-13 P4, deferred) would move it fully in-process.
+    the git ref names). Returns None on any pyjutsu failure (never crashes `status`); the caller
+    falls back to `None` (unknown) relation. Fully in-process — no git subprocess.
     """
-    import subprocess
+    from pyjutsu import PyjutsuError
 
-    def _tree(sha: str) -> str | None:
-        proc = subprocess.run(
-            ["git", "rev-parse", f"{sha}^{{tree}}"], cwd=repo_root, capture_output=True, text=True
-        )
-        return proc.stdout.strip() if proc.returncode == 0 else None
-
-    local_tree = _tree(local_sha)
-    origin_tree = _tree(origin_sha)
-    if local_tree is None or origin_tree is None:
+    try:
+        merged = view.try_merge(local_sha, origin_sha)
+        if merged.has_conflict:  # both sides changed the same content
+            return True, True
+        local_tree = view.resolve(local_sha).tree_id
+        origin_tree = view.resolve(origin_sha).tree_id
+    except PyjutsuError:  # unresolvable revs / backend error — don't guess, report unknown
         return None
-    proc = subprocess.run(
-        ["git", "merge-tree", "--write-tree", local_sha, origin_sha],
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
-    )
-    if proc.returncode == 1:  # merge conflict → both sides changed the same content
-        return True, True
-    if proc.returncode != 0:  # unexpected (bad object, ancient git, …) — don't guess, report unknown
-        return None
-    merged_tree = proc.stdout.splitlines()[0].strip() if proc.stdout.strip() else ""
-    if not merged_tree:
-        return None
-    return merged_tree != local_tree, merged_tree != origin_tree
+    return merged.tree_id != local_tree, merged.tree_id != origin_tree
 
 
-def _merge_tree_conflicts(repo_root: Path, a: str, b: str) -> bool | None:
-    """Whether a 3-way merge of commits `a` and `b` conflicts (textually) — `git merge-tree
-    --write-tree` returns rc 1 on a conflict, 0 on a clean merge. Used to decide, *before* a
-    destructive trunk rebase, whether rebasing local lands onto origin would conflict (the
+def _merge_tree_conflicts(view: RepoView, a: str, b: str) -> bool | None:
+    """Whether a 3-way merge of commits `a` and `b` conflicts (textually) — via pyjutsu's in-process
+    `RepoView.try_merge` (project 14 P1; formerly `git merge-tree --write-tree`). Used to decide,
+    *before* a destructive trunk rebase, whether rebasing local lands onto origin would conflict (the
     branch-mode `tx.rebase` return value's `has_conflict` is unreliable when the land has a
-    descendant `@` — it reports the stale pre-rewrite commit). Returns None on any git failure."""
-    import subprocess
+    descendant `@` — it reports the stale pre-rewrite commit). Returns None on any pyjutsu failure."""
+    from pyjutsu import PyjutsuError
 
-    proc = subprocess.run(
-        ["git", "merge-tree", "--write-tree", a, b],
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
-    )
-    if proc.returncode == 1:
-        return True
-    if proc.returncode == 0:
-        return False
-    return None
+    try:
+        return view.try_merge(a, b).has_conflict
+    except PyjutsuError:
+        return None
 
 
 def _trunk_content_relation(
@@ -250,7 +227,7 @@ def _trunk_content_relation(
     # Both ahead by ancestry: could be a content-equal twin (in-sync/local-ahead) or a real
     # divergence. Only the content merge-tree can tell — SHA ancestry can't.
     local = view.resolve(trunk)
-    content = _merge_tree_relation(session.repo_root, local.commit_id, origin.commit_id)
+    content = _merge_tree_relation(view, local.commit_id, origin.commit_id)
     if content is None:
         return "diverged", behind, ahead, remote  # unknowable content → the safe (never-adopt) call
     forge_has_new, local_has_new = content
@@ -263,46 +240,36 @@ def _trunk_content_relation(
     return "in-sync", behind, ahead, remote
 
 
-def _git_refs_heads(repo_root: Path) -> dict[str, str]:
-    """`{bookmark_name: commit_sha}` from the colocated `refs/heads/*` (raw `git` read).
+def _git_refs_heads(ws: Workspace) -> dict[str, str]:
+    """`{bookmark_name: commit_sha}` from the colocated `refs/heads/*` via pyjutsu `Workspace.git_refs`
+    (project 14 P2; formerly a raw `git for-each-ref`).
 
     The one place gitman reads colocated git refs directly: detecting jj-bookmark↔git-ref desync
     (round-09 gap B). jj commit ids ARE the git SHAs in a colocated repo, so the values compare
-    directly against `view.resolve(name).commit_id`. Returns `{}` if git can't be read.
+    directly against `view.resolve(name).commit_id`. Returns `{}` if the refs can't be read.
     """
-    import subprocess
+    from pyjutsu import PyjutsuError
 
-    proc = subprocess.run(
-        ["git", "for-each-ref", "--format=%(refname:lstrip=2) %(objectname)", "refs/heads/"],
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
-    )
-    refs: dict[str, str] = {}
-    if proc.returncode == 0:
-        for line in proc.stdout.splitlines():
-            parts = line.split()
-            if len(parts) == 2:
-                refs[parts[0]] = parts[1]
-    return refs
+    try:
+        return ws.git_refs()  # default prefix refs/heads/, keys already prefix-stripped
+    except PyjutsuError:
+        return {}
 
 
-def _tracked_but_ignored(repo_root: Path) -> list[str]:
+def _tracked_but_ignored(ws: Workspace) -> list[str]:
     """Paths that are BOTH tracked in colocated git AND matched by `.gitignore` — the machine-local
-    churn source (`.claude/settings.local.json`) that `gitman untrack` fixes (15-RC4/RC5). Uses git's
-    canonical query; returncode-checked, `[]` on any failure so `status` never crashes."""
-    import subprocess
+    churn source (`.claude/settings.local.json`) that `gitman untrack` fixes (15-RC4/RC5). Via pyjutsu
+    `Workspace.tracked_ignored_paths` (project 14 P3; formerly `git ls-files --cached --ignored`);
+    `[]` on any failure so `status` never crashes."""
+    from pyjutsu import PyjutsuError
 
-    proc = subprocess.run(
-        ["git", "ls-files", "--cached", "--ignored", "--exclude-standard"],
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
-    )
-    return proc.stdout.splitlines() if proc.returncode == 0 else []
+    try:
+        return ws.tracked_ignored_paths()
+    except PyjutsuError:
+        return []
 
 
-def colocated_ref_desync(view: RepoView, repo_root: Path) -> tuple[list[tuple[str, str, str | None]], list[str]]:
+def colocated_ref_desync(view: RepoView, ws: Workspace) -> tuple[list[tuple[str, str, str | None]], list[str]]:
     """Detect jj-bookmark ↔ colocated-git-ref drift (round-09 gap B).
 
     Returns `(mismatched, leftover)`:
@@ -311,7 +278,7 @@ def colocated_ref_desync(view: RepoView, repo_root: Path) -> tuple[list[tuple[st
       * `leftover`   — `refs/heads/<name>` with no matching local jj bookmark (e.g. an abandoned
         lane's lingering ref — the kind that makes every later `git_export` raise).
     """
-    refs = _git_refs_heads(repo_root)
+    refs = _git_refs_heads(ws)
     local: dict[str, str] = {}
     for b in view.bookmarks():
         if b.remote is None and not b.conflicted:
@@ -545,7 +512,7 @@ def capture_state(session: Session) -> RepoState:
         notes.append(
             f"local {trunk_name} is ahead of {remote_name} — `gitman push` to publish it."
         )
-    tracked_ignored = _tracked_but_ignored(repo_root)
+    tracked_ignored = _tracked_but_ignored(session.ws)
     if tracked_ignored:
         shown = ", ".join(tracked_ignored[:5]) + (" …" if len(tracked_ignored) > 5 else "")
         notes.append(

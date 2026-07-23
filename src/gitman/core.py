@@ -1020,7 +1020,7 @@ def do_land(session: Session, lane_args: list[str] | None, all_: bool = False):
                     base_head = view.resolve(base).commit_id
                     lane_head = view.resolve(lane).commit_id
                     lane_change = view.resolve(lane).change_id
-                    if _merge_tree_conflicts(session.repo_root, lane_head, base_head) is not False:
+                    if _merge_tree_conflicts(session.view(), lane_head, base_head) is not False:
                         raise GitmanError(
                             f"lane '{lane}' conflicts with its base '{base}' — `gitman sync`, resolve, "
                             f"then `gitman land {lane}`.",
@@ -1265,7 +1265,7 @@ def do_sync(session: Session, all_: bool):
                 view = session.view()
                 base_head = view.resolve(base).commit_id
                 lane_head = view.resolve(lane).commit_id
-                if _merge_tree_conflicts(session.repo_root, lane_head, base_head) is not False:
+                if _merge_tree_conflicts(session.view(), lane_head, base_head) is not False:
                     conflicted.append(lane)  # left on prior base — do not rebase / materialize
                     continue
                 with session.ws.transaction("gitman:sync", auto_snapshot=False) as tx:
@@ -1480,7 +1480,7 @@ def _integrate_trunk(
 
     if local_tip == origin_tip:
         return "in-sync"  # the fetch already fast-forwarded local trunk onto origin
-    content = _merge_tree_relation(session.repo_root, local_tip, origin_tip)
+    content = _merge_tree_relation(session.view(), local_tip, origin_tip)
     forge_has_new, local_has_new = content if content is not None else (True, True)
     if not forge_has_new:
         # local ⊇ origin (twin or local-ahead): keep local. `set_bookmark` by commit-id also clears a
@@ -1503,7 +1503,7 @@ def _integrate_trunk(
     # (→ `_SurvivorConflict` → the pull rolls back, nothing touched).
     from gitman.state import _merge_tree_conflicts
 
-    if _merge_tree_conflicts(session.repo_root, local_tip, origin_tip) is not False:
+    if _merge_tree_conflicts(session.view(), local_tip, origin_tip) is not False:
         raise _SurvivorConflict  # conflict, or unknowable (git error) → don't risk a corrupt trunk
     # Reference the rebased land tip by its stable CHANGE-id: `tx.rebase` returns a Commit carrying the
     # *pre-rewrite* commit-id (it re-resolves to the abandoned commit), so setting the bookmark by that
@@ -1558,7 +1558,7 @@ def _pull_dry_run(session: Session, trunk: str, remote: str):
             if local_tip == origin_tip:
                 messages.append(f"already current: local {trunk} is up to date with {trunk}@{remote}.")
             else:
-                content = _merge_tree_relation(session.repo_root, local_tip, origin_tip)
+                content = _merge_tree_relation(session.view(), local_tip, origin_tip)
                 forge_has_new, local_has_new = content if content is not None else (True, True)
                 if not forge_has_new:
                     messages.append(

@@ -255,7 +255,7 @@ def _export_colocated_git(session: Session) -> list[str]:
         from gitman.state import colocated_ref_desync
 
         try:
-            mismatched, leftover = colocated_ref_desync(session.view(), session.repo_root)
+            mismatched, leftover = colocated_ref_desync(session.view(), session.ws)
             stuck = sorted([n for n, _, _ in mismatched] + leftover)
         except Exception:  # noqa: BLE001 — surfacing must never mask the (already-committed) intent
             stuck = []
