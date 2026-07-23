@@ -1,6 +1,7 @@
 """Release flow: (optional bump →) annotated git tag on the release commit → push tag.
 The verify hook runs **before any write**, so a blocked release leaves no tag and no bump.
-Tags live on the git side (colocated; jj tag support is read-only). See concept §13.
+Tags are written through pyjutsu (`Workspace.create_tag` / `push_tag`, 0.11.0) onto the colocated
+`.git`; jj-lib is read-only on tags, so pyjutsu writes the annotated object directly. See concept §13.
 """
 
 from __future__ import annotations
@@ -29,8 +30,19 @@ def _target_version(
     return current, current
 
 
+def _tag_exists(session: Session, tag: str) -> bool:
+    """Whether an annotated tag `tag` already exists — resolved through jj's `tags()` revset (the
+    tag was imported into the jj view by a prior `create_tag`), so no git subprocess."""
+    from pyjutsu import RevsetError
+
+    try:
+        session.view().resolve(f'tags(exact:"{tag}")')
+        return True
+    except RevsetError:
+        return False
+
+
 def do_release(session: Session, level: str | None, set_version: str | None):
-    from gitman import tags
     from gitman.core import pick_remote
     from gitman.invariants import canonical_guard
     from gitman.lanes import require_current_lane
@@ -48,7 +60,7 @@ def do_release(session: Session, level: str | None, set_version: str | None):
         raise GitmanError(f"verify failed — release blocked (no tag, no bump):\n{out}", exit_code=1)
 
     tag = config.release.tag_format.format(version=new)
-    if tags.tag_exists(repo_root, tag):
+    if _tag_exists(session, tag):
         raise GitmanError(f"tag {tag} already exists.", exit_code=3)
 
     messages: list[str] = []
@@ -74,15 +86,15 @@ def do_release(session: Session, level: str | None, set_version: str | None):
             exit_code=1,
         )
     commit = head.commit_id
-    tags.create_annotated_tag(repo_root, tag, f"Release {new}", commit)  # raises exit 2 on fail
+    session.ws.create_tag(tag, commit, f"Release {new}")  # GitError → exit 1 on fail
     messages.append(f"tagged {tag} @ {commit}")
-    notes.append("a git tag was created (one-way; `gitman undo` reverts a bump, not the tag).")
+    notes.append("a git tag was created (`gitman undo` reverts this release — bump + tag — via the checkpoint).")
 
     if config.release.push_tag:
         if not session.ws.remotes():
             notes.append("no remote — tag created locally but not pushed.")
         else:
-            tags.push_tag(repo_root, pick_remote(session.ws), tag)  # raises exit 1 on fail
+            session.ws.push_tag(tag, pick_remote(session.ws))  # GitError → exit 1 on fail
             messages.append(f"pushed tag {tag}")
             notes.append("a pushed tag is one-way.")
 

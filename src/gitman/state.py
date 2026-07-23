@@ -29,7 +29,7 @@ def _stray_revset(trunk: str) -> str:
     # Tagged commits are *intentional* history (releases / bisect anchors), never "edited
     # outside Gitman" — so exclude their ancestry too. `tags()` is the standard jj revset
     # (it evaluates through pyjutsu/jj-lib's resolver, not just the builder-bound funcs);
-    # gitman's own release tags (tags.py) sit on lane heads already covered by bookmarks(),
+    # gitman's own release tags (via pyjutsu create_tag) sit on lane heads already covered by bookmarks(),
     # so this only suppresses *off-lane* tagged commits. Accepted false-negative: an agent
     # that both strays AND tags its own scratch off-lane (negligible — a deliberate tag is a
     # strong "intentional, not stray" signal).

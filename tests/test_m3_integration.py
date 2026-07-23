@@ -162,7 +162,6 @@ def test_release_with_bump_tags_and_bumps(tmp_path: Path):
 
 
 def test_release_verify_blocks_before_write(tmp_path: Path):
-    from gitman import tags
     from gitman.init import do_init
     from gitman.release import do_release
     from gitman.version import read_version
@@ -180,7 +179,12 @@ def test_release_verify_blocks_before_write(tmp_path: Path):
         do_release(Session.load(tmp_path, cfg), level="minor", set_version=None)
     assert exc.value.exit_code == 1
     # No tag, no bump.
-    assert not tags.tag_exists(tmp_path, "v1.3.0")
+    assert (
+        subprocess.run(
+            ["git", "rev-parse", "-q", "--verify", "refs/tags/v1.3.0"], cwd=tmp_path, capture_output=True
+        ).returncode
+        != 0
+    )
     assert read_version(_isess(tmp_path).config, tmp_path) == "1.2.3"
 
 

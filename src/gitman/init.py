@@ -162,7 +162,7 @@ def _local_bookmarks(session: Session) -> set[str]:
 def detect_trunk(session: Session) -> str:
     """Resolve trunk once: an existing main/master/trunk bookmark, else origin/HEAD, else
     'main' (created)."""
-    from gitman import tags
+    from gitman import gitshim
     from gitman.core import pick_remote
 
     local = _local_bookmarks(session)
@@ -170,7 +170,7 @@ def detect_trunk(session: Session) -> str:
         if cand in local:
             return cand
     if session.ws.remotes():
-        head = tags.remote_default_branch(session.repo_root, pick_remote(session.ws))
+        head = gitshim.remote_default_branch(session.repo_root, pick_remote(session.ws))
         if head:
             return head
     return "main"
@@ -201,13 +201,11 @@ def ensure_colocated(repo_root: Path, trunk: str | None = None) -> bool:
         return False
 
     # pyjutsu's colocate adopts an existing .git but won't create one from nothing, so bootstrap an
-    # empty git repo (on the trunk branch) when the dir has none — the one git surface besides tags.py.
+    # empty git repo (on the trunk branch) when the dir has none — see gitshim (residual git surface).
     if not (repo_root / ".git").exists():
-        from gitman.tags import _git
+        from gitman.gitshim import git_init
 
-        res = _git(repo_root, "init", "-b", trunk or "main")
-        if res.returncode != 0:
-            raise GitmanError(f"could not bootstrap git for colocate: {res.stderr.strip()}", exit_code=2)
+        git_init(repo_root, trunk or "main")
 
     from pyjutsu import Workspace
 

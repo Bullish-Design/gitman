@@ -1,7 +1,7 @@
 """`gitman doctor` — validate the execution boundary and toolchain (concept §18).
 
 Checks: inside devenv · **pyjutsu importable + its linked jj-lib matches the build target**
-(`JJ_VERSION == JJ_LIB_TARGET`) · git present (for tags.py) · colocated `.git`+`.jj` · git
+(`JJ_VERSION == JJ_LIB_TARGET`) · git present (for gitshim) · colocated `.git`+`.jj` · git
 remote · frozen trunk exists · version source configured. Hard failures (missing/mismatched
 engine, not colocated) → exit 2; missing-but-expected-later items (no trunk yet) are warnings.
 
@@ -76,7 +76,7 @@ def run_doctor(repo_root: Path, config: GitmanConfig | None = None) -> DoctorRep
     checks.append(
         Check(OK, "git", "git on PATH")
         if shutil.which("git")
-        else Check(FAIL, "git", "git not found on PATH (needed for annotated tags)")
+        else Check(FAIL, "git", "git not found on PATH (needed for colocated-git bootstrap/interop)")
     )
 
     checks.append(
