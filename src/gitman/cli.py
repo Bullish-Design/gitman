@@ -149,17 +149,52 @@ def switch(
 
 @app.command()
 def split(
+    into: Annotated[str, typer.Option("--into", help="Name of the new lane to carve onto.")],
     paths: Annotated[
-        list[str],
-        typer.Option("--paths", help="Repo-relative file path(s)/dir-prefix(es)/glob(s) to carve out (repeatable)."),
-    ],
-    into: Annotated[str, typer.Option("--into", help="Name of the new lane to carve the paths onto.")],
+        list[str] | None,
+        typer.Option(
+            "--paths",
+            help="Whole-file selector(s): repo-relative path(s)/dir-prefix(es)/glob(s) to carve "
+            "(repeatable). Mutually exclusive with --hunks.",
+        ),
+    ] = None,
+    hunks: Annotated[
+        str | None,
+        typer.Option(
+            "--hunks",
+            help="Machine hunk selector: 'file.py:0,2;util.py:1' (0-based hunk indices from a "
+            "diff; bare 'file' = whole file). Discover indices from the lane's diff first, then "
+            "split in the same lane state. Mutually exclusive with --paths.",
+        ),
+    ] = None,
     message: Annotated[str | None, typer.Option("-m", "--message", help="Describe the carved lane.")] = None,
 ) -> None:
-    """Partition the current lane's change into two sibling lanes: carved paths onto <into>, rest stays."""
+    """Partition the current lane's change into two sibling lanes (whole-file --paths or --hunks)."""
     from gitman.core import do_split
 
-    _finish_intent(do_split(_session(), paths, into, message))
+    _finish_intent(do_split(_session(), paths or [], into, message, hunks))
+
+
+@app.command()
+def shape(
+    squash: Annotated[
+        str | None, typer.Option("--squash", help="Change (revset) to fold into a neighbor.")
+    ] = None,
+    into: Annotated[
+        str | None, typer.Option("--into", help="Squash target (default: the source's parent).")
+    ] = None,
+    reorder: Annotated[
+        list[str] | None,
+        typer.Option("--reorder", help="New bottom-up order of lane changes (repeatable)."),
+    ] = None,
+    message: Annotated[
+        str | None, typer.Option("-m", "--message", help="Description for the squashed commit.")
+    ] = None,
+) -> None:
+    """Tidy the current lane's own base..head range: --squash a change, or --reorder changes."""
+    from gitman.core import do_shape
+
+    _finish_intent(do_shape(_session(), squash=squash, into=into, reorder=reorder, message=message))
 
 
 @app.command()

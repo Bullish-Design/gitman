@@ -501,7 +501,90 @@ def _match_paths(patterns: list[str], changed: list[str]) -> list[str]:
     return matched
 
 
-def do_split(session: Session, paths: list[str], into: str, message: str | None):
+def _parse_hunk_selection(spec: str) -> dict[str, list[int] | None]:
+    """Parse a `--hunks` selector into pyjutsu's `{path: [indices] | None}` selection.
+
+    Grammar: `file[:i,j,...];file2[:k];...`. A bare `file` (no `:`) selects the whole file
+    (`None`); indices are 0-based hunk indices into `diff(lane)` for that path. Raises
+    GitmanError(exit_code=3) on malformed input. Order and de-dup of indices are normalized.
+    (Paths in this repo never contain `:` or `;`.)
+    """
+    selection: dict[str, list[int] | None] = {}
+    for raw in spec.split(";"):
+        entry = raw.strip()
+        if not entry:
+            continue
+        path, sep, hunks = entry.partition(":")
+        path = path.strip()
+        if not path:
+            raise GitmanError(f"`--hunks`: empty path in '{entry}'.", exit_code=3)
+        if not sep:
+            selection[path] = None  # whole file
+            continue
+        idxs: list[int] = []
+        for tok in hunks.split(","):
+            tok = tok.strip()
+            if not tok:
+                continue
+            try:
+                n = int(tok)
+            except ValueError:
+                raise GitmanError(
+                    f"`--hunks`: '{tok}' is not a hunk index (path '{path}').", exit_code=3
+                ) from None
+            if n < 0:
+                raise GitmanError(
+                    f"`--hunks`: negative hunk index {n} (path '{path}').", exit_code=3
+                )
+            idxs.append(n)
+        if not idxs:
+            # `path:` with no indices — ambiguous; treat as an error, not silent whole-file.
+            raise GitmanError(
+                f"`--hunks`: '{path}:' has no indices (drop the ':' for whole file).", exit_code=3
+            )
+        selection[path] = sorted(set(idxs))
+    if not selection:
+        raise GitmanError("`--hunks` selected nothing.", exit_code=3)
+    return selection
+
+
+def _validate_hunk_selection(selection: dict[str, list[int] | None], diff) -> None:
+    """Reject selections pyjutsu's `split` cannot honor, with clear exit-3 messages."""
+    by_path = {f.path: f for f in diff.files}
+    for path, idxs in selection.items():
+        fc = by_path.get(path)
+        if fc is None:
+            raise GitmanError(
+                f"`--hunks`: '{path}' is not changed in this lane "
+                f"(changed: {', '.join(sorted(by_path)) or '<none>'}).",
+                exit_code=3,
+            )
+        if idxs is None:
+            continue  # whole-file is always allowed
+        # Partial (hunk) selection is only valid for plain modified/added text files.
+        if fc.binary or fc.kind in ("removed", "renamed", "copied", "type_changed"):
+            raise GitmanError(
+                f"`--hunks`: '{path}' is {fc.kind}{'/binary' if fc.binary else ''}; "
+                "select it whole-file (drop the hunk indices) or use `--paths`.",
+                exit_code=3,
+            )
+        n = len(fc.hunks)
+        bad = [i for i in idxs if i >= n]
+        if bad:
+            raise GitmanError(
+                f"`--hunks`: '{path}' has {n} hunk(s) (indices 0..{n - 1}); "
+                f"out of range: {bad}. Re-run diff discovery against the current lane state.",
+                exit_code=3,
+            )
+
+
+def do_split(
+    session: Session,
+    paths: list[str],
+    into: str,
+    message: str | None,
+    hunks: str | None = None,
+):
     """Partition the current lane's single change into two **sibling** lanes on trunk.
 
     The last missing core lane op: `start` opens, `switch` navigates, `save` describes,
@@ -525,8 +608,10 @@ def do_split(session: Session, paths: list[str], into: str, message: str | None)
     from gitman.state import capture_state
 
     trunk = require_trunk(session.config)
-    if not paths:
-        raise GitmanError("`gitman split` needs at least one `--paths` selector.", exit_code=3)
+    if bool(paths) == bool(hunks):
+        raise GitmanError(
+            "`gitman split` needs exactly one of `--paths` or `--hunks`.", exit_code=3
+        )
 
     with canonical_tx(session, "split") as tx:
         # Pre-tx facts: while the tx is open, `session.view()` is still the post-snapshot, pre-tx
@@ -549,37 +634,159 @@ def do_split(session: Session, paths: list[str], into: str, message: str | None)
                 exit_code=3,
             )
 
-        changed = [f.path for f in view.diff(lane).files]
-        carved = _match_paths(paths, changed)
-        if not carved:
-            raise GitmanError(f"`--paths` matched no changes in lane '{lane}'.", exit_code=3)
-        remainder = [p for p in changed if p not in set(carved)]
-        if not remainder:
-            raise GitmanError(
-                "`--paths` covers the whole change — use `gitman start`/rename, not split.",
-                exit_code=3,
-            )
+        diff = view.diff(lane)
 
-        # Build the two siblings. Reference the carved lane by its bookmark `into` (rewrite-follows,
-        # never GC'd) and `C` by its change-id `c_change` (stable; the original bookmark follows it).
-        tx.new([trunk_id])  # @ → A, an empty child of trunk
-        tx.create_bookmark(into, "@")  # name + protect A before @ leaves it
-        tx.restore(into, from_=c_id)  # A := C's full content
-        tx.restore(into, from_=trunk_id, paths=remainder)  # A := carved-only (revert the remainder)
-        if message:
-            tx.describe(into, message)
-        tx.restore(c_change, from_=trunk_id, paths=carved)  # C := remainder-only (revert the carved)
-        tx.edit(c_change)  # @ back onto the remainder/original lane
+        if hunks is not None:
+            # ── HUNK PATH: one native tx.split, siblings topology ──
+            from pyjutsu import PyjutsuError
+
+            selection = _parse_hunk_selection(hunks)
+            _validate_hunk_selection(selection, diff)
+            # Refuse the whole-change full-cover case (empty remainder) up front — every changed
+            # path present as a whole-file (`None`) selection. Hunk subsets fall through to
+            # pyjutsu's own empty/full guard, mapped below.
+            changed_set = {f.path for f in diff.files}
+            if all(v is None for v in selection.values()) and set(selection) >= changed_set:
+                raise GitmanError(
+                    "`--hunks` covers the whole change — use `gitman start`/rename, not split.",
+                    exit_code=3,
+                )
+            try:
+                carved_commit, _remainder_commit = tx.split(c_change, selection, mode="siblings")
+            except PyjutsuError as exc:  # empty/full selection, etc.
+                raise GitmanError(
+                    f"`gitman split --hunks` could not carve: {exc}. "
+                    "The selection is empty or covers the whole change.",
+                    exit_code=3,
+                ) from exc
+            # `carved_commit` = fresh selected sibling; `_remainder_commit` = C rewritten in place
+            # (keeps its change id, its bookmark, and @). Name the carved side by its change id.
+            tx.create_bookmark(into, carved_commit.change_id)
+            if message:
+                tx.describe(into, message)
+            summary = (
+                f"carved hunk selection ({len(selection)} path(s)) onto new lane '{into}'; "
+                f"remainder stays on '{lane}'."
+            )
+        else:
+            # ── WHOLE-FILE PATH: unchanged path-scoped carve ──
+            changed = [f.path for f in diff.files]
+            carved = _match_paths(paths, changed)
+            if not carved:
+                raise GitmanError(f"`--paths` matched no changes in lane '{lane}'.", exit_code=3)
+            remainder = [p for p in changed if p not in set(carved)]
+            if not remainder:
+                raise GitmanError(
+                    "`--paths` covers the whole change — use `gitman start`/rename, not split.",
+                    exit_code=3,
+                )
+
+            # Build the two siblings. Reference the carved lane by its bookmark `into`
+            # (rewrite-follows, never GC'd) and `C` by its change-id `c_change` (stable; the
+            # original bookmark follows it).
+            tx.new([trunk_id])  # @ → A, an empty child of trunk
+            tx.create_bookmark(into, "@")  # name + protect A before @ leaves it
+            tx.restore(into, from_=c_id)  # A := C's full content
+            tx.restore(into, from_=trunk_id, paths=remainder)  # A := carved-only
+            if message:
+                tx.describe(into, message)
+            tx.restore(c_change, from_=trunk_id, paths=carved)  # C := remainder-only
+            tx.edit(c_change)  # @ back onto the remainder/original lane
+            summary = (
+                f"carved {len(carved)} path(s) onto new lane '{into}'; "
+                f"{len(remainder)} path(s) remain on '{lane}'."
+            )
 
     return IntentResult(
         intent="split",
         outcome="SPLIT",
         lane=lane,
-        messages=[
-            f"carved {len(carved)} path(s) onto new lane '{into}'; "
-            f"{len(remainder)} path(s) remain on '{lane}'."
-        ],
+        messages=[summary],
         notes=[f"`gitman switch {into}` to continue on the carved lane."],
+        undo_command="gitman undo",
+        state=capture_state(session),
+    )
+
+
+def do_shape(
+    session: Session,
+    *,
+    squash: str | None = None,
+    into: str | None = None,
+    reorder: list[str] | None = None,
+    message: str | None = None,
+):
+    """Tidy a lane's own `base..head` range: squash a change into a neighbor, or reorder.
+
+    Operates **only** on the commits strictly above the lane's base (trunk, or a parent-lane head
+    for fractal lanes). It never touches or crosses the base, so trunk is unchanged and no `land`
+    -style invariant exemption is needed. One `canonical_tx` → one undo. Commits are referenced by
+    **change-id** (stable across rewrites) and re-resolved through the view after each op.
+    """
+    from gitman.invariants import canonical_tx
+    from gitman.lanes import lane_base, require_current_lane
+    from gitman.models import IntentResult
+    from gitman.state import capture_state
+
+    trunk = require_trunk(session.config)
+    if bool(squash) == bool(reorder):
+        raise GitmanError(
+            "`gitman shape` needs exactly one of `--squash` or `--reorder`.", exit_code=3
+        )
+
+    with canonical_tx(session, "shape") as tx:
+        view = session.view()
+        lane = require_current_lane(session, trunk)
+        base = lane_base(session, trunk, lane) or trunk  # None → trunk-rooted
+        # The lane's own range, base-exclusive → head-inclusive: the ONLY commits shape may touch.
+        in_range = {c.change_id for c in view.log(f"{base}..{lane}")}
+        if not in_range:
+            raise GitmanError(
+                f"lane '{lane}' has no changes above its base '{base}'.", exit_code=3
+            )
+
+        def _require_in_range(rev: str) -> str:
+            ch = view.resolve(rev).change_id
+            if ch not in in_range:
+                raise GitmanError(
+                    f"`gitman shape`: '{rev}' is not in lane '{lane}'s own range "
+                    f"(base..head over '{base}'); shape never crosses the base.",
+                    exit_code=3,
+                )
+            return ch
+
+        if squash is not None:
+            src = _require_in_range(squash)
+            if into is not None:
+                dst = _require_in_range(into)
+            else:
+                # Default: fold into the source's parent (must itself be in-range, i.e. not base).
+                parent_id = view.resolve(src).parent_ids[0]
+                dst = _require_in_range(parent_id)
+            if src == dst:
+                raise GitmanError(
+                    "`gitman shape --squash`: source and target are the same change.", exit_code=3
+                )
+            tx.squash(src, dst, message=message)  # whole-commit squash; descendants rebase
+            summary = f"squashed change into its target on lane '{lane}'."
+        else:
+            # reorder: explicit new bottom-up order of (a subset/all of) the lane's changes.
+            order = [_require_in_range(r) for r in reorder]
+            # Re-stack each listed change onto the previous one (base for the first), by change-id.
+            prev = base
+            for ch in order:
+                tx.rebase(ch, onto=prev, mode="revision")  # move only this change
+                prev = ch  # next change stacks on it (referenced by stable change-id)
+            # The lane bookmark must sit on the new topological head (the last change stacked), else
+            # the old head — now a descendant under no bookmark — reads as a stray (off-canonical).
+            tx.set_bookmark(lane, order[-1])
+            summary = f"reordered {len(order)} change(s) on lane '{lane}'."
+
+    return IntentResult(
+        intent="shape",
+        outcome="SHAPED",
+        lane=lane,
+        messages=[summary],
         undo_command="gitman undo",
         state=capture_state(session),
     )
