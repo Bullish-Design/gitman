@@ -717,16 +717,21 @@ above, from actually building it:
   deferred). `try_merge().tree_id` compares equal to a tip's `Commit.tree_id` for a clean/twin merge,
   as intended.
 
-- **P4 shipped but is NOT adopted by gitman — directory/file conflict on fractal ref names.**
-  `write_git_ref` writes a **loose** gix ref, which fails (`GitError: … An IO error occurred while
-  applying an edit`) when a `/`-path lane collides at the ref level — writing `refs/heads/T/api` while
-  `refs/heads/T` exists as a loose ref (needs `T` to be a directory). Raw `git update-ref` resolves
-  this via packed-refs; the gix loose write does not. Since `reconcile`'s ref heal must handle fractal
-  lanes, **`reconcile.py:_heal_colocated_refs` was kept on raw `git update-ref`** (see its NB). So
-  gitman's raw-`git` surface is now: `gitshim.py` (empty-repo bootstrap + `symbolic-ref`) + this one
-  `reconcile` ref-write. **Follow-up (pyjutsu project 14b):** make `write_git_ref`/`delete_git_ref`
-  D/F-safe (repack the conflicting ref), then adopt P4 to reach raw-`git`-zero. The pyjutsu OVERVIEW
-  P4 section carries the same note + a `T`+`T/api` probe requirement.
+- **P4 partly fixed in pyjutsu 0.12.1, but STILL NOT adopted by gitman — three-level fractal D/F.**
+  `write_git_ref` (0.12.0) wrote a loose gix ref that failed on any `/`-path collision. **0.12.1**
+  (`60e6319`) routed it through the file-store transaction with a packed-refs mode + reflog disabled,
+  fixing the **flat and two-level** cases. **But the real gitman case still fails:** a *three-level*
+  tree with pre-existing mixed loose refs — `refs/heads/T` (loose file) and `refs/heads/T/api/handler`
+  (loose, making `refs/heads/T/api/` a directory) — gives writing `refs/heads/T/api` a **bidirectional**
+  D/F conflict, and gix's packed transaction still can't lock the loose path for `T/api`. Reproduced by
+  `tests/test_phase3_concurrency.py::test_reconcile_refreshes_stale_grandchild_workspace` (lanes `T`,
+  `T/api`, `T/api/handler`). So **`reconcile.py:_heal_colocated_refs` stays on raw `git update-ref`**
+  (see its NB). gitman's raw-`git` surface remains: `gitshim.py` (empty-repo bootstrap + `symbolic-ref`)
+  + this one `reconcile` ref-write. **Proper fix (pyjutsu project 14b, effort M):** mirror `git
+  pack-refs --all` — pack *every* `refs/heads/*` into `packed-refs` in one transaction so no loose head
+  ref remains, rather than packing only the target; verify `prepare` doesn't still lock the conflicting
+  loose paths (the sticking point), else delete them explicitly first. Probe the **3-level mixed
+  loose/packed** layout. The pyjutsu OVERVIEW P4 section carries the full analysis.
 
 - **Wheelhouse/re-pin gotcha (for the next consumer bump).** Bumping gitman to a new pyjutsu required:
   (1) `nix flake update pyjutsu` in **vendomat** (its `flake.lock` pins the wheel source) + commit;
