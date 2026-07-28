@@ -14,6 +14,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from gitman.core import _target, require_trunk
+from gitman.invariants import _refresh_stale_working_copy
 
 if TYPE_CHECKING:
     from gitman.session import Session
@@ -41,47 +42,39 @@ def _heal_colocated_refs(session: Session) -> list[str]:
         return []
     for name, jj_id, _git_id in mismatched:
         session.ws.write_git_ref(name, jj_id)
+    # Also create git refs for local bookmarks that have NO git ref at all — otherwise
+    # `git_import` below would interpret the absent ref as "branch deleted remotely" and
+    # prune the jj bookmark. This happens routinely after `undo` (which restores jj state
+    # but not colocated git refs).
+    view = session.view()
+    local_bookmarks: dict[str, str] = {}
+    for b in view.bookmarks():
+        if b.remote is None:
+            try:
+                local_bookmarks[b.name] = view.resolve(b.name).commit_id
+            except Exception:
+                pass
+    git_names = set(session.ws.git_refs())
+    mismatched_names = {n for n, _, _ in mismatched}
+    for name, jj_id in local_bookmarks.items():
+        if name not in git_names and name not in mismatched_names:
+            session.ws.write_git_ref(name, jj_id)
     for name in leftover:
         session.ws.delete_git_ref(name)
-    try:
-        session.ws.git_import()
-        session.ws.git_export()
-    except PyjutsuError:
-        pass  # refs are already corrected on disk; tracking re-syncs on the next clean export
+    # Only git_import when leftovers were removed (the import reconciles the deletion).
+    # Skipping it avoids resurrecting abandoned commits via refs/jj/keep entries that
+    # git_import creates when it sees a git ref moved by write_git_ref.
+    if leftover:
+        try:
+            session.ws.git_import()
+            session.ws.git_export()
+        except PyjutsuError:
+            pass  # refs are already corrected on disk; tracking re-syncs on the next clean export
     notes: list[str] = []
     if mismatched:
         notes.append(f"re-synced colocated git ref(s): {', '.join(n for n, _, _ in mismatched)}.")
     if leftover:
         notes.append(f"removed leftover colocated git ref(s): {', '.join(leftover)}.")
-    return notes
-
-
-def _refresh_stale_working_copy(session: Session, trunk: str) -> list[str]:
-    """Refresh a truly-stale `@` — its recorded commit was rewritten out from under this workspace.
-
-    The fractal-lanes §1.3 case: a *sibling's* fold (or a `pull`) retired the lane this workspace had
-    checked out, so its `@` commit no longer exists. `do_reconcile` is the recovery surface for it —
-    `fresh_view()` deliberately SKIPS the snapshot when stale (session.py:96-98, so `status` can report
-    staleness instead of crashing), and nothing outside `do_pull` (core.py:1339) calls `update_stale()`.
-    Reuse the proven `do_pull` sequence verbatim: `update_stale()` → repark `@` off trunk if it now
-    coincides with the trunk head (the `@`-never-on-trunk invariant) → `sync_colocated()` to rebuild
-    the colocated git index. No-op (empty list) when the workspace is not stale."""
-    from pyjutsu import PyjutsuError
-
-    if not session.is_stale():
-        return []
-    notes: list[str] = []
-    session.ws.update_stale()
-    notes.append("refreshed stale working copy.")
-    after = session.view()
-    if after.working_copy().commit_id == after.resolve(trunk).commit_id:
-        with session.ws.transaction("gitman:reconcile-repark", auto_snapshot=False) as tx:
-            tx.new(trunk)
-        notes.append("reparked @ onto a fresh child of trunk.")
-    try:
-        session.sync_colocated()  # rebuild the colocated git index (best-effort, as the guard tail does)
-    except PyjutsuError:
-        pass
     return notes
 
 
@@ -93,56 +86,60 @@ def do_reconcile(session: Session, abandon_: bool):
 
     trunk = require_trunk(session.config)
     with repo_lock(session.repo_root):
-        op_before = session.ws.head_operation()  # captured first so undo covers the stale-@ refresh too
+        op_before = session.ws.head_operation()
         # A truly-stale `@` (its recorded commit rewritten away — the §1.3 fractal-lanes case, or a
         # `pull` under this workspace) can't be snapshotted by `fresh_view()` and never got refreshed.
         # Refresh it FIRST (the one genuinely-new reconcile mutation), then heal refs/strays as before.
         refresh_notes = _refresh_stale_working_copy(session, trunk)
-        view = session.fresh_view()  # snapshot dirty @ first (now safe — no longer stale)
-        conflicted = _conflicted_lanes(view, trunk)
-        strays = find_strays(view, trunk)
-        mismatched, leftover = colocated_ref_desync(view, session.ws)
-        if not conflicted and not strays and not mismatched and not leftover and not refresh_notes:
-            return IntentResult(
-                intent="reconcile", outcome="CLEAN", messages=["already canonical — no strays, refs in sync."]
-            )
-
-        actions: list[str] = list(refresh_notes)
-        # Conflicted lanes FIRST: clearing them is what unwedges the repo (issue 11), and retiring
-        # one can orphan local commits, so strays must be (re-)scanned afterwards. Local recovery —
-        # don't push-delete the remote branch here (that's a forge action; `pull`/`land` own it).
-        if conflicted:
-            for lane in sorted(conflicted):
-                _resolve_conflicted_lane(session, trunk, lane, abandon=abandon_, notes=actions)
-            view = session.fresh_view()  # resolving may have orphaned local commits → re-scan
+        try:
+            view = session.fresh_view()  # snapshot dirty @ first (now safe — no longer stale)
+            conflicted = _conflicted_lanes(view, trunk)
             strays = find_strays(view, trunk)
+            mismatched, leftover = colocated_ref_desync(view, session.ws)
+            if not conflicted and not strays and not mismatched and not leftover and not refresh_notes:
+                return IntentResult(
+                    intent="reconcile", outcome="CLEAN", messages=["already canonical — no strays, refs in sync."]
+                )
 
-        ref_notes = _heal_colocated_refs(session)  # gap B: heal git-ref drift (also clears retired refs)
-        existing = {b.name for b in session.view().bookmarks() if b.remote is None}
-        if strays:
-            # Target AND name each stray by commit_id (via `_target`), never the bare change_id.
-            # A divergent change-id resolves to ≥2 commits, so a change-id target dead-ends the
-            # transaction — and, critically, the two divergent sides *share* a change_id, so naming
-            # by change_id collides them onto one bookmark. commit_id is what actually differs, so
-            # it both resolves unambiguously and yields distinct lane names (issue 06 §G2).
-            with session.ws.transaction("gitman:reconcile", auto_snapshot=False) as tx:
-                for change in strays:
-                    cid = _target(change)
-                    if abandon_:
-                        tx.abandon(cid)
-                        actions.append(f"abandoned {cid[:12]}")
-                    else:
-                        name = f"adopted-{cid[:8]}"
-                        if name in existing:
-                            name = f"adopted-{cid[:12]}"
-                        tx.create_bookmark(name, cid)
-                        existing.add(name)
-                        actions.append(f"adopted {cid[:12]} → lane '{name}'")
-        actions += ref_notes
-        if not actions:
-            actions = ["nothing to do."]
-        write_undo_checkpoint(session.repo_root, op_before, "reconcile")
-        state = capture_state(session)
+            actions: list[str] = list(refresh_notes)
+            # Conflicted lanes FIRST: clearing them is what unwedges the repo (issue 11), and retiring
+            # one can orphan local commits, so strays must be (re-)scanned afterwards. Local recovery —
+            # don't push-delete the remote branch here (that's a forge action; `pull`/`land` own it).
+            if conflicted:
+                for lane in sorted(conflicted):
+                    _resolve_conflicted_lane(session, trunk, lane, abandon=abandon_, notes=actions)
+                view = session.fresh_view()  # resolving may have orphaned local commits → re-scan
+                strays = find_strays(view, trunk)
+
+            ref_notes = _heal_colocated_refs(session)  # gap B: heal git-ref drift (also clears retired refs)
+            existing = {b.name for b in session.view().bookmarks() if b.remote is None}
+            if strays:
+                # Target AND name each stray by commit_id (via `_target`), never the bare change_id.
+                # A divergent change-id resolves to ≥2 commits, so a change-id target dead-ends the
+                # transaction — and, critically, the two divergent sides *share* a change_id, so naming
+                # by change_id collides them onto one bookmark. commit_id is what actually differs, so
+                # it both resolves unambiguously and yields distinct lane names (issue 06 §G2).
+                with session.ws.transaction("gitman:reconcile", auto_snapshot=False) as tx:
+                    for change in strays:
+                        cid = _target(change)
+                        if abandon_:
+                            tx.abandon(cid)
+                            actions.append(f"abandoned {cid[:12]}")
+                        else:
+                            name = f"adopted-{cid[:8]}"
+                            if name in existing:
+                                name = f"adopted-{cid[:12]}"
+                            tx.create_bookmark(name, cid)
+                            existing.add(name)
+                            actions.append(f"adopted {cid[:12]} → lane '{name}'")
+            actions += ref_notes
+            if not actions:
+                actions = ["nothing to do."]
+            write_undo_checkpoint(session.repo_root, op_before, "reconcile")
+            state = capture_state(session)
+        except Exception:
+            session.ws.restore_operation(op_before)
+            raise
 
     canonical = state.canonical
     return IntentResult(

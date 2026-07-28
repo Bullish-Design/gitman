@@ -159,6 +159,35 @@ def _assert_fresh(session: Session) -> None:
         raise StaleWorkingCopyError("working copy is stale — run `gitman reconcile`.")
 
 
+def _refresh_stale_working_copy(session: Session, trunk: str) -> list[str]:
+    """Refresh a truly-stale `@` — its recorded commit was rewritten out from under this workspace.
+
+    The fractal-lanes §1.3 case: a *sibling's* fold (or a `pull`) retired the lane this workspace had
+    checked out, so its `@` commit no longer exists. `do_reconcile` is the recovery surface for it —
+    `fresh_view()` deliberately SKIPS the snapshot when stale (session.py:96-98, so `status` can report
+    staleness instead of crashing), and nothing outside `do_pull` (core.py:1339) calls `update_stale()`.
+    Reuse the proven `do_pull` sequence verbatim: `update_stale()` → repark `@` off trunk if it now
+    coincides with the trunk head (the `@`-never-on-trunk invariant) → `sync_colocated()` to rebuild
+    the colocated git index. No-op (empty list) when the workspace is not stale."""
+    from pyjutsu import PyjutsuError
+
+    if not session.is_stale():
+        return []
+    notes: list[str] = []
+    session.ws.update_stale()
+    notes.append("refreshed stale working copy.")
+    after = session.view()
+    if after.working_copy().commit_id == after.resolve(trunk).commit_id:
+        with session.ws.transaction("gitman:reconcile-repark", auto_snapshot=False) as tx:
+            tx.new(trunk)
+        notes.append("reparked @ onto a fresh child of trunk.")
+    try:
+        session.sync_colocated()  # rebuild the colocated git index (best-effort, as the guard tail does)
+    except PyjutsuError:
+        pass
+    return notes
+
+
 def precheck_canonical(session: Session, intent: str | None = None) -> RepoState:
     """Refuse to start when already off-canonical → exit 1. Returns the before-state (carrying
     `trunk_before`). Imported lazily to avoid a state↔invariants import cycle. `capture_state`
@@ -217,6 +246,14 @@ def _postcondition(session: Session, intent: str, trunk_before: str | None, op_b
     )
     if not after.canonical or trunk_moved or at_on_trunk:
         session.ws.restore_operation(op_before)
+        # Re-export git refs — the earlier export in canonical_tx wrote the (now-reverted)
+        # bookmark positions. Best-effort; a non-colocated repo skips silently.
+        from pyjutsu import PyjutsuError
+
+        try:
+            session.ws.git_export()
+        except PyjutsuError:
+            pass
         if at_on_trunk and after.canonical and not trunk_moved:
             reason = f"working copy @ coincides with trunk '{after.trunk.name}' after {intent} (repark failed)"
         else:
@@ -246,19 +283,52 @@ def _export_colocated_git(session: Session) -> list[str]:
     desync (incl. a lagging trunk ref) must surface. Return a note naming the stuck ref(s) →
     `gitman reconcile` heals them. The intent itself has already succeeded and is authoritative in jj.
     """
-    from pyjutsu import PyjutsuError
 
     notes: list[str] = []
     try:
         session.ws.git_export()
-    except PyjutsuError:
+    except Exception:  # was: except PyjutsuError — GitError/AttributeError on pyjutsu versions escapes
+        # git_export can fail on D/F conflicts with fractal lane names (e.g. refs/heads/T
+        # blocking refs/heads/T/api). Manually sync refs using pyjutsu's D/F-safe
+        # write_git_ref/delete_git_ref, then re-export the tracking state.
+        from pyjutsu import PyjutsuError
+
         from gitman.state import colocated_ref_desync
 
+        view = session.view()
         try:
-            mismatched, leftover = colocated_ref_desync(session.view(), session.ws)
-            stuck = sorted([n for n, _, _ in mismatched] + leftover)
-        except Exception:  # noqa: BLE001 — surfacing must never mask the (already-committed) intent
-            stuck = []
+            mismatched, leftover = colocated_ref_desync(view, session.ws)
+        except Exception:
+            mismatched, leftover = [], []
+        # Sync mismatched bookmarks (jj → git) and create refs for bookmarks with no git ref.
+        local_bookmarks: dict[str, str] = {}
+        for b in view.bookmarks():
+            if b.remote is None:
+                try:
+                    local_bookmarks[b.name] = view.resolve(b.name).commit_id
+                except Exception:
+                    pass
+        git_names = set(session.ws.git_refs())
+        mismatched_names = {n for n, _, _ in mismatched}
+        for name, jj_id in local_bookmarks.items():
+            if name not in git_names or name in mismatched_names:
+                try:
+                    session.ws.write_git_ref(name, jj_id)
+                except PyjutsuError:
+                    pass
+        # Delete leftover git refs (no matching jj bookmark).
+        for name in leftover:
+            try:
+                session.ws.delete_git_ref(name)
+            except PyjutsuError:
+                pass
+        # Re-import and re-export to sync tracking refs.
+        try:
+            session.ws.git_import()
+            session.ws.git_export()
+        except PyjutsuError:
+            pass
+        stuck = sorted([n for n, _, _ in mismatched] + leftover)
         names = ", ".join(stuck) if stuck else "some bookmarks"
         notes.append(f"colocated git ref(s) stale for: {names} — run `gitman reconcile` to re-sync.")
     # Total colocated sync (HEAD + index) after every mutation so raw-git tooling never lags jj
@@ -266,7 +336,7 @@ def _export_colocated_git(session: Session) -> list[str]:
     # the already-committed, already-recorded intent.
     try:
         session.sync_colocated()
-    except PyjutsuError:
+    except Exception:  # was: except PyjutsuError — GitError/AttributeError on pyjutsu versions escapes
         notes.append("colocated git checkout not re-synced — run `gitman reconcile` if raw git looks stale.")
     return notes
 
@@ -303,11 +373,11 @@ def canonical_tx(session: Session, intent: str) -> Iterator[Transaction]:
         op_before = session.ws.head_operation()  # after the snapshot → deterministic parent
         with session.ws.transaction(f"gitman:{intent}", auto_snapshot=False) as tx:
             yield tx  # body raises ⇒ pyjutsu rolls back, op_before intact
+        # Export BEFORE the postcondition so capture_state's colocated_ref_desync
+        # check sees synced git refs.
+        _export_colocated_git(session)
         _postcondition(session, intent, trunk_before, op_before)
         write_undo_checkpoint(session.repo_root, op_before, intent)
-        # A stuck colocated ref can't be surfaced through the bare-tx yield, but `gitman status` /
-        # `gitman doctor` report the desync, and `gitman reconcile` heals it (round-09 gap B).
-        _export_colocated_git(session)
 
 
 # --- multi-op guard -------------------------------------------------------------------
@@ -333,6 +403,6 @@ def canonical_guard(session: Session, intent: str) -> Iterator[Canon]:
         except Exception:
             session.ws.restore_operation(op_before)  # an earlier op may have already published
             raise
+        canon.notes += _export_colocated_git(session)
         canon.state = _postcondition(session, intent, trunk_before, op_before)
         write_undo_checkpoint(session.repo_root, op_before, intent)
-        canon.notes += _export_colocated_git(session)  # surface any stuck colocated ref (gap B)

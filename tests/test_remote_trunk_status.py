@@ -45,6 +45,8 @@ def _with_remote(tmp_path: Path) -> tuple[Path, Workspace]:
 def _forge_advances_main(remote: Path, tmp_path: Path) -> None:
     other = tmp_path / "other"
     subprocess.run(["git", "clone", str(remote), str(other)], check=True, capture_output=True)
+    # Bare repo clones may leave HEAD detached — explicitly check out main.
+    subprocess.run(["git", "checkout", "main"], cwd=other, check=True, capture_output=True)
     (other / "forge.txt").write_text("forge\n")
     subprocess.run(["git", "add", "."], cwd=other, check=True, capture_output=True)
     subprocess.run(

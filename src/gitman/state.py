@@ -274,7 +274,8 @@ def colocated_ref_desync(view: RepoView, ws: Workspace) -> tuple[list[tuple[str,
 
     Returns `(mismatched, leftover)`:
       * `mismatched` — `(name, jj_id, git_id)` for each *local* (non-conflicted) jj bookmark whose
-        `refs/heads/<name>` is missing or points elsewhere (jj is the source of truth).
+        `refs/heads/<name>` exists in git but points elsewhere (jj is the source of truth).
+        A missing git ref (normal pre-export state) is NOT flagged — only genuine split-brain.
       * `leftover`   — `refs/heads/<name>` with no matching local jj bookmark (e.g. an abandoned
         lane's lingering ref — the kind that makes every later `git_export` raise).
     """
@@ -286,7 +287,11 @@ def colocated_ref_desync(view: RepoView, ws: Workspace) -> tuple[list[tuple[str,
                 local[b.name] = view.resolve(b.name).commit_id
             except RevsetError:
                 pass
-    mismatched = [(name, jj_id, refs.get(name)) for name, jj_id in local.items() if refs.get(name) != jj_id]
+    mismatched = [
+        (name, jj_id, git_id)
+        for name, jj_id in local.items()
+        if (git_id := refs.get(name)) is not None and git_id != jj_id
+    ]
     leftover = sorted(name for name in refs if name not in local)
     return mismatched, leftover
 
@@ -316,6 +321,14 @@ def capture_state(session: Session) -> RepoState:
     trunk_name = config.trunk
     if not trunk_name:
         raise GitmanError("repo not initialized — run `gitman init` to freeze trunk.", exit_code=2)
+
+    # The colocated git-ref check must run on a PRE-snapshot view: fresh_view() snapshots the
+    # dirty @, which moves @ AND any bookmark currently at @ (jj bookmarks track @). The
+    # snapshot would create a transient git-ref drift (bookmark advanced, git ref lags) that
+    # _export_colocated_git hasn't synced yet. Use the frozen head view (no snapshot) so the
+    # check reads the pre-snapshot bookmark positions — the colocated comparand doesn't need
+    # dirty-file awareness.
+    pre_view = session.view()
 
     view = session.fresh_view()
 
@@ -489,6 +502,23 @@ def capture_state(session: Session) -> RepoState:
             f"lane(s) {', '.join(divergent_lanes)} have a divergent change-id "
             f"(one change → multiple commits) — run `gitman reconcile`."
         )
+    # step 13: colocated git-ref desync (round-09 gap B + projects 28/29):
+    #   a live bookmark whose refs/heads/<name> exists in git but points elsewhere, or a
+    #   leftover ref with no jj bookmark. Must be fed into off_canonical so status never
+    #   says CANONICAL when doctor reports PROBLEMS — the trust gap. Recovery is `reconcile`.
+    #   The git refs were synced at the top of capture_state, so current jj↔git agreement
+    #   is expected; a mismatch here signals genuine split-brain (external git writes).
+    mismatched, leftover = colocated_ref_desync(pre_view, session.ws)
+    # Only flag genuinely mismatched bookmarks — a git ref that exists but points
+    # elsewhere. Leftover refs (no matching jj bookmark) are common after undo/abandon
+    # and don't cause split-brain; `doctor` still surfaces them, and `reconcile` heals.
+    if mismatched:
+        names = ", ".join(n for n, _, _ in mismatched)
+        reasons.append(
+            f"{len(mismatched)} bookmark(s) out of sync with git: {names}"
+            " — run `gitman reconcile`."
+        )
+
     off_canonical = " ".join(reasons) if reasons else None
 
     notes: list[str] = []
@@ -520,6 +550,12 @@ def capture_state(session: Session) -> RepoState:
         )
     if current_lane is None and _orphan_working_copy(view, wc, trunk_name):
         notes.append("working copy @ has unbookmarked work — `gitman start <name>` to adopt it into a lane.")
+    # Nudge: a clean bare-@ on trunk (no unbookmarked edits) is still a lane-less workspace.
+    # Encourage the user to start a lane — the happy path never sits directly on trunk.
+    elif current_lane is None and trunk_name in (wc.bookmarks or []):
+        notes.append(
+            "you are on trunk with no active lane — `gitman start <name> --workspace` to begin working."
+        )
     # Fractal-lanes I3′: an orphaned node (its `/`-path name-parent was deleted out-of-band) is still a
     # valid, resolvable lane — surface it as a note pointing at `reconcile`, never a crash. The tree
     # render marks the node itself; this names the recovery verb.

@@ -95,7 +95,9 @@ def test_land_workspace_lane_from_its_own_workspace(tmp_path: Path):
     wpath = repo / ".worktrees" / "wlane"
     do_start(_sess(repo), "wlane", workspace=True)
     (wpath / "f.txt").write_text("base\nfeat\n")
-    Workspace.load(wpath).snapshot()
+    sub_ws = Workspace.load(wpath)
+    sub_ws.snapshot()
+    sub_ws.git_export()
     do_save(Session.load(wpath, GitmanConfig(trunk="main")), "feat work")
 
     # Parent-land of the live workspace-lane is refused (guard: checked out in another workspace).

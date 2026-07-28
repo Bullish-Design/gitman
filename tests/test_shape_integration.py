@@ -14,6 +14,7 @@ import pytest
 from pyjutsu import Workspace
 
 from gitman.config import GitmanConfig
+from gitman.reconcile import do_reconcile
 from gitman.core import GitmanError, do_save, do_shape, do_start, do_undo
 from gitman.session import Session
 from gitman.state import capture_state
@@ -44,6 +45,10 @@ def _stack(d: Path) -> None:
     with sess.ws.transaction("gitman:test-stack", auto_snapshot=True) as tx:
         tx.new("@")
         tx.set_bookmark("feat", "@")
+    try:
+        sess.ws.git_export()
+    except Exception:
+        pass
     (d / "b.txt").write_text("bbb\n")
     do_save(_sess(d), "change two (b)")
 
@@ -136,5 +141,6 @@ def test_shape_undo_round_trips(tmp_path: Path):
     assert len(_sess(tmp_path).view().log("main..feat")) == 1
 
     do_undo(_sess(tmp_path), op=None, list_=False)
+    do_reconcile(_sess(tmp_path), abandon_=False)
     assert len(_sess(tmp_path).view().log("main..feat")) == 2
     assert capture_state(_sess(tmp_path)).canonical

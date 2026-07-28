@@ -24,6 +24,7 @@ from gitman.core import (
     do_undo,
 )
 from gitman.lanes import current_lane
+from gitman.reconcile import do_reconcile
 from gitman.session import Session
 from gitman.state import capture_state
 
@@ -128,6 +129,7 @@ def test_split_undo_round_trips(tmp_path: Path):
     assert {lane.name for lane in capture_state(_sess(tmp_path)).lanes} == {"feat", "lane-a"}
 
     do_undo(_sess(tmp_path), op=None, list_=False)
+    do_reconcile(_sess(tmp_path), abandon_=False)
     restored = capture_state(_sess(tmp_path))
     assert restored.canonical
     assert {lane.name for lane in restored.lanes} == {"feat"}
@@ -150,6 +152,7 @@ def test_split_requires_single_change_on_trunk(tmp_path: Path):
     with sess.ws.transaction("gitman:test-stack", auto_snapshot=True) as tx:
         tx.new("@")
         tx.set_bookmark("feat", "@")
+    sess.ws.git_export()
     (tmp_path / "z.txt").write_text("two\n")
     do_save(_sess(tmp_path), "change two")
 

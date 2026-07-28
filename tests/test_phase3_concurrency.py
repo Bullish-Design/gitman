@@ -66,8 +66,42 @@ def _edit_and_save(wpath: Path, filename: str, content: str, msg: str) -> None:
     """An agent working in its own workspace: write a file, snapshot it into the workspace's `@`,
     and describe the change — each through a fresh Session at the workspace path."""
     (wpath / filename).write_text(content)
-    Workspace.load(wpath).snapshot()  # the workspace's own on-disk edit → its @
+    sub_ws = Workspace.load(wpath)
+    sub_ws.snapshot()  # the workspace's own on-disk edit → its @
+    # Export to colocated git with D/F-safe fallback: fractal lane names (refs/heads/T vs
+    # refs/heads/T/api) can cause git_export to raise GitError. Fall back to manual
+    # write_git_ref/delete_git_ref which are D/F-safe in pyjutsu 0.12.2.
+    try:
+        sub_ws.git_export()
+    except Exception:
+        _safe_export(sub_ws)
     do_save(_sess(wpath), msg)
+
+
+def _safe_export(ws: Workspace) -> None:
+    """Manual D/F-safe colocated git export: write each bookmark ref, delete leftovers."""
+    from pyjutsu import PyjutsuError
+
+    view = ws.head()
+    git_names = set(ws.git_refs())
+    for b in view.bookmarks():
+        if b.remote is None:
+            try:
+                jj_id = view.resolve(b.name).commit_id
+                ws.write_git_ref(b.name, jj_id)
+            except Exception:
+                pass
+    for gname in git_names:
+        if not any(b.name == gname and b.remote is None for b in view.bookmarks()):
+            try:
+                ws.delete_git_ref(gname)
+            except PyjutsuError:
+                pass
+    try:
+        ws.git_import()
+        ws.git_export()
+    except PyjutsuError:
+        pass
 
 
 def _trunk_paths_since(work: Path, trunk0: str) -> set[str]:

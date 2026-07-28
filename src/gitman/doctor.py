@@ -158,6 +158,25 @@ def run_doctor(repo_root: Path, config: GitmanConfig | None = None) -> DoctorRep
                 )
             )
 
+    # Dirty @ on bare trunk: warn early so the user starts a lane BEFORE they try to land.
+    # The same guard exists in precheck_canonical (invariants.py), but that only fires at
+    # land/push time. Surface it here so the nudge happens at doctor/status time.
+    if ws is not None and cfg.trunk:
+        try:
+            wc = ws.head().working_copy()
+            if cfg.trunk in wc.bookmarks and not wc.is_empty:
+                checks.append(
+                    Check(
+                        WARN,
+                        "dirty-trunk",
+                        f"working copy @ is the trunk commit '{cfg.trunk}' with uncommitted "
+                        f"edits — `gitman start <name> --workspace` to move this work into a lane "
+                        f"before landing.",
+                    )
+                )
+        except Exception:  # noqa: BLE001
+            pass
+
     return DoctorReport(checks)
 
 

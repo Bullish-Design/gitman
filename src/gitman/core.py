@@ -50,6 +50,9 @@ def map_pyjutsu_error(exc: PyjutsuError) -> GitmanError:
     if isinstance(exc, ConflictError):
         return GitmanError(f"conflict: {exc}", exit_code=1)
     if isinstance(exc, GitError):
+        msg = str(exc).lower()
+        if any(kw in msg for kw in ("connection refused", "could not resolve", "authentication", "timed out")):
+            return GitmanError(f"git operation failed (network/auth): {exc}", exit_code=2)
         return GitmanError(f"git operation failed: {exc}", exit_code=1)
     if isinstance(exc, RevsetError):
         # A conflicted bookmark name ("Name `X` is conflicted") is a recoverable VC state, not a bad
@@ -97,6 +100,16 @@ def require_trunk(config) -> str:
     return config.trunk
 
 
+def _resolve_commit(view, rev: str) -> str:
+    """Resolve a revset to a single commit-id, or raise GitmanError(exit_code=3)."""
+    from pyjutsu.errors import RevsetError
+
+    try:
+        return view.resolve(rev).commit_id
+    except RevsetError as exc:
+        raise GitmanError(f"cannot resolve '{rev}': {exc}", exit_code=3) from exc
+
+
 def _target(change) -> str:
     """The transaction-safe revset for a stray / range-row change: its **commit_id**, never the
     bare change_id.
@@ -126,12 +139,22 @@ def run_verify(commands: list[str], repo_root: Path, timeout: float | None = Non
 
 
 def pick_remote(ws: Workspace) -> str:
-    """The remote to push/fetch against: `origin` if configured, else the first remote (MP2
-    moves this to tags.py). Callers gate on `ws.remotes()` being non-empty."""
+    """The remote to push/fetch against: `origin` if configured, else the sole remote.
+    Raises GitmanError(exit_code=2) when multiple remotes exist and none is named 'origin'.
+    Callers gate on `ws.remotes()` being non-empty."""
     names = [r.name for r in ws.remotes()]
     if "origin" in names:
         return "origin"
-    return names[0] if names else "origin"
+    if len(names) == 1:
+        return names[0]
+    if not names:
+        return "origin"  # defensive; callers gate on non-empty
+    raise GitmanError(
+        f"multiple remotes and no 'origin' — configure a default remote "
+        f"(`gitman remote add origin <url>`, or set `[gitman].default_remote`). "
+        f"Available: {', '.join(sorted(names))}",
+        exit_code=2,
+    )
 
 
 def _cleanup_workspace(session: Session, lane: str, keep_foreign: bool = False) -> list[str]:
@@ -892,14 +915,14 @@ def do_publish(session: Session):
         raise GitmanError("no git remote configured — cannot publish.", exit_code=2)
 
     notes: list[str] = []
-    ok, out = run_verify(session.config.publish.verify, session.repo_root, session.config.publish.verify_timeout)
-    if not ok:
-        if session.config.publish.on_fail == "block":
-            raise GitmanError(f"verify failed — publish blocked:\n{out}", exit_code=1)
-        notes.append("verify failed (on_fail=warn) — publishing anyway.")
 
     with canonical_guard(session, "publish") as canon:
         lane = require_current_lane(session, trunk)
+        ok, out = run_verify(session.config.publish.verify, session.repo_root, session.config.publish.verify_timeout)
+        if not ok:
+            if session.config.publish.on_fail == "block":
+                raise GitmanError(f"verify failed — publish blocked:\n{out}", exit_code=1)
+            notes.append("verify failed (on_fail=warn) — publishing anyway.")
         try:
             session.ws.git_push(pick_remote(session.ws), lane, allow_new=True)
         except PyjutsuError as exc:  # rejected push, missing-new gate, etc.
@@ -952,10 +975,13 @@ def do_land(session: Session, lane_args: list[str] | None, all_: bool = False):
     if len(targets) > 1:
         targets = sorted(targets, key=lambda lane: lane_depth(session, trunk, lane), reverse=True)
 
+    # S9a TODO: capture op_before once so a multi-lane undo rewinds the whole command in one shot,
+    # replacing the per-lane undo checkpoints. Deferred until colocated-ref desync postcondition
+    # edge cases are resolved.
+
     landed: list[str] = []
     targets_map: dict[str, str] = {}  # lane → where it folded (trunk, or a base lane)
     notes: list[str] = []
-    last_undo: str | None = None
     last_state = None
     blocked: GitmanError | None = None
     for lane in targets:
@@ -1046,11 +1072,14 @@ def do_land(session: Session, lane_args: list[str] | None, all_: bool = False):
                     canon.notes.append(f"remote branch '{lane}' not deleted (delete it manually): {exc}")
             landed.append(lane)
             notes += canon.notes
-            last_undo = canon.undo_command
             last_state = canon.state
         except GitmanError as exc:
             blocked = exc
             break
+
+    # S9a TODO: record one batch undo checkpoint so `gitman undo` rewinds ALL landed lanes
+    # at once instead of one at a time. Deferred until colocated-ref desync postcondition
+    # edge cases are resolved.
 
     if blocked is not None:
         msgs = [f"landed: {', '.join(landed)}" if landed else "landed: none", str(blocked)]
@@ -1062,7 +1091,7 @@ def do_land(session: Session, lane_args: list[str] | None, all_: bool = False):
             messages=msgs,
             notes=notes,
             exit_code=blocked.exit_code,
-            undo_command=last_undo,
+            undo_command="gitman undo",
             state=last_state,
         )
     landed_desc = [
@@ -1079,7 +1108,7 @@ def do_land(session: Session, lane_args: list[str] | None, all_: bool = False):
             if len(landed) > 1
             else notes
         ),
-        undo_command=last_undo,
+        undo_command="gitman undo",
         state=last_state,
     )
 
@@ -1219,6 +1248,15 @@ def do_sync(session: Session, all_: bool):
     synced: list[str] = []
     with canonical_guard(session, "sync") as canon:
         if session.ws.remotes() and targets:
+            # Capture pre-fetch commit-ids for every target lane so vanished lanes can be
+            # content-checked against trunk after the fetch prunes them (S9d auto-retire).
+            pre_fetch_heads: dict[str, str] = {}
+            pre_view = session.view()
+            for lane in targets:
+                try:
+                    pre_fetch_heads[lane] = pre_view.resolve(lane).commit_id
+                except Exception:
+                    pass
             # Fetch the lane branches ONLY — never trunk. A full `git_fetch` auto-fast-forwards the
             # local trunk bookmark to a moved `origin/<trunk>`, which the canonical_guard
             # postcondition then reverts as "trunk moved outside a land" (the real wedge). Trunk
@@ -1232,10 +1270,23 @@ def do_sync(session: Session, all_: bool):
         # A fetch can prune a lane whose remote branch was deleted server-side (e.g.
         # `gh pr merge --delete-branch`): jj drops the un-diverged local bookmark too, so a later
         # `tx.rebase(lane, …)` would raise "Revision <lane> doesn't exist". Re-read the survivors
-        # AFTER the fetch and skip vanished lanes with a note instead of wedging (sharp edge #1).
+        # AFTER the fetch. For vanished lanes, content-check against trunk: if the lane's content
+        # is a subset of trunk (the merge of lane + trunk equals trunk's tree), auto-retire it.
+        # If not (real divergence), keep the note pointing at `gitman pull`.
         surviving = lane_names(session, trunk)
+        trunk_tip = session.view().resolve(trunk).commit_id
+        from gitman.state import _merge_tree_relation
+
         for lane in targets:
             if lane not in surviving:
+                lane_sha = pre_fetch_heads.get(lane) if session.ws.remotes() else None
+                if lane_sha is not None:
+                    relation = _merge_tree_relation(session.view(), lane_sha, trunk_tip)
+                    if relation is not None and not relation[1]:
+                        # Lane content is a subset of trunk → forge-merged → auto-retire.
+                        notes += _cleanup_workspace(session, lane)
+                        notes.append(f"retired (forge-merged, branch deleted): {lane}")
+                        continue
                 notes.append(
                     f"lane '{lane}' no longer exists (remote branch deleted) — nothing to sync; "
                     f"`gitman pull` to retire it."
@@ -1271,6 +1322,28 @@ def do_sync(session: Session, all_: bool):
                 with session.ws.transaction("gitman:sync", auto_snapshot=False) as tx:
                     tx.rebase(lane, onto=base, mode="branch")
                 synced.append(lane)
+        # After rebasing lanes, check for stale secondary workspaces (L2): a rebased lane may
+        # have a live `--workspace` checkout elsewhere whose @ is now stale. Append a note
+        # naming each so the agent knows to `gitman catchup` in that workspace.
+        if synced and all_:
+            stale_workspaces: list[str] = []
+            for wi in session.ws.workspaces():
+                if wi.name == session.ws.name:
+                    continue
+                wpath = Path(wi.path) if wi.path is not None else None
+                if wpath is None or not wpath.exists():
+                    continue
+                try:
+                    from gitman.session import Session
+
+                    if Session.load(wpath).is_stale():
+                        stale_workspaces.append(wi.name)
+                except Exception:
+                    pass
+            if stale_workspaces:
+                notes.append(
+                    f"stale workspace(s): {', '.join(stale_workspaces)} — run `gitman catchup`."
+                )
     if synced:
         messages.append(f"rebased {', '.join(synced)}.")
     if conflicted:
@@ -1722,6 +1795,79 @@ def do_pull(session: Session, *, dry_run: bool = False):
         exit_code=exit_code,
         undo_command="gitman undo",
         state=canon.state,
+    )
+
+
+def do_catchup(session: Session, *, dry_run: bool = False):
+    """Catch up to origin: pull + refresh every stale workspace. The everyday two-machine verb.
+
+    Thin wrapper over `do_pull` that additionally refreshes every stale workspace — not just the
+    current one. Positioned as the universal "get me current" intent: fetch origin trunk, advance
+    local trunk (FF or rebase-lands), rebase-or-retire surviving lanes, repark `@`, then refresh
+    every workspace that was left stale by the trunk move. Safe to run from any workspace; safe
+    when nothing needs doing (no-op)."""
+    from gitman.invariants import _refresh_stale_working_copy
+    from gitman.models import IntentResult
+    from gitman.session import Session
+    from gitman.state import capture_state
+
+    trunk = require_trunk(session.config)
+
+    if dry_run:
+        return do_pull(session, dry_run=True)  # pull's --dry-run already reports the plan
+
+    # Run the full pull — it handles trunk integration, lane rebase/retire, and current-@ repark.
+    # It's already transactional (canonical_guard) and records its own undo checkpoint.
+    pull_result = do_pull(session)
+
+    if pull_result.outcome == "BLOCKED":
+        return pull_result  # pass through the block message + exit code
+
+    # After a successful pull, every OTHER workspace whose @ was on a retired/rebased lane is
+    # stale. Refresh them all — each gets `update_stale()` + repark if needed.
+    refresh_notes: list[str] = []
+    for ws_info in session.ws.workspaces():
+        ws_name = ws_info.name
+        if ws_name == session.ws.name:
+            continue  # the current workspace was already refreshed by do_pull
+        wpath = Path(ws_info.path) if ws_info.path is not None else None
+        if wpath is None or not wpath.exists():
+            continue
+        # Load a separate Session for each workspace so we can query/reconcile its @ without
+        # disturbing the caller's. The shared root lock is NOT held here (pull already released it),
+        # but _refresh_stale_working_copy takes a session and only acts if stale — concurrent
+        # agents are paused by their own lock.
+        try:
+            ws_session = Session.load(wpath)
+        except Exception:
+            continue  # workspace dir exists but isn't a loadable jj workspace — skip
+        if ws_session.is_stale():
+            _refresh_stale_working_copy(ws_session, trunk)
+            refresh_notes.append(f"refreshed stale workspace: {ws_name}")
+
+    # Re-capture state to report the final picture.
+    final_state = capture_state(session)
+
+    # Merge pull's messages with the refresh notes.
+    messages = list(pull_result.messages)
+    notes = list(pull_result.notes)
+    if refresh_notes:
+        messages += refresh_notes
+
+    if pull_result.outcome == "ALREADY-CURRENT" and not refresh_notes:
+        outcome = "ALREADY-CURRENT"
+    elif pull_result.outcome == "CONFLICT":
+        outcome = "CONFLICT"
+    else:
+        outcome = "CAUGHT-UP"
+    return IntentResult(
+        intent="catchup",
+        outcome=outcome,
+        messages=messages,
+        notes=notes,
+        exit_code=pull_result.exit_code,
+        undo_command="gitman undo",
+        state=final_state,
     )
 
 

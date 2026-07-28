@@ -12,7 +12,14 @@ _GLYPH = {OK: "ok ", WARN: "!! ", FAIL: "XX "}
 
 
 def render_doctor(report: DoctorReport) -> str:
-    outcome = "HEALTHY" if report.exit_code == 0 else "PROBLEMS"
+    has_warn = any(c.level == WARN for c in report.checks)
+    has_fail = any(c.level == FAIL for c in report.checks)
+    if has_fail:
+        outcome = "PROBLEMS"
+    elif has_warn:
+        outcome = "WARNINGS"
+    else:
+        outcome = "HEALTHY"
     lines = [f"Gitman doctor — {outcome}"]
     for c in report.checks:
         lines.append(f"  {_GLYPH.get(c.level, '   ')}{c.name:<14} {c.detail}")
@@ -83,15 +90,26 @@ def _lane_line(lane: Lane, current: str | None) -> str:
 
 def render_status(state: RepoState) -> str:
     if not state.canonical:
-        diverged = bool(state.off_canonical) and "diverged" in state.off_canonical
-        recover = (
-            "Recover: `gitman pull`  — rebase your local lands onto origin/<trunk>."
-            if diverged
-            else "Recover: `gitman reconcile`  — adopt it into a lane, or abandon it."
-        )
+        off = state.off_canonical or ""
+        diverged = "diverged" in off
+        desynced = "out of sync with git" in off or "leftover git ref" in off
+        if desynced:
+            recover = "Recover: `gitman reconcile`  — re-sync colocated git refs to jj."
+        elif diverged:
+            recover = (
+                "Recover: `gitman pull`  — rebase your local lands onto origin/<trunk>."
+            )
+        else:
+            recover = "Recover: `gitman reconcile`  — adopt it into a lane, or abandon it."
+        if desynced:
+            kind = "DESYNCHRONIZED"
+        elif diverged:
+            kind = "DIVERGED"
+        else:
+            kind = "OFF-CANONICAL"
         return "\n".join(
             [
-                f"Gitman status — {'DIVERGED' if diverged else 'OFF-CANONICAL'}",
+                f"Gitman status — {kind}",
                 f"Reason: {state.off_canonical}",
                 recover,
                 "Exit: 1",
@@ -109,6 +127,17 @@ def render_status(state: RepoState) -> str:
         lines.append(f"note: {note}")
     if not state.lanes:
         lines.append("No lanes yet — `gitman start <name>` to begin.")
+
+    # Surfaced recovery hint: when CANONICAL but behind/ahead origin, name the catch-up/publish
+    # verb. Mirrors the off-canonical recovery pattern so the next action is always discoverable.
+    relation = state.trunk.relation
+    if relation in ("forge-ahead", "diverged"):
+        lines.append("")
+        lines.append(f"Recover: `gitman pull`  — your {state.trunk.name} is behind origin.")
+    elif relation == "local-ahead" and state.trunk.ahead_remote:
+        lines.append("")
+        lines.append(f"Recover: `gitman push`  — publish your local {state.trunk.name} to origin.")
+
     return "\n".join(lines)
 
 

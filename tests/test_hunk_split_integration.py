@@ -15,6 +15,7 @@ import pytest
 from pyjutsu import Workspace
 
 from gitman.config import GitmanConfig
+from gitman.reconcile import do_reconcile
 from gitman.core import GitmanError, do_save, do_split, do_start, do_undo
 from gitman.lanes import current_lane
 from gitman.session import Session
@@ -127,6 +128,7 @@ def test_hunk_split_undo_round_trips(tmp_path: Path):
     assert {lane.name for lane in capture_state(_sess(tmp_path)).lanes} == {"feat", "carve"}
 
     do_undo(_sess(tmp_path), op=None, list_=False)
+    do_reconcile(_sess(tmp_path), abandon_=False)
     restored = capture_state(_sess(tmp_path))
     assert restored.canonical
     assert {lane.name for lane in restored.lanes} == {"feat"}

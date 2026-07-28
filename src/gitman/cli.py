@@ -264,6 +264,17 @@ def sync(
 
 
 @app.command()
+def catchup(
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Show what would change, without changing it.")] = False,
+) -> None:
+    """Catch up to origin: fetch + integrate + rebase lanes + refresh stale workspaces.
+    The everyday two-machine verb."""
+    from gitman.core import do_catchup
+
+    _finish_intent(do_catchup(_session(), dry_run=dry_run))
+
+
+@app.command()
 def pull(
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Report the pull plan without mutating.")] = False,
 ) -> None:

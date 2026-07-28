@@ -162,6 +162,7 @@ def test_push_reset_origin_migrates_twin(tmp_path: Path):
     ws2 = Workspace.load(work)
     with ws2.transaction("rehash") as tx:
         tx.describe("main", "c1 rehashed twin")
+    ws2.git_export()
     twin = ws2.head().resolve("main").commit_id
     assert _origin_ref(remote) != twin  # non-FF by ancestry
 

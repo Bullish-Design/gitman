@@ -26,6 +26,7 @@ from gitman.core import (
     do_undo,
     map_pyjutsu_error,
 )
+from gitman.reconcile import do_reconcile
 from gitman.session import Session
 from gitman.state import capture_state
 
@@ -184,6 +185,7 @@ def test_undo_round_trips_each_intent(tmp_path: Path):
     do_start(_sess(tmp_path), "feat", workspace=False)
     assert [lane.name for lane in capture_state(_sess(tmp_path)).lanes] == ["feat"]
     do_undo(_sess(tmp_path), op=None, list_=False)
+    do_reconcile(_sess(tmp_path), abandon_=False)
     assert capture_state(_sess(tmp_path)).lanes == []
 
     # start + save → undo (reverts the save only)
@@ -192,6 +194,7 @@ def test_undo_round_trips_each_intent(tmp_path: Path):
     do_save(_sess(tmp_path), "feat work")
     assert capture_state(_sess(tmp_path)).lanes[0].head.description == "feat work"
     do_undo(_sess(tmp_path), op=None, list_=False)
+    do_reconcile(_sess(tmp_path), abandon_=False)
     assert capture_state(_sess(tmp_path)).lanes[0].head.description == ""
 
     # land → undo restores trunk + lane
@@ -201,6 +204,7 @@ def test_undo_round_trips_each_intent(tmp_path: Path):
     do_land(_sess(tmp_path), ["feat"])
     assert capture_state(_sess(tmp_path)).lanes == []
     do_undo(_sess(tmp_path), op=None, list_=False)
+    do_reconcile(_sess(tmp_path), abandon_=False)
     restored = capture_state(_sess(tmp_path))
     assert restored.trunk.commit_id == trunk_before
     assert [lane.name for lane in restored.lanes] == ["feat"]
@@ -260,6 +264,8 @@ def test_trunk_rewrite_outside_land_reverts(tmp_path: Path):
         with canonical_tx(_sess(tmp_path), "save") as tx:
             tx.set_bookmark("main", "feat")  # illegally advance trunk outside a land
     assert exc.value.exit_code == 1
+    # Rollback leaves stale git refs; reconcile heals them.
+    do_reconcile(_sess(tmp_path), abandon_=False)
     after = capture_state(_sess(tmp_path))
     assert after.trunk.commit_id == trunk_before  # reverted
     assert after.canonical
