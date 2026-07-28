@@ -162,7 +162,6 @@ def _local_bookmarks(session: Session) -> set[str]:
 def detect_trunk(session: Session) -> str:
     """Resolve trunk once: an existing main/master/trunk bookmark, else origin/HEAD, else
     'main' (created)."""
-    from gitman import gitshim
     from gitman.core import pick_remote
 
     local = _local_bookmarks(session)
@@ -170,7 +169,7 @@ def detect_trunk(session: Session) -> str:
         if cand in local:
             return cand
     if session.ws.remotes():
-        head = gitshim.remote_default_branch(session.repo_root, pick_remote(session.ws))
+        head = session.ws.git_default_branch(pick_remote(session.ws))
         if head:
             return head
     return "main"
@@ -188,28 +187,21 @@ def _version_scaffold(repo_root: Path) -> tuple[str, str]:
 def ensure_colocated(repo_root: Path, trunk: str | None = None) -> bool:
     """Colocate a jj workspace onto `repo_root` (for `gitman init --colocate`).
 
-    No-op returning ``False`` when already colocated. Otherwise it *adopts* an existing ``.git``
-    (importing HEAD/refs, leaving an empty ``@`` so uncommitted edits survive); when the directory
-    has no git at all it bootstraps an empty one first (``git init`` on the trunk branch). pyjutsu's
-    colocate reliably adopts a git repo but does not create one from nothing across versions
-    (0.8.0 raises "Failed to open git repository"), so gitman owns that bootstrap. Returns ``True``
-    if it colocated.
+    No-op returning ``False`` when already colocated. Otherwise delegates to pyjutsu's
+    ``Workspace.init(colocate=True, trunk=…)`` — which *adopts* an existing ``.git``
+    (importing HEAD/refs, leaving an empty ``@`` so uncommitted edits survive) or creates a
+    fresh colocated repo when the directory has no ``.git`` (with ``trunk`` setting the
+    initial HEAD symref so no leftover default-branch ref survives). Returns ``True`` if it
+    colocated.
     """
     from gitman.state import _is_colocated
 
     if _is_colocated(repo_root):
         return False
 
-    # pyjutsu's colocate adopts an existing .git but won't create one from nothing, so bootstrap an
-    # empty git repo (on the trunk branch) when the dir has none — see gitshim (residual git surface).
-    if not (repo_root / ".git").exists():
-        from gitman.gitshim import git_init
-
-        git_init(repo_root, trunk or "main")
-
     from pyjutsu import Workspace
 
-    Workspace.init(str(repo_root), colocate=True)
+    Workspace.init(str(repo_root), colocate=True, trunk=trunk or "main")
     return True
 
 
