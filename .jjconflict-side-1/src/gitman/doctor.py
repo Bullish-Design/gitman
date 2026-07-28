@@ -1,0 +1,190 @@
+"""`gitman doctor` — validate the execution boundary and toolchain (concept §18).
+
+Checks: inside devenv · **pyjutsu importable + its linked jj-lib matches the build target**
+(`JJ_VERSION == JJ_LIB_TARGET`) · git present (for the jj escape hatch) · colocated `.git`+`.jj` · git
+remote · frozen trunk exists · version source configured. Hard failures (missing/mismatched
+engine, not colocated) → exit 2; missing-but-expected-later items (no trunk yet) are warnings.
+
+There is no `jj` CLI to probe: jj-lib is embedded in-process via pyjutsu.
+"""
+
+from __future__ import annotations
+
+import shutil
+from dataclasses import dataclass
+from pathlib import Path
+
+from gitman.config import GitmanConfig, load_config
+from gitman.core import in_devenv
+
+OK = "ok"
+WARN = "warn"
+FAIL = "fail"
+
+
+@dataclass
+class Check:
+    level: str  # OK | WARN | FAIL
+    name: str
+    detail: str
+
+
+@dataclass
+class DoctorReport:
+    checks: list[Check]
+
+    @property
+    def exit_code(self) -> int:
+        return 2 if any(c.level == FAIL for c in self.checks) else 0
+
+
+def _is_colocated(repo_root: Path) -> bool:
+    return (repo_root / ".git").exists() and (repo_root / ".jj").exists()
+
+
+def run_doctor(repo_root: Path, config: GitmanConfig | None = None) -> DoctorReport:
+    cfg = config or load_config(repo_root)
+    checks: list[Check] = []
+
+    checks.append(
+        Check(OK, "devenv", "inside devenv shell")
+        if in_devenv()
+        else Check(FAIL, "devenv", "not inside a devenv shell — run `devenv shell -- gitman ...`")
+    )
+
+    # pyjutsu: the in-process jj-lib engine. Assert it imports and its linked jj-lib matches the
+    # version this pyjutsu build targets (the pin lives in pyjutsu; gitman inherits it).
+    try:
+        import pyjutsu
+
+        if pyjutsu.JJ_VERSION == pyjutsu.JJ_LIB_TARGET:
+            checks.append(
+                Check(OK, "pyjutsu", f"pyjutsu {pyjutsu.__version__} (jj-lib {pyjutsu.JJ_VERSION})")
+            )
+        else:
+            checks.append(
+                Check(
+                    FAIL,
+                    "pyjutsu",
+                    f"linked jj-lib {pyjutsu.JJ_VERSION} != target {pyjutsu.JJ_LIB_TARGET} "
+                    "— rebuild pyjutsu (`uv sync`)",
+                )
+            )
+    except Exception as exc:  # noqa: BLE001 — report any import/link failure as a check
+        checks.append(Check(FAIL, "pyjutsu", f"import pyjutsu failed: {exc}"))
+
+    checks.append(
+        Check(OK, "git", "git on PATH")
+        if shutil.which("git")
+        else Check(WARN, "git", "git not found on PATH (jj escape hatch and remote interop may be unavailable)")
+    )
+
+    checks.append(
+        Check(OK, "colocated", ".git + .jj present")
+        if _is_colocated(repo_root)
+        else Check(
+            FAIL,
+            "colocated",
+            "not a colocated jj repo — colocate it: "
+            "`python -c 'from pyjutsu import Workspace; Workspace.init(\".\", colocate=True)'`",
+        )
+    )
+
+    # Load the workspace once for the remote + trunk checks; report cleanly if it won't load.
+    ws = None
+    try:
+        from pyjutsu import Workspace
+
+        ws = Workspace.load(repo_root)
+    except Exception:  # noqa: BLE001 — not a loadable workspace; downstream checks degrade to warn
+        ws = None
+
+    if ws is not None and ws.remotes():
+        checks.append(Check(OK, "remote", "git remote configured"))
+    else:
+        checks.append(Check(WARN, "remote", "no git remote (publish/release will be unavailable)"))
+
+    if not cfg.trunk:
+        checks.append(Check(WARN, "trunk", "trunk not configured — run `gitman init`"))
+    elif ws is not None and _bookmark_exists(ws, cfg.trunk):
+        checks.append(Check(OK, "trunk", f"frozen trunk '{cfg.trunk}' present"))
+    else:
+        checks.append(Check(FAIL, "trunk", f"configured trunk '{cfg.trunk}' not found in repo"))
+
+    if cfg.version.configured:
+        checks.append(Check(OK, "version-source", "version source configured"))
+    else:
+        checks.append(Check(WARN, "version-source", "no [version] source (version/release unavailable)"))
+
+    # colocated jj-bookmark ↔ git-ref drift (round-09 gap B): a stuck/leftover ref makes every
+    # later `git_export` raise, silently desyncing trunk. Surface it (warn, recoverable) so it
+    # can't hide; `gitman reconcile` re-syncs. Skipped when the repo isn't colocated/loadable.
+    if ws is not None and _is_colocated(repo_root):
+        try:
+            from gitman.state import colocated_ref_desync
+
+            mismatched, leftover = colocated_ref_desync(ws.head(), ws)
+        except Exception:  # noqa: BLE001 — a probe failure must not fail doctor
+            mismatched, leftover = [], []
+        if not mismatched and not leftover:
+            checks.append(Check(OK, "colocated-refs", "jj bookmarks ↔ git refs in sync"))
+        else:
+            bits = []
+            if mismatched:
+                bits.append(f"{len(mismatched)} bookmark(s) out of sync: {', '.join(n for n, _, _ in mismatched)}")
+            if leftover:
+                bits.append(f"{len(leftover)} leftover git ref(s): {', '.join(leftover)}")
+            checks.append(Check(WARN, "colocated-refs", "; ".join(bits) + " — run `gitman reconcile`"))
+
+    # Conflicted lane bookmark (issue 11): a lane whose local + pushed positions diverged (typically a
+    # forge PR merge) names two commits, so any revset on it raises and used to wedge every command.
+    # `colocated_ref_desync` deliberately *skips* conflicted bookmarks, so it can't see this — a
+    # dedicated structural read closes the doctor-vs-status blind spot that reported HEALTHY while the
+    # repo was bricked. WARN (recoverable): `gitman reconcile` retires/resolves it.
+    if ws is not None and cfg.trunk:
+        try:
+            from gitman.state import _conflicted_lanes
+
+            conflicted = sorted(_conflicted_lanes(ws.head(), cfg.trunk))
+        except Exception:  # noqa: BLE001 — a probe failure must not fail doctor
+            conflicted = []
+        if conflicted:
+            checks.append(
+                Check(
+                    WARN,
+                    "lane-conflicts",
+                    f"lane bookmark(s) conflicted (diverged from origin): {', '.join(conflicted)} "
+                    "— run `gitman reconcile`",
+                )
+            )
+
+    # Dirty @ on bare trunk: warn early so the user starts a lane BEFORE they try to land.
+    # The same guard exists in precheck_canonical (invariants.py), but that only fires at
+    # land/push time. Surface it here so the nudge happens at doctor/status time.
+    if ws is not None and cfg.trunk:
+        try:
+            wc = ws.head().working_copy()
+            if cfg.trunk in wc.bookmarks and not wc.is_empty:
+                checks.append(
+                    Check(
+                        WARN,
+                        "dirty-trunk",
+                        f"working copy @ is the trunk commit '{cfg.trunk}' with uncommitted "
+                        f"edits — `gitman start <name> --workspace` to move this work into a lane "
+                        f"before landing.",
+                    )
+                )
+        except Exception:  # noqa: BLE001
+            pass
+
+    return DoctorReport(checks)
+
+
+def _bookmark_exists(ws, name: str) -> bool:
+    from pyjutsu import PyjutsuError
+
+    try:
+        ws.resolve(name)
+    except PyjutsuError:
+        return False
+    return True
