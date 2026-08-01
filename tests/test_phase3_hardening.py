@@ -99,6 +99,37 @@ def test_non_transport_git_error_maps_to_exit_1():
         assert err.exit_code == 1, f"'{msg}' → exit {err.exit_code}, expected 1"
 
 
+# ── S9j: pyjutsu hook errors (0.15.0) ────────────────────────────────────────────
+
+
+def test_hook_abort_maps_to_exit_1():
+    """A pre-hook veto (pyjutsu >= 0.15) → clean exit-1 report, never a traceback."""
+    from pyjutsu.errors import HookAbort
+
+    err = map_pyjutsu_error(HookAbort("ruff check failed"))
+    assert err.exit_code == 1
+    assert "vetoed" in str(err)
+
+
+def test_post_hook_error_maps_to_exit_1_and_notes_op_landed():
+    """A post-hook failure must report that the operation LANDED (honesty contract)."""
+    from pyjutsu.errors import PostHookError
+
+    err = map_pyjutsu_error(PostHookError("op-1234", "post-commit hook failed"))
+    assert err.exit_code == 1
+    assert "landed" in str(err)
+    assert "op-1234" in str(err)
+
+
+def test_post_hook_error_without_op_id_maps_cleanly():
+    """PostHookError with no operation id (e.g. a no-op push) still maps cleanly."""
+    from pyjutsu.errors import PostHookError
+
+    err = map_pyjutsu_error(PostHookError(None, "post-push hook failed"))
+    assert err.exit_code == 1
+    assert "landed" in str(err)
+
+
 # ── S9i: pick_remote ──────────────────────────────────────────────────────────────
 
 

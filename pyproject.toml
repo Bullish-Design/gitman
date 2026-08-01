@@ -1,6 +1,6 @@
 [project]
 name = "gitman"
-version = "0.4.1"
+version = "0.4.2"
 description = "Agent-first version-control interface: a safe lane workflow over jujutsu + colocated git."
 readme = "README.md"
 requires-python = ">=3.13"
@@ -11,11 +11,12 @@ authors = [
 ]
 
 # Lean base: pydantic + typer + pyjutsu (the in-process jj-lib engine). git comes from
-# devenv (for tags.py, the one retained subprocess); there is no `jj` CLI dependency.
+# devenv (doctor's escape-hatch check); there is no `jj` CLI dependency. pyjutsu >= 0.15
+# binds the complete in-process surface (project 14 + hooks); gitman maps its hook errors.
 dependencies = [
   "pydantic>=2.12",
   "typer>=0.12",
-  "pyjutsu>=0.13.0",
+  "pyjutsu>=0.15.0",
 ]
 
 [project.optional-dependencies]
