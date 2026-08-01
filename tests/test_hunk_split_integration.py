@@ -15,7 +15,6 @@ import pytest
 from pyjutsu import Workspace
 
 from gitman.config import GitmanConfig
-from gitman.reconcile import do_reconcile
 from gitman.core import GitmanError, do_save, do_split, do_start, do_undo
 from gitman.lanes import current_lane
 from gitman.reconcile import do_reconcile
