@@ -41,3 +41,11 @@ archive/
 # Nix build output
 /result
 /result-*
+
+# Agent-files convention (docs/AGENT-FILES.md in repoman): .agents/skills/ +
+# AGENTS.md + CLAUDE.md are tracked; the rest of .agents/ is tool runtime state.
+.agents/**
+!.agents/skills/
+!.agents/skills/**
+!AGENTS.md
+!CLAUDE.md
