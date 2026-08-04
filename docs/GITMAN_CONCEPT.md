@@ -551,7 +551,7 @@ push_tag   = true
   commit (tags live on the git side — colocated; jj tag support is read-only) and push it.
   The **verify hook runs before any write**, so a blocked release leaves no tag and no
   bump. Release normally happens from a landed change on trunk.
-- **Agent angle:** `gitman init` scaffolds `.claude/skills/gitman/SKILL.md` documenting
+- **Agent angle:** `gitman init` scaffolds `.agents/skills/gitman/SKILL.md` documenting
   the lane loop *and* where this repo's version lives + how to bump it. If versioning is
   unusual, the agent edits `scripts/version.sh`, not Gitman.
 
@@ -619,7 +619,7 @@ name the lane.
 
 ## 17. Agent integration
 
-`gitman init` scaffolds `.claude/skills/gitman/SKILL.md` (mirrors Testee's skill): route
+`gitman init` scaffolds `.agents/skills/gitman/SKILL.md` (mirrors Testee's skill): route
 *all* version control through Gitman, never raw `jj`/`git` (it breaks canonicity);
 documents the lane loop, the trunk↔origin verbs (`push`/`pull`), and the safety net; explains exit
 codes; points at `gitman undo` and `gitman reconcile` (off-canonical); and records the repo's

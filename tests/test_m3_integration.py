@@ -92,7 +92,7 @@ def test_init_freezes_trunk_and_scaffolds(tmp_path: Path):
     cfg = load_config(tmp_path)
     assert cfg.trunk == "main"
     assert (tmp_path / "gitman.toml").is_file()
-    assert (tmp_path / ".claude" / "skills" / "gitman" / "SKILL.md").is_file()
+    assert (tmp_path / ".agents" / "skills" / "gitman" / "SKILL.md").is_file()
 
     # Re-init is refused (trunk frozen, I1) — a fresh Session now carries the frozen config.
     with pytest.raises(GitmanError):

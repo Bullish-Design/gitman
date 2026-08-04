@@ -1,5 +1,5 @@
 """`gitman init`: resolve + freeze trunk (I1), scaffold gitman.toml and the agent skill
-(.claude/skills/gitman/SKILL.md). Trunk is written once here, then frozen — runtime never
+(.agents/skills/gitman/SKILL.md). Trunk is written once here, then frozen — runtime never
 re-detects it. See concept §15, §17, §20.
 """
 
@@ -247,7 +247,7 @@ def do_init(session: Session, trunk_opt: str | None, *, colocated_now: bool = Fa
         gitman_toml.write_text(f'trunk = "{trunk}"\n{version_snippet}')
         messages.append(f"wrote {gitman_toml.name} (trunk frozen).")
 
-        skill_path = repo_root / ".claude" / "skills" / "gitman" / "SKILL.md"
+        skill_path = repo_root / ".agents" / "skills" / "gitman" / "SKILL.md"
         skill_path.parent.mkdir(parents=True, exist_ok=True)
         skill_path.write_text(SKILL_MD.format(version_location=version_location))
         messages.append(f"scaffolded {skill_path.relative_to(repo_root)}.")

@@ -66,7 +66,7 @@ devenv shell -- gitman init --colocate   # colocate jj onto git (new or existing
 devenv shell -- gitman status
 ```
 
-`gitman init` scaffolds `.claude/skills/gitman/SKILL.md` so coding agents know the loop.
+`gitman init` scaffolds `.agents/skills/gitman/SKILL.md` so coding agents know the loop.
 
 ## Examples
 
