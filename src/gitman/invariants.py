@@ -264,6 +264,113 @@ def _postcondition(session: Session, intent: str, trunk_before: str | None, op_b
     return after
 
 
+def sync_colocated_refs(session: Session) -> list[str]:
+    """Make jj and the colocated `refs/heads/*` agree **without ever discarding history**.
+
+    The one shared ref-repair path — `reconcile` (gap B healing), `undo` (which rewinds jj but not
+    git), and `_export_colocated_git`'s fallback all route here, so the classification below can
+    never be got right in one place and wrong in another (issue 31 had three near-duplicate loops,
+    two of them destructive).
+
+    Every mismatch is one of exactly two things, told apart by `classify_ref_desync`:
+
+      * **rewrite** (git's commit is known to jj) — jj moved off it deliberately: an `undo` rewind,
+        or an export that failed on a D/F conflict. jj is authoritative → force the ref with
+        `write_git_ref`. jj's export *refuses* to rewind a ref (`GitError: failed to export some
+        bookmarks`), so the escape hatch is genuinely required here — and what it drops stays
+        reachable in jj's op log, so `gitman undo` can still reach it.
+      * **adopt** (git's commit is unknown to jj) — git holds history jj never imported. Only
+        `git_import` heals this. Force-writing here is issue 31's data-loss path: it orphans
+        commits jj cannot even name, outside the op log, with no branch reflog entry.
+
+    Ordering is load-bearing:
+
+      1. pin the **rewrite** refs to jj first, so step 4's import sees them already at jj's
+         position and cannot re-adopt what an `undo` just retired;
+      2. delete **leftover** refs first for the same reason — an import would re-create the
+         bookmark and resurrect an abandoned lane;
+      3. create refs for bookmarks that have **no** git ref, or the import reads their absence as
+         "deleted in git" and prunes the bookmark;
+      4. only then import. This ordering is what used to be approximated by gating the import
+         behind `if leftover:` — that gate closed the one path that rescues git-only commits.
+
+    Best-effort throughout (it runs after already-committed intents): returns compact notes naming
+    what it did, `[]` when already in sync or not colocated.
+    """
+    from pyjutsu import PyjutsuError
+
+    from gitman.state import _is_colocated, classify_ref_desync, colocated_ref_desync
+
+    if not _is_colocated(session.repo_root):
+        return []
+    view = session.view()
+    try:
+        mismatched, leftover = colocated_ref_desync(view, session.ws)
+    except Exception:
+        return []
+    if not mismatched and not leftover:
+        return []
+    adopt, rewrite = classify_ref_desync(view, mismatched)
+
+    def _write(name: str, commit_id: str) -> None:
+        try:
+            session.ws.write_git_ref(name, commit_id)
+        except PyjutsuError:
+            pass
+
+    for name, jj_id, _git_id in rewrite:  # (1) jj-authoritative — provably non-destructive now
+        _write(name, jj_id)
+    for name in leftover:  # (2) retire before the import, else it re-creates the bookmark
+        try:
+            session.ws.delete_git_ref(name)
+        except PyjutsuError:
+            pass
+    git_names = set(session.ws.git_refs())
+    for b in view.bookmarks():  # (3) keep the import from reading "deleted in git" and pruning
+        if b.remote is None and b.name not in git_names:
+            try:
+                _write(b.name, view.resolve(b.name).commit_id)
+            except Exception:
+                pass
+
+    notes: list[str] = []
+    conflicted_now: list[str] = []
+    if adopt or leftover:  # (4) the heal that keeps git-only commits — and lands in jj's op log
+        before = {b.name for b in view.bookmarks() if b.remote is None and b.conflicted}
+        try:
+            session.ws.git_import()
+        except PyjutsuError as exc:
+            notes.append(f"could not import git history for: {', '.join(n for n, _, _ in adopt)} ({exc}).")
+            adopt = []
+        else:
+            # Both sides moved → jj-lib resolves it into a *conflicted* bookmark rather than picking
+            # a winner. That's the honest answer to "diverged", and gitman already models it:
+            # `_conflicted_lanes`/`_resolve_conflicted_lane` take it from here (reconcile runs its
+            # conflicted pass after this helper for exactly that reason).
+            conflicted_now = sorted(
+                b.name
+                for b in session.view().bookmarks()
+                if b.remote is None and b.conflicted and b.name not in before
+            )
+    try:
+        session.ws.git_export()  # re-sync jj's own record of the refs (clears the stale-export state)
+    except Exception:
+        pass
+
+    if adopt:
+        notes.append(f"imported git-only history into jj: {', '.join(n for n, _, _ in adopt)}.")
+    if rewrite:
+        notes.append(f"re-pointed colocated git ref(s) to jj: {', '.join(n for n, _, _ in rewrite)}.")
+    if leftover:
+        notes.append(f"removed leftover colocated git ref(s): {', '.join(leftover)}.")
+    if conflicted_now:
+        notes.append(
+            f"jj and git had both moved {', '.join(conflicted_now)} — kept both sides "
+            f"(conflicted bookmark), neither discarded."
+        )
+    return notes
+
+
 def _export_colocated_git(session: Session) -> list[str]:
     """Mirror jj's refs into the colocated git after a successful mutation. Returns surfacing notes.
 
@@ -288,49 +395,20 @@ def _export_colocated_git(session: Session) -> list[str]:
     try:
         session.ws.git_export()
     except Exception:  # was: except PyjutsuError — GitError/AttributeError on pyjutsu versions escapes
-        # git_export can fail on D/F conflicts with fractal lane names (e.g. refs/heads/T
-        # blocking refs/heads/T/api). Manually sync refs using pyjutsu's D/F-safe
-        # write_git_ref/delete_git_ref, then re-export the tracking state.
-        from pyjutsu import PyjutsuError
-
+        # git_export refuses two things: a D/F conflict from fractal lane names (refs/heads/T
+        # blocking refs/heads/T/api) and any ref that moved out from under jj. Repair via the
+        # shared classifier — the *only* ref writer — so a git-ahead ref can never be force-reset
+        # here either (issue 31: this fallback was the second copy of that bug).
         from gitman.state import colocated_ref_desync
 
-        view = session.view()
         try:
-            mismatched, leftover = colocated_ref_desync(view, session.ws)
+            mismatched, leftover = colocated_ref_desync(session.view(), session.ws)
         except Exception:
             mismatched, leftover = [], []
-        # Sync mismatched bookmarks (jj → git) and create refs for bookmarks with no git ref.
-        local_bookmarks: dict[str, str] = {}
-        for b in view.bookmarks():
-            if b.remote is None:
-                try:
-                    local_bookmarks[b.name] = view.resolve(b.name).commit_id
-                except Exception:
-                    pass
-        git_names = set(session.ws.git_refs())
-        mismatched_names = {n for n, _, _ in mismatched}
-        for name, jj_id in local_bookmarks.items():
-            if name not in git_names or name in mismatched_names:
-                try:
-                    session.ws.write_git_ref(name, jj_id)
-                except PyjutsuError:
-                    pass
-        # Delete leftover git refs (no matching jj bookmark).
-        for name in leftover:
-            try:
-                session.ws.delete_git_ref(name)
-            except PyjutsuError:
-                pass
-        # Re-import and re-export to sync tracking refs.
-        try:
-            session.ws.git_import()
-            session.ws.git_export()
-        except PyjutsuError:
-            pass
         stuck = sorted([n for n, _, _ in mismatched] + leftover)
         names = ", ".join(stuck) if stuck else "some bookmarks"
         notes.append(f"colocated git ref(s) stale for: {names} — run `gitman reconcile` to re-sync.")
+        notes += sync_colocated_refs(session)
     # Total colocated sync (HEAD + index) after every mutation so raw-git tooling never lags jj
     # (15-RC6). Best-effort and last: a non-colocated repo (or a rare sync failure) must never undo
     # the already-committed, already-recorded intent.

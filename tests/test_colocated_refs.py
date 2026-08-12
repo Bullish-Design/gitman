@@ -135,3 +135,128 @@ def test_reconcile_heals_desync_without_resurrecting(tmp_path: Path):
     ws.git_export()
     check = next(c for c in run_doctor(work).checks if c.name == "colocated-refs")
     assert check.level == OK
+
+
+# --- issue 31: a git ref AHEAD of jj must be adopted, never force-reset -----------------
+
+
+def _raw_git_commit(work: Path, msg: str, fn: str = "raw.txt") -> str:
+    """Advance `refs/heads/main` through raw git — the way CopyRoom / an IDE / CI / an agent that
+    doesn't route through gitman moves a colocated branch. jj never imports it, so the commit
+    exists in git alone. Built with plumbing against a scratch index (the `_forge_divergent_side`
+    idiom) so jj's own index and `@` are untouched: this is external history, not jj's. The working
+    copy is deliberately NOT written — jj would snapshot the change into `@`, and in this fixture
+    `main` sits at `@`, so jj's side would move too and the drift would stop being one-directional."""
+    import os
+
+    env = {**os.environ, "GIT_INDEX_FILE": str(work / ".git" / "gitman-test-index")}
+
+    def run(*args: str, inp: str | None = None) -> str:
+        p = subprocess.run(
+            ["git", *args], cwd=work, env=env, input=inp, check=True, capture_output=True, text=True
+        )
+        return p.stdout.strip()
+
+    blob = run("hash-object", "-w", "--stdin", inp=msg + "\n")
+    run("read-tree", "main")
+    run("update-index", "--add", "--cacheinfo", f"100644,{blob},{fn}")
+    tree = run("write-tree")
+    sha = run("-c", "user.email=t@t.t", "-c", "user.name=T", "commit-tree", tree, "-p", "main", "-m", msg)
+    run("update-ref", "refs/heads/main", sha)
+    return sha
+
+
+def test_git_only_commit_is_classified_as_adopt_not_rewrite(tmp_path: Path):
+    """The classifier's whole job: jj cannot even name a git-only commit, so ancestry can't rank
+    the two sides — resolvability can."""
+    from gitman.state import _known_to_jj, classify_ref_desync
+
+    work, ws = _colocated(tmp_path)
+    git_sha = _raw_git_commit(work, "raw commit")
+
+    view = _sess(work).view()
+    assert _known_to_jj(view, git_sha) is False  # jj has never imported it
+    mismatched, _leftover = colocated_ref_desync(view, ws)
+    adopt, rewrite = classify_ref_desync(view, mismatched)
+    assert [n for n, _, _ in adopt] == ["main"]
+    assert rewrite == []
+
+
+def test_reconcile_never_discards_git_only_commits(tmp_path: Path):
+    """Issue 31, exactly as reported: `reconcile` on a git-ahead trunk used to force
+    `refs/heads/main` BACKWARD to jj, orphaning every commit git had and jj didn't — reporting
+    RECONCILED while doing it. It must adopt them into jj instead."""
+    work, ws = _colocated(tmp_path)
+    git_sha = _raw_git_commit(work, "raw commit")
+
+    res = do_reconcile(_sess(work), abandon_=False)
+    assert res.exit_code == 0, res.messages
+
+    assert _gref(work, "refs/heads/main") == git_sha  # the ref did NOT move backward
+    assert _sess(work).view().resolve("main").commit_id == git_sha  # jj adopted it
+    mismatched, leftover = colocated_ref_desync(_sess(work).view(), ws)
+    assert not mismatched and not leftover
+
+
+def test_status_names_the_direction_of_the_drift(tmp_path: Path):
+    """31-RC4: "1 bookmark(s) out of sync" gave the operator no way to tell an adoptable
+    fast-forward from a lagging ref, so `reconcile` looked equally safe in both."""
+    from gitman.state import capture_state
+
+    work, _ws = _colocated(tmp_path)
+    _raw_git_commit(work, "raw commit")
+
+    off = capture_state(_sess(work)).off_canonical or ""
+    assert "git has history jj hasn't imported on: main" in off
+
+
+def test_undo_resyncs_colocated_refs(tmp_path: Path):
+    """31-RC3: `undo` restored jj and left `refs/heads/*` pointing at the undone commits, so every
+    undo left the repo DESYNCHRONIZED and funnelled the operator back into `reconcile`. jj's own
+    export refuses to rewind a ref, so undo has to do it explicitly."""
+    from gitman.core import do_undo
+    from gitman.invariants import write_undo_checkpoint
+
+    work, ws = _colocated(tmp_path)
+    op_before = ws.head_operation()
+    _make_lane(ws, work, "feat", "ft.txt")
+    ws.git_export()
+    assert _gref(work, "refs/heads/feat") is not None
+    write_undo_checkpoint(work, op_before, "start")
+
+    res = do_undo(_sess(work), op=None, list_=False)
+    assert res.outcome == "UNDONE"
+
+    fresh = _sess(work).view()
+    assert "feat" not in {b.name for b in fresh.bookmarks() if b.remote is None}
+    assert _gref(work, "refs/heads/feat") is None  # git rewound too, not just jj
+    mismatched, leftover = colocated_ref_desync(fresh, ws)
+    assert not mismatched and not leftover
+
+
+def test_reconcile_keeps_both_sides_when_jj_and_git_both_moved(tmp_path: Path):
+    """True divergence: jj and git each advanced `main` independently. There is no safe winner, so
+    the import resolves it into a *conflicted* bookmark — both sides kept — and `reconcile` reports
+    PARTIAL rather than silently picking one (or crashing on the now-unresolvable trunk revset)."""
+    work, ws = _colocated(tmp_path)
+    base = _gref(work, "refs/heads/main")
+    git_sha = _raw_git_commit(work, "raw commit")  # git side
+    with ws.transaction("jj side") as tx:  # jj side, from the same base
+        tx.new(base)
+        tx.describe("@", "jj commit")
+    (work / "jj.txt").write_text("jj\n")
+    ws.snapshot()
+    jj_sha = ws.working_copy().commit_id
+    with ws.transaction("point main at the jj side") as tx:
+        tx.set_bookmark("main", jj_sha)
+        tx.new(base)
+
+    res = do_reconcile(_sess(work), abandon_=False)
+    assert res.exit_code == 1, res.messages  # honest: still needs a human call
+    assert res.outcome == "PARTIAL"
+
+    # Neither side was discarded — both commits are still reachable in the repo.
+    log = subprocess.run(
+        ["git", "log", "--all", "--format=%H"], cwd=work, capture_output=True, text=True
+    ).stdout
+    assert git_sha in log and jj_sha in log

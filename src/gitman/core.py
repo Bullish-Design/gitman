@@ -2086,7 +2086,12 @@ def do_resolve(session: Session, list_: bool):
 
 
 def do_undo(session: Session, op: str | None, list_: bool):
-    from gitman.invariants import clear_undo_checkpoint, read_undo_checkpoint, repo_lock
+    from gitman.invariants import (
+        clear_undo_checkpoint,
+        read_undo_checkpoint,
+        repo_lock,
+        sync_colocated_refs,
+    )
     from gitman.models import IntentResult
 
     if list_:
@@ -2104,14 +2109,22 @@ def do_undo(session: Session, op: str | None, list_: bool):
                 return IntentResult(
                     intent="undo",
                     outcome="UNDONE",
-                    messages=["undid the last operation (no recorded intent checkpoint)."],
+                    messages=["undid the last operation (no recorded intent checkpoint)."]
+                    + sync_colocated_refs(session),
                 )
             target, what = rec["op"], f"intent '{rec.get('intent', '?')}'"
         session.ws.restore_operation(target)
+        # `restore_operation` rewinds jj only — `refs/heads/*` keep pointing at the undone commits,
+        # and jj's own export *refuses* to rewind a ref, so without this the repo is left
+        # DESYNCHRONIZED and the operator is sent to `reconcile` after every undo (31-RC3). Every
+        # ref rewound here is jj-authoritative by construction (jj holds the commit the ref names —
+        # it is in the op log we just restored past), so the shared classifier takes the safe branch
+        # and a git-only commit still cannot be discarded.
+        ref_notes = sync_colocated_refs(session)
         clear_undo_checkpoint(session.repo_root)
     return IntentResult(
         intent="undo",
         outcome="UNDONE",
-        messages=[f"reverted {what}."],
+        messages=[f"reverted {what}."] + ref_notes,
         notes=["older intents: `gitman undo --list`, then `gitman undo --op <id>`."],
     )

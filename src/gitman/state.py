@@ -274,10 +274,13 @@ def colocated_ref_desync(view: RepoView, ws: Workspace) -> tuple[list[tuple[str,
 
     Returns `(mismatched, leftover)`:
       * `mismatched` — `(name, jj_id, git_id)` for each *local* (non-conflicted) jj bookmark whose
-        `refs/heads/<name>` exists in git but points elsewhere (jj is the source of truth).
-        A missing git ref (normal pre-export state) is NOT flagged — only genuine split-brain.
+        `refs/heads/<name>` exists in git but points elsewhere. A missing git ref (normal
+        pre-export state) is NOT flagged — only genuine split-brain.
       * `leftover`   — `refs/heads/<name>` with no matching local jj bookmark (e.g. an abandoned
         lane's lingering ref — the kind that makes every later `git_export` raise).
+
+    Detection only: which side is authoritative is `classify_ref_desync`'s call, never assumed
+    here (issue 31 — assuming jj won unconditionally is what discarded git-only commits).
     """
     refs = _git_refs_heads(ws)
     local: dict[str, str] = {}
@@ -294,6 +297,49 @@ def colocated_ref_desync(view: RepoView, ws: Workspace) -> tuple[list[tuple[str,
     ]
     leftover = sorted(name for name in refs if name not in local)
     return mismatched, leftover
+
+
+def _known_to_jj(view: RepoView, commit_id: str) -> bool:
+    """Whether jj's index holds `commit_id` — the one bit that classifies colocated ref drift.
+
+    In a colocated repo the git object store IS jj's backend, so a `refs/heads/*` always names a
+    real object; what differs is whether jj has ever **imported** it. Unknown ⟺ git holds history
+    jj has never seen (a raw-git commit, an IDE, a CI bot, an agent that doesn't route through
+    gitman).
+
+    Ancestry cannot make this call, which is why issue 31's first-cut fix doesn't work: the
+    git-only commit isn't in the index at all (`is_ancestor` raises `RevsetError` on it), and a
+    post-`undo` rewrite is *neither* ancestor nor descendant of jj's position — so an ancestry
+    classifier would refuse the single most routine heal there is.
+
+    Fail-safe by construction: any failure answers "unknown", which routes the caller to
+    `git_import` (never discards) rather than to a force-write (can discard).
+    """
+    try:
+        view.resolve(commit_id)
+        return True
+    except Exception:
+        return False
+
+
+def classify_ref_desync(
+    view: RepoView, mismatched: list[tuple[str, str, str | None]]
+) -> tuple[list[tuple[str, str, str | None]], list[tuple[str, str, str | None]]]:
+    """Split `colocated_ref_desync`'s `mismatched` into `(adopt, rewrite)` — who is authoritative:
+
+      * `adopt`   — git's commit is unknown to jj: git holds history jj never imported. ONLY
+        `git_import` heals this. Force-writing the ref to jj here orphans commits jj cannot even
+        name — the issue-31 data-loss path.
+      * `rewrite` — git's commit is known to jj, so jj moved off it deliberately (an `undo`
+        rewind, a `git_export` that failed on a D/F conflict). jj is authoritative; the ref is
+        safe to force, and what it drops stays reachable in jj's op log.
+    """
+    adopt: list[tuple[str, str, str | None]] = []
+    rewrite: list[tuple[str, str, str | None]] = []
+    for name, jj_id, git_id in mismatched:
+        target = rewrite if (git_id and _known_to_jj(view, git_id)) else adopt
+        target.append((name, jj_id, git_id))
+    return adopt, rewrite
 
 
 def find_strays(view: RepoView, trunk: str) -> list[Change]:
@@ -513,10 +559,24 @@ def capture_state(session: Session) -> RepoState:
     # elsewhere. Leftover refs (no matching jj bookmark) are common after undo/abandon
     # and don't cause split-brain; `doctor` still surfaces them, and `reconcile` heals.
     if mismatched:
+        # Name the *direction* per bookmark, not just the fact of drift (31-RC4): "git has history
+        # jj hasn't imported" and "the git ref lags jj" call for opposite repairs, and the operator
+        # deserves to know which one `reconcile` is about to do. Deliberately no commit count for
+        # the adopt side — jj cannot walk commits it has not imported, so any number here would be
+        # invented.
+        adopt, rewrite = classify_ref_desync(pre_view, mismatched)
+        parts = []
+        if adopt:
+            parts.append(
+                f"git has history jj hasn't imported on: {', '.join(n for n, _, _ in adopt)} "
+                f"(`gitman reconcile` adopts it — nothing is discarded)"
+            )
+        if rewrite:
+            parts.append(f"git ref(s) lag jj: {', '.join(n for n, _, _ in rewrite)}")
         names = ", ".join(n for n, _, _ in mismatched)
         reasons.append(
             f"{len(mismatched)} bookmark(s) out of sync with git: {names}"
-            " — run `gitman reconcile`."
+            f" — {'; '.join(parts)} — run `gitman reconcile`."
         )
 
     off_canonical = " ".join(reasons) if reasons else None

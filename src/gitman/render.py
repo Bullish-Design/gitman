@@ -94,7 +94,9 @@ def render_status(state: RepoState) -> str:
         diverged = "diverged" in off
         desynced = "out of sync with git" in off or "leftover git ref" in off
         if desynced:
-            recover = "Recover: `gitman reconcile`  — re-sync colocated git refs to jj."
+            # Not "re-sync refs to jj" any more — reconcile now heals in whichever direction the
+            # drift runs, adopting git-only history instead of discarding it (issue 31).
+            recover = "Recover: `gitman reconcile`  — reconcile jj and colocated git; no commits are discarded."
         elif diverged:
             recover = (
                 "Recover: `gitman pull`  — rebase your local lands onto origin/<trunk>."

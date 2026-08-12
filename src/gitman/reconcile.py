@@ -4,14 +4,18 @@ Non-interactive (agent context): it heals two desyncs in one pass — (1) **off-
 (non-empty changes outside every lane): by default each is **adopted** into an auto-named lane
 (`adopted-<commit_id>` bookmark — keyed off commit_id so divergent sides get distinct names),
 or discarded with `--abandon`; (2) **colocated git-ref drift**
-(round-09 gap B): a live bookmark whose `refs/heads/<name>` lags jj, or an abandoned lane's
-leftover ref that makes every `git_export` raise. It runs without the canonical precheck (the repo
-is off-canonical by definition) and records an undo checkpoint so `gitman undo` can revert it.
+(round-09 gap B): a live bookmark whose `refs/heads/<name>` disagrees with jj — in *either*
+direction (`invariants.sync_colocated_refs` classifies which side is authoritative and imports
+git-only history rather than discarding it — issue 31) — or an abandoned lane's leftover ref that
+makes every `git_export` raise. It runs without the canonical precheck (the repo is off-canonical
+by definition) and records an undo checkpoint so `gitman undo` can revert it.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+
+from pyjutsu.errors import RevsetError
 
 from gitman.core import _target, require_trunk
 from gitman.invariants import _refresh_stale_working_copy
@@ -20,67 +24,9 @@ if TYPE_CHECKING:
     from gitman.session import Session
 
 
-def _heal_colocated_refs(session: Session) -> list[str]:
-    """Re-sync colocated git refs to jj (the source of truth): force each out-of-sync live
-    bookmark's `refs/heads/<name>` to its jj commit, delete every leftover ref with no jj
-    bookmark, then `git_import()`+`git_export()` to reconcile jj's `@git` tracking. Setting refs
-    explicitly (vs. plain import) avoids resurrecting an abandoned lane.
-
-    Refs are healed in-process via pyjutsu's `write_git_ref`/`delete_git_ref` (project 14 P4). These
-    are D/F-safe as of pyjutsu 0.12.2: fractal lane names (a loose `refs/heads/T` shadowing
-    `refs/heads/T/api`) are routed through `packed-refs` exactly as `git update-ref` would, so no raw
-    git subprocess is needed here anymore. `delete_git_ref` is idempotent (an absent ref is a
-    no-op)."""
-    from pyjutsu import PyjutsuError
-
-    from gitman.state import _is_colocated, colocated_ref_desync
-
-    if not _is_colocated(session.repo_root):
-        return []
-    mismatched, leftover = colocated_ref_desync(session.view(), session.ws)
-    if not mismatched and not leftover:
-        return []
-    for name, jj_id, _git_id in mismatched:
-        session.ws.write_git_ref(name, jj_id)
-    # Also create git refs for local bookmarks that have NO git ref at all — otherwise
-    # `git_import` below would interpret the absent ref as "branch deleted remotely" and
-    # prune the jj bookmark. This happens routinely after `undo` (which restores jj state
-    # but not colocated git refs).
-    view = session.view()
-    local_bookmarks: dict[str, str] = {}
-    for b in view.bookmarks():
-        if b.remote is None:
-            try:
-                local_bookmarks[b.name] = view.resolve(b.name).commit_id
-            except Exception:
-                pass
-    git_names = set(session.ws.git_refs())
-    mismatched_names = {n for n, _, _ in mismatched}
-    for name, jj_id in local_bookmarks.items():
-        if name not in git_names and name not in mismatched_names:
-            session.ws.write_git_ref(name, jj_id)
-    for name in leftover:
-        session.ws.delete_git_ref(name)
-    # Only git_import when leftovers were removed (the import reconciles the deletion).
-    # Skipping it avoids resurrecting abandoned commits via refs/jj/keep entries that
-    # git_import creates when it sees a git ref moved by write_git_ref.
-    if leftover:
-        try:
-            session.ws.git_import()
-            session.ws.git_export()
-        except PyjutsuError:
-            pass  # refs are already corrected on disk; tracking re-syncs on the next clean export
-    notes: list[str] = []
-    if mismatched:
-        notes.append(f"re-synced colocated git ref(s): {', '.join(n for n, _, _ in mismatched)}.")
-    if leftover:
-        notes.append(f"removed leftover colocated git ref(s): {', '.join(leftover)}.")
-    return notes
-
-
 def do_reconcile(session: Session, abandon_: bool):
     from gitman.core import _resolve_conflicted_lane
-    from gitman.invariants import repo_lock, write_undo_checkpoint
+    from gitman.invariants import repo_lock, sync_colocated_refs, write_undo_checkpoint
     from gitman.models import IntentResult
     from gitman.state import _conflicted_lanes, capture_state, colocated_ref_desync, find_strays
 
@@ -102,7 +48,34 @@ def do_reconcile(session: Session, abandon_: bool):
                 )
 
             actions: list[str] = list(refresh_notes)
-            # Conflicted lanes FIRST: clearing them is what unwedges the repo (issue 11), and retiring
+            # Colocated refs FIRST (gap B). The import step can bring in git-only history — trunk
+            # included — so everything downstream must read the *post*-import view: strays scanned
+            # against a stale trunk get adopted onto a stale base and report a diff that double-counts
+            # trunk content (31-RC6), and a both-sides-moved bookmark only becomes visible as a
+            # conflicted lane once the import has resolved it (which the pass below then handles).
+            ref_notes = sync_colocated_refs(session)
+            if ref_notes:
+                view = session.fresh_view()
+                try:
+                    conflicted = _conflicted_lanes(view, trunk)
+                    # UNION, not replace. The import can abandon a commit that just became
+                    # unreachable in git (a retired keep-ref / leftover lane ref), which would
+                    # silently drop a stray that was visible a moment ago — trading one discard path
+                    # for another. Adopting it anyway re-anchors it; `create_bookmark` targets
+                    # commit_id, so an abandoned commit is still a valid target (issue 06 §G2).
+                    after = find_strays(view, trunk)
+                    seen = {c.commit_id for c in after}
+                    strays = after + [c for c in strays if c.commit_id not in seen]
+                except RevsetError:
+                    # The import resolved a both-sides-moved bookmark into a *conflicted* one —
+                    # keeping both sides, discarding neither. When that bookmark is trunk, every
+                    # trunk-anchored revset now raises. Keep the pre-heal scan and fall through:
+                    # `capture_state` already models a conflicted trunk, so this reports PARTIAL
+                    # with the `adopt --force` recommendation instead of crashing the one verb the
+                    # operator was told to run.
+                    pass
+
+            # Conflicted lanes next: clearing them is what unwedges the repo (issue 11), and retiring
             # one can orphan local commits, so strays must be (re-)scanned afterwards. Local recovery —
             # don't push-delete the remote branch here (that's a forge action; `pull`/`land` own it).
             if conflicted:
@@ -111,7 +84,6 @@ def do_reconcile(session: Session, abandon_: bool):
                 view = session.fresh_view()  # resolving may have orphaned local commits → re-scan
                 strays = find_strays(view, trunk)
 
-            ref_notes = _heal_colocated_refs(session)  # gap B: heal git-ref drift (also clears retired refs)
             existing = {b.name for b in session.view().bookmarks() if b.remote is None}
             if strays:
                 # Target AND name each stray by commit_id (via `_target`), never the bare change_id.
