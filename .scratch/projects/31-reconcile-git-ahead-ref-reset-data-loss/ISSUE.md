@@ -217,6 +217,71 @@ trunk, so recovery-time output reflects the real change (RC6).
 
 ---
 
+## Implementation status
+
+| Fix | Status | Where |
+|---|---|---|
+| F1 classify drift by direction | **Done** | `state.classify_ref_desync` + `invariants.sync_colocated_refs` |
+| F2 never force a ref backward without consent | **Done, reformulated** | `state.orphaned_by_rewrite` + the `preserve_orphans` gate |
+| F3 make `undo` honest | **Done** | `core.do_undo` now calls `sync_colocated_refs` |
+| F4 disclose stakes | **Done** | `status` names the direction; ref moves name both ids |
+| F5 a git→jj import verb | **Folded into F1** | `reconcile` imports automatically; no separate verb |
+| F6 break the circular gate | **Done by F1** | `reconcile` is no longer the destructive verb |
+| F7 rebase adopted lanes onto trunk | **Open** | cosmetic (RC6); not attempted |
+
+### F1 — classify by *knownness*, not ancestry
+
+The issue proposed ancestry (`git_ahead` / `jj_ahead` / `diverged`). Ancestry cannot decide it: a
+git-only commit is not in jj's index at all, so `is_ancestor` raises on it rather than answering,
+and a post-`undo` rewrite is neither ancestor nor descendant of jj's position — an ancestry
+classifier would refuse the most routine heal there is. The shipped test is **resolvability**
+(`_known_to_jj`): unknown to jj ⟺ git holds history jj never imported ⟹ `git_import`. Same three
+buckets, a predicate that can actually be evaluated. `diverged` is not a refusal: jj keeps the
+name, git's side becomes an ordinary `adopted-<id>` lane.
+
+### F2 — "assert the target is a descendant" is incompatible with F1, and the hazard is different
+
+Mirroring git's non-fast-forward protection literally would break `undo`, whose whole job is to
+move a ref backward. Worse, it guards the wrong property: a backward ref move is harmless when the
+commit stays reachable, and harmful when it does not — regardless of ancestry.
+
+The hazard that survived F1 is real and was reproduced: **`undo` of a `reconcile`**. The import put
+the git-only commit into jj's index, so after the rewind it classifies as `rewrite` (jj knows it),
+and force-writing `refs/heads/main` leaves it reachable from nothing — issue 31's own shape, moved
+from `reconcile` into `undo`, again reported as a clean `UNDONE` on a `CANONICAL` repo.
+
+What shipped instead: before a rewrite force-writes a ref backward, if nothing else would still
+reach what the ref named, bookmark it as `adopted-<id>` first. Reachability, not ancestry. Two
+guards keep it from firing on ordinary work:
+
+* a **rewritten** commit (`save` amends, `land` rebases) shares its change id with its successor,
+  so a reachable namesake means "rewritten", not "lost";
+* preservation is opt-in per caller (`preserve_orphans`) and only `undo`-of-`reconcile` opts in.
+  Undoing an ordinary intent is *meant* to discard that intent's commit; undoing a `reconcile`
+  discards history that arrived from git, which gitman's op log is not a credible home for. After
+  the fact the two are indistinguishable, so the caller who knows says so.
+
+Without the second guard the suite goes from 255 passing to 238: every `undo` round-trip test grows
+a spurious `adopted-*` lane. That is the evidence the narrow gate is the correct scope.
+
+### Also fixed
+
+* `write_git_ref` failures were swallowed (`except PyjutsuError: pass`), so a ref that failed to
+  move left the repo desynced behind a success report. They are now named in the output.
+* The rewrite note said `re-pointed colocated git ref(s) to jj: main` — a ref moved, but not what
+  it moved off, which is the entire stake (RC4). It now reads `main 91e6df46 -> 7037fa0f`.
+* `reconcile`'s CLI help and the agent skill both described it as stray-adoption only. Both now
+  state what it does to refs and that `--abandon` is the only discarding mode.
+
+### Regression tests
+
+`tests/test_colocated_refs.py`:
+`test_undo_of_a_reconcile_keeps_the_imported_commit_referenced` (fails without the fix:
+`assert 'adopted-…' in set()`) and `test_undo_of_a_land_does_not_invent_a_lane` (pins the scope).
+Full suite: 255 passing.
+
+---
+
 ## Note on how this was found
 
 The destructive reconcile was run by an AI agent (me) following the gitman skill's own instruction —

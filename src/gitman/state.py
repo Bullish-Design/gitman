@@ -85,11 +85,13 @@ def _lane_index(view: RepoView) -> tuple[set[str], set[str]]:
 
 
 def _trunk_conflicted(view: RepoView, trunk: str) -> bool:
-    """True if the local `<trunk>` bookmark is *conflicted* (diverged): un-pushed local lands
-    AND origin moved, so jj couldn't fast-forward and recorded multiple targets. `resolve(trunk)`
-    raises against it; `view.bookmarks()` exposes it structurally via `.conflicted`
-    (`len(target_ids) > 1`) — the clean detector, no error-string match. `gitman adopt --force`
-    resolves it toward the forge head."""
+    """True if the local `<trunk>` bookmark is *conflicted* (multiple recorded targets): either
+    un-pushed local lands AND origin moved, or jj and the colocated git each holding a different
+    commit. `resolve(trunk)` raises against it; `view.bookmarks()` exposes it structurally via
+    `.conflicted` (`len(target_ids) > 1`) — the clean detector, no error-string match. `gitman pull`
+    resolves the origin case (rebasing local lands onto the forge head); `gitman reconcile` resolves
+    the jj↔git case (jj keeps trunk, git's side becomes a lane). The `adopt --force` verb these
+    docs used to name is gone — see `core._advance_trunk`."""
     return any(b.name == trunk and b.remote is None and b.conflicted for b in view.bookmarks())
 
 
@@ -322,6 +324,50 @@ def _known_to_jj(view: RepoView, commit_id: str) -> bool:
         return False
 
 
+def orphaned_by_rewrite(view: RepoView, git_id: str) -> bool:
+    """True if force-writing a ref off `git_id` would leave it referenced by NOTHING.
+
+    `classify_ref_desync`'s `rewrite` branch is safe from issue 31's data loss because jj *knows*
+    the commit — but "known to jj" is not "reachable from something". After `undo` rewinds past a
+    `reconcile` that imported git-only history, the imported commit is still in jj's index (so it
+    classifies as `rewrite`) and is reachable from no bookmark at all (so force-writing the ref
+    leaves the op log as its only referent). That is issue 31's shape relocated from `reconcile`
+    into `undo`, and it is the hazard F2 asks for protection against.
+
+    Reachability, not ancestry: the question is whether some bookmark or the working copy still
+    names this commit or a descendant of it — exactly "would the operator lose sight of it".
+    Ancestry against jj's new position answers a different question (`_known_to_jj` explains why).
+
+    **Unreachable is not enough** — a REWRITTEN commit is unreachable too, and preserving those
+    turns every ordinary undo into litter. `save` amends and `land` rebases, so the ref left behind
+    names a predecessor of a commit jj still has. jj identifies the pair: a rewrite keeps the
+    **change id**. So a commit whose change id is still reachable was rewritten, not lost, and only
+    a commit with no reachable namesake is genuinely orphaned — which is exactly the imported
+    git-only commit after `undo` rewinds past the import.
+
+    `git_id` unresolvable (never imported) answers "not orphaned": that is the `adopt` case, which
+    never reaches a force-write at all.
+    """
+    try:
+        commit = view.resolve(git_id)
+    except Exception:
+        return False
+    reachable = "::(bookmarks() | remote_bookmarks() | @)"
+    try:
+        if view.log(f"({git_id}) & {reachable}"):
+            return False
+    except Exception:
+        return False
+    try:
+        # A change id with no visible commit does not resolve — the successor is gone too, so the
+        # commit really is orphaned. Treat the lookup failure as "no successor", not as "give up":
+        # preserving one commit too many costs a lane the operator can abandon, and preserving one
+        # too few is the loss this whole guard exists to prevent.
+        return not view.log(f"({commit.change_id}) & {reachable}")
+    except Exception:
+        return True
+
+
 def classify_ref_desync(
     view: RepoView, mismatched: list[tuple[str, str, str | None]]
 ) -> tuple[list[tuple[str, str, str | None]], list[tuple[str, str, str | None]]]:
@@ -378,27 +424,44 @@ def capture_state(session: Session) -> RepoState:
 
     view = session.fresh_view()
 
-    # A *diverged* trunk (un-pushed local lands + origin moved) is a conflicted bookmark: both
-    # `view.resolve(trunk_name)` AND lane enumeration raise against it. Detect it structurally and
-    # report it off-canonical with the adopt recommendation — don't crash (this is the state
-    # `gitman adopt --force` resolves). Handled before any resolve so neither path can throw.
+    # A conflicted trunk bookmark: both `view.resolve(trunk_name)` AND lane enumeration raise
+    # against it. Detect it structurally and report off-canonical — don't crash. Handled before any
+    # resolve so neither path can throw.
+    #
+    # Two ways in, and they need OPPOSITE remedies, so the report must not guess: un-pushed local
+    # lands + a moved origin (→ `pull`), or jj and the colocated git each holding a different commit
+    # (→ `reconcile`, which keeps jj's side and adopts git's into a lane). The old message asserted
+    # the origin story unconditionally — it read "un-pushed local lands + origin moved" on repos with
+    # no remote at all, and sent the operator to a `pull` that cannot resolve a local conflict.
+    # A remote-tracking row for trunk is what actually distinguishes them.
     if _trunk_conflicted(view, trunk_name):
         from gitman.core import pick_remote
 
-        remote_name = pick_remote(session.ws) if session.ws.remotes() else "origin"
+        has_remote = bool(session.ws.remotes())
+        tracked_on_remote = any(
+            b.name == trunk_name and b.remote not in (None, "git") for b in view.bookmarks()
+        )
+        remote_name = pick_remote(session.ws) if has_remote else "origin"
+        if tracked_on_remote:
+            reason = f"trunk '{trunk_name}' diverged from {remote_name} (un-pushed local lands + origin moved)."
+            note = f"run `gitman pull` to rebase your local lands onto {remote_name}/{trunk_name}."
+        else:
+            reason = (
+                f"trunk '{trunk_name}' is conflicted — jj and colocated git each hold a different "
+                f"commit for it."
+            )
+            note = "run `gitman reconcile` — it keeps jj's side as trunk and adopts git's side into a lane."
         return RepoState(
             repo_root=repo_root,
             colocated_git=_is_colocated(repo_root),
             canonical=False,
-            off_canonical=(
-                f"trunk '{trunk_name}' diverged from {remote_name} (un-pushed local lands + origin moved)."
-            ),
+            off_canonical=reason,
             trunk=TrunkRef(name=trunk_name, change_id=None, commit_id=None),
             current_lane=None,
             lanes=[],
             conflicts=[],
             recent_ops=[_op(o) for o in view.operations(10)],
-            notes=[f"run `gitman pull` to rebase your local lands onto {remote_name}/{trunk_name}."],
+            notes=[note],
         )
 
     try:

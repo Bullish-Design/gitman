@@ -264,7 +264,7 @@ def _postcondition(session: Session, intent: str, trunk_before: str | None, op_b
     return after
 
 
-def sync_colocated_refs(session: Session) -> list[str]:
+def sync_colocated_refs(session: Session, *, preserve_orphans: bool = False) -> list[str]:
     """Make jj and the colocated `refs/heads/*` agree **without ever discarding history**.
 
     The one shared ref-repair path — `reconcile` (gap B healing), `undo` (which rewinds jj but not
@@ -294,31 +294,64 @@ def sync_colocated_refs(session: Session) -> list[str]:
       4. only then import. This ordering is what used to be approximated by gating the import
          behind `if leftover:` — that gate closed the one path that rescues git-only commits.
 
+    `preserve_orphans` turns on the F2 guard: before a **rewrite** force-writes a ref backward,
+    bookmark what the ref named if nothing else would still reach it. It is OFF by default and ON
+    for exactly one caller — `undo` of a `reconcile`. Undoing an ordinary intent is meant to discard
+    that intent's commit, and preserving it litters the repo with `adopted-*` lanes; undoing a
+    `reconcile` discards history that arrived from git, which gitman's op log is not a credible
+    home for. The two are indistinguishable after the fact (both leave an unreachable commit with
+    no visible successor), so the caller who knows says so.
+
     Best-effort throughout (it runs after already-committed intents): returns compact notes naming
     what it did, `[]` when already in sync or not colocated.
     """
     from pyjutsu import PyjutsuError
 
-    from gitman.state import _is_colocated, classify_ref_desync, colocated_ref_desync
+    from gitman.state import _is_colocated, classify_ref_desync, colocated_ref_desync, orphaned_by_rewrite
 
     if not _is_colocated(session.repo_root):
         return []
+    # Resolve any already-conflicted bookmark FIRST, before anything reads by name. A conflicted
+    # trunk can predate this call entirely — a hand-run `jj git import`, another tool's import, an
+    # earlier interrupted run — and `colocated_ref_desync` deliberately skips conflicted rows, so
+    # nothing downstream would ever clear it. Left alone it wedges the repo.
+    resolved = _keep_jj_side_adopt_the_rest(session)
     view = session.view()
     try:
         mismatched, leftover = colocated_ref_desync(view, session.ws)
     except Exception:
-        return []
+        return resolved
     if not mismatched and not leftover:
-        return []
+        return resolved
     adopt, rewrite = classify_ref_desync(view, mismatched)
+
+    failed_writes: list[str] = []
 
     def _write(name: str, commit_id: str) -> None:
         try:
             session.ws.write_git_ref(name, commit_id)
-        except PyjutsuError:
-            pass
+        except PyjutsuError as exc:
+            # Was `pass`. A ref that silently fails to move leaves the repo desynced behind a
+            # success report — the operator is told the heal worked and `status` says otherwise
+            # on the next run, with nothing naming which ref lost.
+            failed_writes.append(f"{name} ({exc})")
 
-    for name, jj_id, _git_id in rewrite:  # (1) jj-authoritative — provably non-destructive now
+    preserved: list[str] = []
+    for name, jj_id, git_id in rewrite:  # (1) jj-authoritative — but see F2 below
+        # F2 — never let a force-write make a commit unreferenced. `rewrite` means jj knows the
+        # commit, not that anything still points at it: `undo` of an import rewinds jj past
+        # history that exists ONLY under this ref, and forcing the ref then leaves it reachable
+        # from the op log alone. Bookmark it as a lane first, so the never-discard rule holds
+        # here the same way it does for strays and for both-sides-moved trunks.
+        if preserve_orphans and git_id and orphaned_by_rewrite(view, git_id):
+            lane = f"adopted-{git_id[:8]}"
+            try:
+                with session.ws.transaction("gitman:preserve-rewound-ref", auto_snapshot=False) as tx:
+                    tx.set_bookmark(lane, git_id)
+            except PyjutsuError:
+                pass
+            else:
+                preserved.append(f"{name} {git_id[:8]} -> lane '{lane}'")
         _write(name, jj_id)
     for name in leftover:  # (2) retire before the import, else it re-creates the bookmark
         try:
@@ -333,25 +366,18 @@ def sync_colocated_refs(session: Session) -> list[str]:
             except Exception:
                 pass
 
-    notes: list[str] = []
-    conflicted_now: list[str] = []
+    notes: list[str] = list(resolved)
     if adopt or leftover:  # (4) the heal that keeps git-only commits — and lands in jj's op log
-        before = {b.name for b in view.bookmarks() if b.remote is None and b.conflicted}
         try:
             session.ws.git_import()
         except PyjutsuError as exc:
             notes.append(f"could not import git history for: {', '.join(n for n, _, _ in adopt)} ({exc}).")
             adopt = []
         else:
-            # Both sides moved → jj-lib resolves it into a *conflicted* bookmark rather than picking
-            # a winner. That's the honest answer to "diverged", and gitman already models it:
-            # `_conflicted_lanes`/`_resolve_conflicted_lane` take it from here (reconcile runs its
-            # conflicted pass after this helper for exactly that reason).
-            conflicted_now = sorted(
-                b.name
-                for b in session.view().bookmarks()
-                if b.remote is None and b.conflicted and b.name not in before
-            )
+            # Both sides moved → jj-lib records both rather than picking a winner. Honest, but a
+            # conflicted bookmark is unresolvable by name, so if it is trunk every trunk-anchored
+            # revset raises and every verb refuses. Resolve what the import just conflicted.
+            notes += _keep_jj_side_adopt_the_rest(session)
     try:
         session.ws.git_export()  # re-sync jj's own record of the refs (clears the stale-export state)
     except Exception:
@@ -360,14 +386,85 @@ def sync_colocated_refs(session: Session) -> list[str]:
     if adopt:
         notes.append(f"imported git-only history into jj: {', '.join(n for n, _, _ in adopt)}.")
     if rewrite:
-        notes.append(f"re-pointed colocated git ref(s) to jj: {', '.join(n for n, _, _ in rewrite)}.")
+        # Name BOTH ids. "re-pointed main" told the operator a ref moved but not what it moved off,
+        # which is the whole stake of the operation (31-RC4): everything needed to judge the blast
+        # radius was already in hand and none of it was shown.
+        moved = ", ".join(f"{n} {(g or '?')[:8]} -> {j[:8]}" for n, j, g in rewrite)
+        notes.append(f"re-pointed colocated git ref(s) to jj: {moved}.")
+    if preserved:
+        notes.append(
+            "kept history that ref move would have unreferenced: "
+            + "; ".join(preserved)
+            + " (inspect with `gitman status`, discard with `gitman abandon`)."
+        )
     if leftover:
         notes.append(f"removed leftover colocated git ref(s): {', '.join(leftover)}.")
-    if conflicted_now:
+    if failed_writes:
         notes.append(
-            f"jj and git had both moved {', '.join(conflicted_now)} — kept both sides "
-            f"(conflicted bookmark), neither discarded."
+            "could NOT re-point colocated git ref(s): "
+            + ", ".join(failed_writes)
+            + " — the repo is still desynced; re-run `gitman reconcile`."
         )
+    return notes
+
+
+def _keep_jj_side_adopt_the_rest(session: Session) -> list[str]:
+    """Clear a conflicted **trunk** bookmark: keep jj's side on the name, adopt each other side into
+    its own `adopted-<commit_id>` lane. Returns notes; `[]` when trunk isn't conflicted.
+
+    jj wins the *name* because jj is gitman's engine — trunk stays where the op log says, so `undo`
+    still means something and the lane model keeps its footing. Nothing is discarded: git's side
+    becomes an ordinary lane the operator can inspect, land, or abandon with the verbs they already
+    have. Same never-discard rule `reconcile` applies to strays, and the same commit_id-keyed naming
+    (issue 06 §G2) so two sides can't collide onto one bookmark.
+
+    **Trunk only.** A conflicted *lane* already has an owner — `_resolve_conflicted_lane` (issue 11),
+    which honours `--abandon` and knows about the lane's remote branch. Trunk is the one with no
+    owner, and the one whose conflict wedges the whole repo: it is unresolvable by name, so every
+    trunk-anchored revset raises and every verb (including `reconcile` itself) refuses.
+
+    Which side is git's is read off `refs/heads/<trunk>` rather than remembered from before an
+    import, so this works from any entry point — including a conflict that predates the call (a
+    hand-run `jj git import`). Everything else comes from pyjutsu's own model of the conflict
+    (`Bookmark.target_ids`); `set_bookmark` by commit_id is what clears it.
+    """
+    from pyjutsu import PyjutsuError
+
+    trunk = session.config.trunk
+    if not trunk:
+        return []
+    try:
+        row = next(
+            (
+                b
+                for b in session.view().bookmarks()
+                if b.remote is None and b.name == trunk and b.conflicted
+            ),
+            None,
+        )
+        git_refs = session.ws.git_refs()
+    except PyjutsuError:
+        return []
+    if row is None:
+        return []
+    sides = [t for t in row.target_ids if t]
+    if len(sides) < 2:
+        return []
+
+    git_side = git_refs.get(trunk)
+    # jj's side is whichever target the git ref does NOT name. If git's ref isn't a side at all (it
+    # was rewritten under us), keep the first and adopt the rest — still nothing discarded.
+    keep = next((s for s in sides if s != git_side), sides[0])
+    notes: list[str] = []
+    with session.ws.transaction("gitman:resolve-trunk-divergence", auto_snapshot=False) as tx:
+        # Adopt FIRST, so every side is bookmarked before the name stops pointing at it.
+        for cid in (s for s in sides if s != keep):
+            lane = f"adopted-{cid[:8]}"
+            tx.set_bookmark(lane, cid)
+            notes.append(
+                f"jj and git had both moved {trunk} — kept jj's side, adopted git's into lane '{lane}'"
+            )
+        tx.set_bookmark(trunk, keep)
     return notes
 
 

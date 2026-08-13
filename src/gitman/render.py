@@ -91,9 +91,14 @@ def _lane_line(lane: Lane, current: str | None) -> str:
 def render_status(state: RepoState) -> str:
     if not state.canonical:
         off = state.off_canonical or ""
-        diverged = "diverged" in off
-        desynced = "out of sync with git" in off or "leftover git ref" in off
-        if desynced:
+        # A locally-conflicted trunk (jj vs colocated git) is NOT the origin-divergence case — it
+        # reads DIVERGED too, but `pull` cannot resolve it; `reconcile` can.
+        local_conflict = "each hold a different commit" in off
+        diverged = "diverged" in off or local_conflict
+        desynced = not local_conflict and ("out of sync with git" in off or "leftover git ref" in off)
+        if local_conflict:
+            recover = "Recover: `gitman reconcile`  — keeps jj's side as trunk, adopts git's side into a lane."
+        elif desynced:
             # Not "re-sync refs to jj" any more — reconcile now heals in whichever direction the
             # drift runs, adopting git-only history instead of discarding it (issue 31).
             recover = "Recover: `gitman reconcile`  — reconcile jj and colocated git; no commits are discarded."

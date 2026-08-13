@@ -2100,10 +2100,12 @@ def do_undo(session: Session, op: str | None, list_: bool):
         return IntentResult(intent="undo", outcome="LIST", messages=rows or ["no gitman operations."])
 
     with repo_lock(session.repo_root):
+        undoing_reconcile = False
         if op:
             target, what = op, f"op {op[:12]}"
         else:
             rec = read_undo_checkpoint(session.repo_root)
+            undoing_reconcile = bool(rec) and rec.get("intent") == "reconcile"
             if not rec:
                 session.ws.undo()  # fallback: revert the head op
                 return IntentResult(
@@ -2120,7 +2122,12 @@ def do_undo(session: Session, op: str | None, list_: bool):
         # ref rewound here is jj-authoritative by construction (jj holds the commit the ref names —
         # it is in the op log we just restored past), so the shared classifier takes the safe branch
         # and a git-only commit still cannot be discarded.
-        ref_notes = sync_colocated_refs(session)
+        #
+        # Undoing a `reconcile` is the exception: it rewinds past history that arrived from GIT, so
+        # the colocated ref is the only thing naming it and forcing that ref to jj makes it
+        # unreachable from either system — issue 31's loss, relocated into `undo`. Preserve it as a
+        # lane there. Every other intent's commit is gitman's own and is meant to go (31-F2).
+        ref_notes = sync_colocated_refs(session, preserve_orphans=undoing_reconcile)
         clear_undo_checkpoint(session.repo_root)
     return IntentResult(
         intent="undo",

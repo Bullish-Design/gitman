@@ -393,7 +393,13 @@ def init(
 def reconcile(
     abandon_: Annotated[bool, typer.Option("--abandon", help="Discard strays instead of adopting them.")] = False,
 ) -> None:
-    """Adopt stray changes into lanes, or abandon them (off-canonical recovery)."""
+    """Adopt stray changes into lanes and heal jj<->git ref drift (off-canonical recovery).
+
+    Nothing is discarded unless you pass --abandon: git-only history is imported into jj rather
+    than reset away, a both-sides-moved trunk keeps jj on the name and adopts git's side into a
+    lane, and a ref move that would leave a commit unreferenced bookmarks it first (issue 31).
+    Every ref move is reported with both commit ids.
+    """
     from gitman.reconcile import do_reconcile
 
     _finish_intent(do_reconcile(_session(), abandon_))

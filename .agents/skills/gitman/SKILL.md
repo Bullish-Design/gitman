@@ -116,8 +116,12 @@ for migrating a repo that already carries re-hash-twin residue).
   `gitman undo --list` shows recent ops; `gitman undo --op <id>` restores any of them.
 - **`gitman resolve [--list]`** surfaces conflicts. Conflicts are *not* blocking — keep
   working and resolve later (jj records conflicts in commits).
-- **`gitman reconcile`** is the one recovery path when `status` says OFF-CANONICAL: it
-  adopts stray changes into lanes (or `--abandon` discards them).
+- **`gitman reconcile`** is the one recovery path when `status` says OFF-CANONICAL or
+  DESYNCHRONIZED. It adopts stray changes into lanes (or `--abandon` discards them), and it
+  heals jj↔colocated-git ref drift **in whichever direction the drift runs**: git-only
+  history is imported into jj, never reset away; a both-sides-moved trunk keeps jj on the
+  name and adopts git's side into a lane. Nothing is discarded, and every ref move is
+  reported with both commit ids. `--abandon` is the only discarding mode.
 
 ## Versioning
 

@@ -16,7 +16,7 @@ from pyjutsu import PyjutsuError, Workspace
 from gitman.config import GitmanConfig
 from gitman.reconcile import do_reconcile
 from gitman.session import Session
-from gitman.state import colocated_ref_desync
+from gitman.state import capture_state, colocated_ref_desync
 
 CFG = GitmanConfig(trunk="main")
 
@@ -234,10 +234,61 @@ def test_undo_resyncs_colocated_refs(tmp_path: Path):
     assert not mismatched and not leftover
 
 
+def test_undo_of_a_reconcile_keeps_the_imported_commit_referenced(tmp_path: Path):
+    """31-F2: the `rewrite` branch is safe from "jj cannot name it", not from "nothing points at
+    it any more".
+
+    `undo` after a `reconcile` rewinds jj past the import, so the git-only commit is still IN jj's
+    index (it classifies as `rewrite`) and reachable from no bookmark. Force-writing
+    `refs/heads/main` then made it unreferenced — issue 31's own shape, relocated from `reconcile`
+    into `undo`, and reported as a clean `UNDONE` on a `CANONICAL` repo. Bookmark it first.
+    """
+    from gitman.core import do_undo
+
+    work, ws = _colocated(tmp_path)
+    git_sha = _raw_git_commit(work, "raw commit")
+    jj_before = _sess(work).view().resolve("main").commit_id
+
+    assert do_reconcile(_sess(work), abandon_=False).exit_code == 0
+    assert _sess(work).view().resolve("main").commit_id == git_sha  # imported
+
+    res = do_undo(_sess(work), op=None, list_=False)
+    assert res.outcome == "UNDONE"
+
+    state = capture_state(_sess(work))
+    assert state.canonical, state.off_canonical
+    assert state.trunk.commit_id == jj_before  # the undo really did rewind trunk
+    assert _gref(work, "refs/heads/main") == jj_before  # ...and git followed (31-RC3)
+    # The commit the ref moved off is still named by something the operator can see and act on.
+    assert f"adopted-{git_sha[:8]}" in {lane.name for lane in state.lanes}
+    assert _gref(work, f"refs/heads/adopted-{git_sha[:8]}") == git_sha
+    assert any("would have unreferenced" in m for m in res.messages), res.messages
+
+
+def test_undo_of_a_land_does_not_invent_a_lane(tmp_path: Path):
+    """The F2 guard keys on reachability, not on "the ref moved backward" — else every ordinary
+    `undo` would litter the repo. Undoing a `start` rewinds `refs/heads/feat` off a commit the
+    restored op log still reaches through the lane, so there is nothing to preserve."""
+    from gitman.core import do_undo
+    from gitman.invariants import write_undo_checkpoint
+
+    work, ws = _colocated(tmp_path)
+    op_before = ws.head_operation()
+    _make_lane(ws, work, "feat", "ft.txt")
+    ws.git_export()
+    write_undo_checkpoint(work, op_before, "start")
+
+    res = do_undo(_sess(work), op=None, list_=False)
+    assert res.outcome == "UNDONE"
+    assert not any(n.startswith("adopted-") for n in {lane.name for lane in capture_state(_sess(work)).lanes})
+    assert not any("would have unreferenced" in m for m in res.messages), res.messages
+
+
 def test_reconcile_keeps_both_sides_when_jj_and_git_both_moved(tmp_path: Path):
-    """True divergence: jj and git each advanced `main` independently. There is no safe winner, so
-    the import resolves it into a *conflicted* bookmark — both sides kept — and `reconcile` reports
-    PARTIAL rather than silently picking one (or crashing on the now-unresolvable trunk revset)."""
+    """True divergence: jj and git each advanced `main` independently. The import records both sides
+    as a conflicted bookmark; leaving it there wedges the repo (a conflicted trunk is unresolvable by
+    name, so every verb refuses and `reconcile` errors on itself). Resolve it the way `reconcile`
+    treats everything else: jj keeps the name, git's side becomes an ordinary lane, nothing dropped."""
     work, ws = _colocated(tmp_path)
     base = _gref(work, "refs/heads/main")
     git_sha = _raw_git_commit(work, "raw commit")  # git side
@@ -252,11 +303,85 @@ def test_reconcile_keeps_both_sides_when_jj_and_git_both_moved(tmp_path: Path):
         tx.new(base)
 
     res = do_reconcile(_sess(work), abandon_=False)
-    assert res.exit_code == 1, res.messages  # honest: still needs a human call
-    assert res.outcome == "PARTIAL"
+    assert res.exit_code == 0, res.messages  # resolved, not wedged
+    assert res.outcome == "RECONCILED"
+
+    state = capture_state(_sess(work))
+    assert state.canonical, state.off_canonical  # every verb is usable again
+    assert state.trunk.commit_id == jj_sha  # jj keeps the name — gitman's engine wins trunk
+    assert f"adopted-{git_sha[:8]}" in {lane.name for lane in state.lanes}  # git's side kept
 
     # Neither side was discarded — both commits are still reachable in the repo.
     log = subprocess.run(
         ["git", "log", "--all", "--format=%H"], cwd=work, capture_output=True, text=True
     ).stdout
     assert git_sha in log and jj_sha in log
+
+
+def test_reconcile_refreshes_the_colocated_checkout(tmp_path: Path):
+    """An import can move trunk well past git's HEAD. Until the checkout is repaired a bare
+    `git status` reports the whole delta as staged — the repo looks wrecked to anyone who verifies
+    with raw git right after the verb that just healed it."""
+    work, _ws = _colocated(tmp_path)
+    _raw_git_commit(work, "raw commit")
+
+    do_reconcile(_sess(work), abandon_=False)
+
+    staged = subprocess.run(
+        ["git", "status", "--porcelain"], cwd=work, capture_output=True, text=True
+    ).stdout
+    assert "raw.txt" not in staged, f"stale colocated checkout after reconcile: {staged!r}"
+
+
+def test_local_trunk_conflict_is_not_reported_as_origin_divergence(tmp_path: Path):
+    """A conflicted trunk has two causes needing opposite remedies. The report used to assert the
+    origin story unconditionally — "un-pushed local lands + origin moved" on a repo with no remote —
+    and prescribed a `pull` that cannot resolve a local jj↔git conflict."""
+    from gitman.render import render_status
+
+    work, ws = _colocated(tmp_path)
+    base = _gref(work, "refs/heads/main")
+    _raw_git_commit(work, "raw commit")
+    with ws.transaction("jj side") as tx:
+        tx.new(base)
+        tx.describe("@", "jj commit")
+    (work / "jj.txt").write_text("jj\n")
+    ws.snapshot()
+    with ws.transaction("point main at the jj side") as tx:
+        tx.set_bookmark("main", ws.working_copy().commit_id)
+        tx.new(base)
+    ws.git_import()  # conflict the bookmark WITHOUT reconcile's resolution
+
+    state = capture_state(_sess(work))
+    off = state.off_canonical or ""
+    assert "origin moved" not in off and "diverged from" not in off, off
+    assert "each hold a different commit" in off
+    assert "gitman reconcile" in render_status(state)
+
+
+def test_reconcile_resolves_a_preexisting_trunk_conflict(tmp_path: Path):
+    """The conflict need not have been created by this reconcile — a hand-run `jj git import`,
+    another tool's import, or an interrupted run all leave one behind. That is precisely the state
+    the operator is *sent* to `reconcile` from, so it must not be the state that makes `reconcile`
+    itself error out on a trunk-anchored revset before reaching the code that fixes it."""
+    work, ws = _colocated(tmp_path)
+    base = _gref(work, "refs/heads/main")
+    git_sha = _raw_git_commit(work, "raw commit")
+    with ws.transaction("jj side") as tx:
+        tx.new(base)
+        tx.describe("@", "jj commit")
+    (work / "jj.txt").write_text("jj\n")
+    ws.snapshot()
+    jj_sha = ws.working_copy().commit_id
+    with ws.transaction("point main at the jj side") as tx:
+        tx.set_bookmark("main", jj_sha)
+        tx.new(base)
+    ws.git_import()  # the conflict now PREDATES reconcile
+
+    res = do_reconcile(_sess(work), abandon_=False)
+    assert res.exit_code == 0, res.messages
+
+    state = capture_state(_sess(work))
+    assert state.canonical, state.off_canonical
+    assert state.trunk.commit_id == jj_sha
+    assert f"adopted-{git_sha[:8]}" in {lane.name for lane in state.lanes}

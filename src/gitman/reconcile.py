@@ -39,10 +39,21 @@ def do_reconcile(session: Session, abandon_: bool):
         refresh_notes = _refresh_stale_working_copy(session, trunk)
         try:
             view = session.fresh_view()  # snapshot dirty @ first (now safe — no longer stale)
-            conflicted = _conflicted_lanes(view, trunk)
-            strays = find_strays(view, trunk)
-            mismatched, leftover = colocated_ref_desync(view, session.ws)
-            if not conflicted and not strays and not mismatched and not leftover and not refresh_notes:
+            try:
+                conflicted = _conflicted_lanes(view, trunk)
+                strays = find_strays(view, trunk)
+                mismatched, leftover = colocated_ref_desync(view, session.ws)
+            except RevsetError:
+                # Trunk itself is conflicted on entry (a hand-run `jj git import`, another tool's
+                # import, an earlier interrupted run), so every trunk-anchored revset raises before
+                # we get to the thing that fixes it. This is the state the operator is *sent* here to
+                # recover from — it must not be the state that makes the recovery verb error out.
+                # Skip the survey, let the ref sync below clear the conflict, and re-scan after.
+                conflicted, strays, mismatched, leftover = [], [], [], []
+                surveyed = False
+            else:
+                surveyed = True
+            if surveyed and not conflicted and not strays and not mismatched and not leftover and not refresh_notes:
                 return IntentResult(
                     intent="reconcile", outcome="CLEAN", messages=["already canonical — no strays, refs in sync."]
                 )
@@ -67,12 +78,12 @@ def do_reconcile(session: Session, abandon_: bool):
                     seen = {c.commit_id for c in after}
                     strays = after + [c for c in strays if c.commit_id not in seen]
                 except RevsetError:
-                    # The import resolved a both-sides-moved bookmark into a *conflicted* one —
-                    # keeping both sides, discarding neither. When that bookmark is trunk, every
-                    # trunk-anchored revset now raises. Keep the pre-heal scan and fall through:
-                    # `capture_state` already models a conflicted trunk, so this reports PARTIAL
-                    # with the `adopt --force` recommendation instead of crashing the one verb the
-                    # operator was told to run.
+                    # Belt-and-braces: `sync_colocated_refs` clears a both-sides-moved bookmark
+                    # before returning (jj keeps the name, git's side becomes a lane), so trunk
+                    # should resolve by now. If some *other* bookmark is still conflicted and a
+                    # trunk-anchored revset raises anyway, keep the pre-heal scan and fall through —
+                    # `capture_state` models a conflicted trunk and reports PARTIAL. Never crash the
+                    # one verb the operator was told to run.
                     pass
 
             # Conflicted lanes next: clearing them is what unwedges the repo (issue 11), and retiring
@@ -109,6 +120,15 @@ def do_reconcile(session: Session, abandon_: bool):
                 actions = ["nothing to do."]
             write_undo_checkpoint(session.repo_root, op_before, "reconcile")
             state = capture_state(session)
+            # Repair the colocated checkout LAST (HEAD + index), as every mutating intent does via
+            # `_export_colocated_git`. An import can move trunk well past git's HEAD, and until this
+            # runs a bare `git status` shows the whole delta as staged — the repo looks wrecked to
+            # any operator or agent who verifies with raw git after the verb that just healed it.
+            # Best-effort and after the checkpoint: never undo an already-recorded intent.
+            try:
+                session.sync_colocated()
+            except Exception:
+                actions.append("colocated git checkout not re-synced — raw `git status` may look stale.")
         except Exception:
             session.ws.restore_operation(op_before)
             raise
