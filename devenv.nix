@@ -56,5 +56,20 @@
 
   # Dev verification tasks + enterTest are provided by ./nix/gitman.nix (imported above).
 
+  # devman — the automation plane (CONCEPT.md §5). `base` alone, and the direct
+  # forward shape: the repository already owns `gitman:lint` and `gitman:test`
+  # (./nix/gitman.nix), so `base`'s two names depend on them rather than
+  # duplicating their command bodies (PROPOSAL.md §6 rule 6).
+  devman = {
+    enable = true;
+    project = "gitman";
+    groups = [ "base" ];
+  };
+
+  tasks = {
+    "base:check".after = [ "gitman:lint" ];
+    "base:test".after = [ "gitman:test" ];
+  };
+
   # See full reference at https://devenv.sh/reference/options/
 }
