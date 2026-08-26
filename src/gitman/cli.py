@@ -58,8 +58,16 @@ def _emit(text: str, payload: dict | None = None) -> None:
 
 
 def _finish_intent(result) -> None:
+    from gitman.markdown import MarkdownProjectionError, sync_markdown
     from gitman.render import render_intent
 
+    if result.state is not None:
+        try:
+            sync_markdown(result.state)
+        except MarkdownProjectionError as exc:
+            # The VCS transition already completed. Report the projection failure without
+            # pretending Gitman rolled the authoritative operation back.
+            result.notes.append(f"Markdown projection not updated: {exc}")
     _emit(render_intent(result), result.model_dump(mode="json"))
     raise typer.Exit(code=result.exit_code)
 
@@ -96,11 +104,16 @@ def doctor() -> None:
 @app.command()
 def status() -> None:
     """Canonical/off-canonical report: trunk + all lanes."""
+    from gitman.markdown import MarkdownProjectionError, sync_markdown
     from gitman.render import render_status
     from gitman.session import Session
     from gitman.state import capture_state
 
     state = capture_state(Session.load(_repo_root()))
+    try:
+        sync_markdown(state)
+    except MarkdownProjectionError as exc:
+        typer.echo(f"Markdown projection not updated: {exc}", err=True)
     _emit(render_status(state), state.model_dump(mode="json"))
     raise typer.Exit(code=0 if state.canonical else 1)
 

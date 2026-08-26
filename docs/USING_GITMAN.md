@@ -149,6 +149,20 @@ gitman land fix-auth fix-billing        # land both; workspaces are cleaned up
 
 See [`../examples/gitman.toml`](../examples/gitman.toml) for an annotated sample. Keys:
 
+### Markdown project views
+
+Every `gitman status` and successful state-changing intent refreshes Gitman's Markdown
+projection. It defaults to the self-ignored `.gitman/markdown`. To place the projection
+on a durable Loci surface, set the environment variable in the repository's devenv:
+
+```nix
+env.GITMAN_MARKDOWN_DIR = ".loci/gitman";
+```
+
+Paths are resolved from the shared repository root and must stay inside it. The files
+are derived views; edit Gitman state through Gitman intents rather than editing the
+generated frontmatter.
+
 | Key | Meaning |
 |---|---|
 | `trunk` | Trunk bookmark/branch. Written once by `init`, then **frozen**. |

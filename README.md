@@ -30,6 +30,27 @@ own jj **workspace** for parallel agents. Multiplicity is fine; anarchy is not.
 `land`; origin is a mirror reached by fast-forward `push`, and `pull` integrates a genuinely-moved
 origin (rebasing your un-pushed lands — never dropping work). One model, no forge-authored trunk door.
 
+## Markdown projections
+
+Gitman publishes deterministic, human-facing Markdown views of the repository, its
+lanes, and their observed head changes after `status` and successful state transitions.
+Gitman and jj remain authoritative; the Markdown is a project-management projection.
+
+The output directory is controlled by `GITMAN_MARKDOWN_DIR`, resolved relative to the
+shared repository root. It defaults to `.gitman/markdown`, where Gitman's self-ignore
+makes it disposable runtime output. A repository using Loci can make the same views
+durable and searchable:
+
+```sh
+export GITMAN_MARKDOWN_DIR=.loci/gitman
+gitman status
+```
+
+The configured directory must remain inside the repository. Projections contain stable
+change IDs and semantic workflow state, but deliberately omit commit IDs and diff
+statistics: writing a tracked projection changes those revision-dependent values and
+would otherwise make the file self-invalidating.
+
 ## Intents
 
 ```
