@@ -329,7 +329,7 @@ def sync_colocated_refs(session: Session, *, preserve_orphans: bool = False) -> 
 
     def _write(name: str, commit_id: str) -> None:
         try:
-            session.ws.write_git_ref(name, commit_id)
+            session.ws.git.write_ref(name, commit_id)
         except PyjutsuError as exc:
             # Was `pass`. A ref that silently fails to move leaves the repo desynced behind a
             # success report — the operator is told the heal worked and `status` says otherwise
@@ -355,10 +355,10 @@ def sync_colocated_refs(session: Session, *, preserve_orphans: bool = False) -> 
         _write(name, jj_id)
     for name in leftover:  # (2) retire before the import, else it re-creates the bookmark
         try:
-            session.ws.delete_git_ref(name)
+            session.ws.git.delete_ref(name)
         except PyjutsuError:
             pass
-    git_names = set(session.ws.git_refs())
+    git_names = set(session.ws.git.refs())
     for b in view.bookmarks():  # (3) keep the import from reading "deleted in git" and pruning
         if b.remote is None and b.name not in git_names:
             try:
@@ -442,7 +442,7 @@ def _keep_jj_side_adopt_the_rest(session: Session) -> list[str]:
             ),
             None,
         )
-        git_refs = session.ws.git_refs()
+        git_refs = session.ws.git.refs()
     except PyjutsuError:
         return []
     if row is None:

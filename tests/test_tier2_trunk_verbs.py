@@ -87,7 +87,7 @@ def test_remote_add_bootstraps(tmp_path: Path):
 
     res = do_remote_add(_sess(work), str(remote))
     assert res.outcome == "REMOTE-ADDED", res.messages
-    assert [r.name for r in _sess(work).ws.remotes()] == ["origin"]
+    assert [r.name for r in _sess(work).ws.git.remotes()] == ["origin"]
 
     # first push creates the branch (allow_new)
     push = do_push(_sess(work))
@@ -160,7 +160,9 @@ def test_push_reset_origin_migrates_twin(tmp_path: Path):
     _land_new_commit(work, "c1", "a.txt", "aaa\n")
     do_push(_sess(work))
     ws2 = Workspace.load(work)
-    with ws2.transaction("rehash") as tx:
+    # `ignore_immutable`: re-hashing an already-pushed commit is the fixture's purpose, and
+    # pyjutsu >= 0.20 treats a pushed commit as immutable.
+    with ws2.transaction("rehash", ignore_immutable=True) as tx:
         tx.describe("main", "c1 rehashed twin")
     ws2.git_export()
     twin = ws2.head().resolve("main").commit_id
@@ -186,7 +188,7 @@ def test_push_reset_origin_stale_lease_rejected(tmp_path: Path):
                    check=True, capture_output=True)
     # re-hash local so there is something to push
     ws2 = Workspace.load(work)
-    with ws2.transaction("rehash") as tx:
+    with ws2.transaction("rehash", ignore_immutable=True) as tx:  # rewrites a pushed commit
         tx.describe("main", "rehash again")
 
     res = do_push(_sess(work), reset_origin=True)

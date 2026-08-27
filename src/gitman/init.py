@@ -168,7 +168,7 @@ def detect_trunk(session: Session) -> str:
     for cand in TRUNK_CANDIDATES:
         if cand in local:
             return cand
-    if session.ws.remotes():
+    if session.ws.git.remotes():
         head = session.ws.git_default_branch(pick_remote(session.ws))
         if head:
             return head

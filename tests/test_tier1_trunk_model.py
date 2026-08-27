@@ -71,7 +71,9 @@ def test_pure_twin_classifies_in_sync_not_behind(tmp_path: Path):
         tx.new("main")
     # Re-hash the local C1 (same tree, new SHA via a description rewrite) → main = C1', while
     # main@origin stays at C1. Non-conflicted (no fetch): a content-equal, hash-divergent twin.
-    with ws.transaction("rehash") as tx:
+    # `ignore_immutable`: the twin is built by rewriting an already-pushed commit, which
+    # pyjutsu >= 0.20 treats as immutable. The rewrite is the point of the fixture.
+    with ws.transaction("rehash", ignore_immutable=True) as tx:
         tx.describe("main", "c1 (rehashed twin)")
 
     state = capture_state(_sess(work))
@@ -92,7 +94,7 @@ def test_local_ahead_over_twin_base_no_adopt(tmp_path: Path):
     (work / "a.txt").write_text("aaa\n")
     ws.snapshot()
     ws.git_push("origin", "main")  # main@origin = C1
-    with ws.transaction("rehash") as tx:
+    with ws.transaction("rehash", ignore_immutable=True) as tx:  # rewrites a pushed commit
         tx.describe("main", "c1 (rehashed twin)")  # main = C1' (twin of C1)
     # A genuine new local land on top of the twin.
     with ws.transaction("c2") as tx:

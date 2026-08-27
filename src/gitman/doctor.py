@@ -99,7 +99,7 @@ def run_doctor(repo_root: Path, config: GitmanConfig | None = None) -> DoctorRep
     except Exception:  # noqa: BLE001 — not a loadable workspace; downstream checks degrade to warn
         ws = None
 
-    if ws is not None and ws.remotes():
+    if ws is not None and ws.git.remotes():
         checks.append(Check(OK, "remote", "git remote configured"))
     else:
         checks.append(Check(WARN, "remote", "no git remote (publish/release will be unavailable)"))

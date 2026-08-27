@@ -153,8 +153,8 @@ def run_verify(commands: list[str], repo_root: Path, timeout: float | None = Non
 def pick_remote(ws: Workspace) -> str:
     """The remote to push/fetch against: `origin` if configured, else the sole remote.
     Raises GitmanError(exit_code=2) when multiple remotes exist and none is named 'origin'.
-    Callers gate on `ws.remotes()` being non-empty."""
-    names = [r.name for r in ws.remotes()]
+    Callers gate on `ws.git.remotes()` being non-empty."""
+    names = [r.name for r in ws.git.remotes()]
     if "origin" in names:
         return "origin"
     if len(names) == 1:
@@ -167,6 +167,28 @@ def pick_remote(ws: Workspace) -> str:
         f"Available: {', '.join(sorted(names))}",
         exit_code=2,
     )
+
+
+def _retire_git_ref(session: Session, lane: str) -> list[str]:
+    """Drop the colocated `refs/heads/<lane>` of a lane this intent just retired in jj.
+
+    `land` and `abandon` delete the lane bookmark, but `ws.git_export()` only removes a ref jj
+    recorded as exported. A ref written another way (a raw-git tool, an agent's manual export)
+    therefore survives the delete, and the next `git_import` reads it back and RESURRECTS the
+    retired lane — which then blocks its own parent's land as a "live child".
+
+    This is narrow on purpose. `_export_colocated_git` refuses to auto-heal stale refs because it
+    cannot tell an abandoned lane from a ref that carries real git-only work. Here there is no
+    such doubt: this intent retired this exact lane in this transaction, so its leftover ref names
+    history already folded into the base. Best-effort — the intent is already committed in jj, and
+    jj is authoritative."""
+    try:
+        if lane not in set(session.ws.git.refs()):
+            return []
+        session.ws.git.delete_ref(lane)
+    except Exception:
+        return [f"colocated git ref '{lane}' not removed — run `gitman reconcile` to re-sync."]
+    return []
 
 
 def _cleanup_workspace(session: Session, lane: str, keep_foreign: bool = False) -> list[str]:
@@ -408,7 +430,12 @@ def _start_workspace(
         stacked = base_name is not None
         base_ref = base_commit if stacked else trunk
         try:
-            session.ws.add_workspace(str(wpath), name=name)  # own op; new @ on root
+            # pyjutsu >= 0.20 no longer creates missing parents, so a `/`-path name like `T/api`
+            # needs `.worktrees/T` to exist first. The `*` self-ignore above already covers it.
+            wpath.parent.mkdir(parents=True, exist_ok=True)
+            # Own op. The new `@` inherits the source `@`'s parents (the pyjutsu 0.16 default);
+            # the sub-transaction below moves it onto `base_ref` regardless.
+            session.ws.add_workspace(str(wpath), name=name)
             sub = Workspace.load(wpath)
             with sub.transaction("gitman:start", auto_snapshot=False) as tx:
                 tx.new(base_ref)  # put the new workspace's @ on trunk (or the parent head)
@@ -923,7 +950,7 @@ def do_publish(session: Session):
     from gitman.models import IntentResult
 
     trunk = require_trunk(session.config)
-    if not session.ws.remotes():
+    if not session.ws.git.remotes():
         raise GitmanError("no git remote configured — cannot publish.", exit_code=2)
 
     notes: list[str] = []
@@ -1070,6 +1097,7 @@ def do_land(session: Session, lane_args: list[str] | None, all_: bool = False):
                         tx.delete_bookmark(lane)  # retire the node
                         if on_landed_lane:
                             tx.new(base)  # repark @ off the just-folded node onto a fresh base child
+                canon.notes += _retire_git_ref(session, lane)
                 canon.notes += _cleanup_workspace(session, lane)
             # Postcondition passed (guard exited cleanly) → the land is committed. The remote-branch
             # cleanup runs AFTER the postcondition so a postcondition revert never leaves the local
@@ -1145,6 +1173,8 @@ def _abandon_range(session: Session, trunk: str, target: str) -> None:
         for c in session.view().log(f"{base}..{target}"):
             tx.abandon(_target(c))
         tx.delete_bookmark(target)
+    # Retire the colocated ref too, or a later import resurrects the lane we just abandoned.
+    _retire_git_ref(session, target)
 
 
 def do_abandon(session: Session, lane: str | None, recursive: bool = False):
@@ -1259,7 +1289,7 @@ def do_sync(session: Session, all_: bool):
     conflicted: list[str] = []
     synced: list[str] = []
     with canonical_guard(session, "sync") as canon:
-        if session.ws.remotes() and targets:
+        if session.ws.git.remotes() and targets:
             # Capture pre-fetch commit-ids for every target lane so vanished lanes can be
             # content-checked against trunk after the fetch prunes them (S9d auto-retire).
             pre_fetch_heads: dict[str, str] = {}
@@ -1277,7 +1307,7 @@ def do_sync(session: Session, all_: bool):
             # in-filter lane (validated). (verb: adopt)
             session.ws.git_fetch(pick_remote(session.ws), bookmarks=sorted(targets))  # own op
             messages.append("fetched remote.")
-        elif not session.ws.remotes():
+        elif not session.ws.git.remotes():
             notes.append("no remote — rebasing onto the local base (trunk or parent lane) only.")
         # A fetch can prune a lane whose remote branch was deleted server-side (e.g.
         # `gh pr merge --delete-branch`): jj drops the un-diverged local bookmark too, so a later
@@ -1291,7 +1321,7 @@ def do_sync(session: Session, all_: bool):
 
         for lane in targets:
             if lane not in surviving:
-                lane_sha = pre_fetch_heads.get(lane) if session.ws.remotes() else None
+                lane_sha = pre_fetch_heads.get(lane) if session.ws.git.remotes() else None
                 if lane_sha is not None:
                     relation = _merge_tree_relation(session.view(), lane_sha, trunk_tip)
                     if relation is not None and not relation[1]:
@@ -1694,7 +1724,7 @@ def do_pull(session: Session, *, dry_run: bool = False):
     from gitman.state import _lane_index, _trunk_conflicted
 
     trunk = require_trunk(session.config)
-    if not session.ws.remotes():
+    if not session.ws.git.remotes():
         raise GitmanError("no git remote — run `gitman remote add <url>` first.", exit_code=2)
     remote = pick_remote(session.ws)
 
@@ -1903,7 +1933,7 @@ def do_push(session: Session, *, reset_origin: bool = False):
     from gitman.state import _trunk_content_relation
 
     trunk = require_trunk(session.config)
-    if not session.ws.remotes():
+    if not session.ws.git.remotes():
         raise GitmanError("no git remote — run `gitman remote add <url>` first.", exit_code=2)
     remote = pick_remote(session.ws)
 

@@ -68,40 +68,19 @@ def _edit_and_save(wpath: Path, filename: str, content: str, msg: str) -> None:
     (wpath / filename).write_text(content)
     sub_ws = Workspace.load(wpath)
     sub_ws.snapshot()  # the workspace's own on-disk edit → its @
-    # Export to colocated git with D/F-safe fallback: fractal lane names (refs/heads/T vs
-    # refs/heads/T/api) can cause git_export to raise GitError. Fall back to manual
-    # write_git_ref/delete_git_ref which are D/F-safe in pyjutsu 0.12.2.
+    # Fractal lane names give git a D/F conflict (refs/heads/T blocks refs/heads/T/api), so
+    # git_export raises. Tolerate it — exactly what gitman does: `_export_colocated_git` reports
+    # the stale ref and points at `gitman reconcile`, and jj stays authoritative.
+    #
+    # Do NOT force-write the blocked refs by hand here. That is an out-of-band writer gitman
+    # never is, and it leaves refs jj cannot retire (deleting refs/heads/T/storage fails on its
+    # reflog, itself D/F-blocked by refs/heads/T's). A later git_import then reads the orphan
+    # back and RESURRECTS a landed lane, which blocks its parent's land as a "live child".
     try:
         sub_ws.git_export()
     except Exception:
-        _safe_export(sub_ws)
-    do_save(_sess(wpath), msg)
-
-
-def _safe_export(ws: Workspace) -> None:
-    """Manual D/F-safe colocated git export: write each bookmark ref, delete leftovers."""
-    from pyjutsu import PyjutsuError
-
-    view = ws.head()
-    git_names = set(ws.git_refs())
-    for b in view.bookmarks():
-        if b.remote is None:
-            try:
-                jj_id = view.resolve(b.name).commit_id
-                ws.write_git_ref(b.name, jj_id)
-            except Exception:
-                pass
-    for gname in git_names:
-        if not any(b.name == gname and b.remote is None for b in view.bookmarks()):
-            try:
-                ws.delete_git_ref(gname)
-            except PyjutsuError:
-                pass
-    try:
-        ws.git_import()
-        ws.git_export()
-    except PyjutsuError:
         pass
+    do_save(_sess(wpath), msg)
 
 
 def _trunk_paths_since(work: Path, trunk0: str) -> set[str]:

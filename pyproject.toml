@@ -11,12 +11,12 @@ authors = [
 ]
 
 # Lean base: pydantic + typer + pyjutsu (the in-process jj-lib engine). git comes from
-# devenv (doctor's escape-hatch check); there is no `jj` CLI dependency. pyjutsu >= 0.15
+# devenv (doctor's escape-hatch check); there is no `jj` CLI dependency. pyjutsu >= 0.20
 # binds the complete in-process surface (project 14 + hooks); gitman maps its hook errors.
 dependencies = [
   "pydantic>=2.12",
   "typer>=0.12",
-  "pyjutsu>=0.15.0",
+  "pyjutsu>=0.20.0",
 ]
 
 [project.optional-dependencies]

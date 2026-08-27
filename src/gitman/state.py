@@ -211,7 +211,7 @@ def _trunk_content_relation(
     """
     from gitman.core import pick_remote
 
-    if not session.ws.remotes():
+    if not session.ws.git.remotes():
         return None, 0, 0, None
     remote = pick_remote(session.ws)
     try:
@@ -253,7 +253,7 @@ def _git_refs_heads(ws: Workspace) -> dict[str, str]:
     from pyjutsu import PyjutsuError
 
     try:
-        return ws.git_refs()  # default prefix refs/heads/, keys already prefix-stripped
+        return ws.git.refs()  # default prefix refs/heads/, keys already prefix-stripped
     except PyjutsuError:
         return {}
 
@@ -437,7 +437,7 @@ def capture_state(session: Session) -> RepoState:
     if _trunk_conflicted(view, trunk_name):
         from gitman.core import pick_remote
 
-        has_remote = bool(session.ws.remotes())
+        has_remote = bool(session.ws.git.remotes())
         tracked_on_remote = any(
             b.name == trunk_name and b.remote not in (None, "git") for b in view.bookmarks()
         )
@@ -647,7 +647,7 @@ def capture_state(session: Session) -> RepoState:
     notes: list[str] = []
     if session.is_stale():
         notes.append("working copy is stale — run `gitman reconcile`.")
-    if not session.ws.remotes():
+    if not session.ws.git.remotes():
         notes.append("no git remote — publish/release unavailable.")
     # Content-aware trunk↔origin note (twin-proof — a re-hash twin reads in-sync/local-ahead, so it
     # never fires). `forge-ahead` → `pull` (safe FF; local has nothing to lose). `diverged` → `pull`

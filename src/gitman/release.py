@@ -103,7 +103,7 @@ def do_release(session: Session, level: str | None, set_version: str | None):
             "(a release tag must sit on trunk's history). Land the change first.",
             exit_code=1,
         )
-    session.ws.create_tag(tag, commit, f"Release {new}")  # GitError → exit 1 on fail
+    session.ws.git.create_tag(tag, commit, f"Release {new}")  # GitError → exit 1 on fail
     messages.append(f"tagged {tag} @ {commit}")
     notes.append(
         "a git tag was created on trunk (`gitman undo` reverts this release via the checkpoint; "
@@ -111,7 +111,7 @@ def do_release(session: Session, level: str | None, set_version: str | None):
     )
 
     if config.release.push_tag:
-        if not session.ws.remotes():
+        if not session.ws.git.remotes():
             notes.append("no remote — tag created locally but not pushed.")
         else:
             session.ws.push_tag(tag, pick_remote(session.ws))  # GitError → exit 1 on fail
