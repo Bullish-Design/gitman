@@ -234,6 +234,18 @@ def do_init(session: Session, trunk_opt: str | None, *, colocated_now: bool = Fa
     if colocated_now:
         messages.append("colocated jj onto the repo's git (adopted any existing history; uncommitted work kept on @).")
     with repo_lock(repo_root):
+        if colocated_now:
+            # Adopting an existing `.git` (project 34, lane 5). pyjutsu 0.17 dropped `Workspace.init`'s
+            # pruning of orphaned `refs/jj/keep/*` and moved it into `ws.gc()`, which also refreshes
+            # jj's internal keep-refs. A stale keep-ref makes one change_id resolve to two commits, and
+            # every later intent that names a change dead-ends on "Change ID … is divergent". Collect
+            # here, at the one moment the removed behaviour used to run. gc publishes no operation, so
+            # it changes nothing `undo` can reach. Default cutoff (two weeks, as `jj util gc`) —
+            # an aggressive expiry can destroy objects a concurrent writer is mid-write on.
+            try:
+                session.ws.gc()
+            except Exception as exc:  # noqa: BLE001 — a repo that cannot collect must still init
+                notes.append(f"garbage collection skipped ({exc}).")
         trunk = trunk_opt or detect_trunk(session)
         if trunk not in _local_bookmarks(session):
             with session.ws.transaction("gitman:init", auto_snapshot=False) as tx:

@@ -154,6 +154,70 @@ def test_reconcile_abandon_clears_both_divergent_sides(tmp_path: Path):
     assert not any(lane.name.startswith("adopted-") for lane in state.lanes)
 
 
+# --- lane 5: garbage collection replaces adopt-time keep-ref pruning ------------------
+
+
+def test_reconcile_collects_garbage_with_the_default_cutoff(tmp_path: Path, monkeypatch):
+    """pyjutsu 0.17 removed `Workspace.init`'s adopt-time pruning of orphaned `refs/jj/keep/*` and
+    replaced it with `ws.gc()`. An obsolete keep-ref makes one change_id resolve to two commits, and
+    a divergent change_id dead-ends the transactions `reconcile` runs. So `reconcile` collects
+    first — with pyjutsu's DEFAULT cutoff (two weeks, as `jj util gc`), never a forced expiry that
+    could destroy objects a concurrent writer is mid-write on."""
+    calls: list[tuple] = []
+    real_gc = Workspace.gc
+
+    def spy(self, *args, **kwargs):
+        calls.append((args, kwargs))
+        return real_gc(self, *args, **kwargs)
+
+    monkeypatch.setattr(Workspace, "gc", spy)
+
+    _divergent_strays(tmp_path)
+    calls.clear()  # ignore the `do_init` call inside the fixture
+    res = do_reconcile(Session.load(tmp_path, GitmanConfig(trunk="main")), abandon_=True)
+
+    assert res.outcome == "RECONCILED"
+    assert calls == [((), {})], calls  # called exactly once, no cutoff argument
+    assert capture_state(Session.load(tmp_path, GitmanConfig(trunk="main"))).canonical
+
+
+def test_reconcile_survives_a_failing_gc(tmp_path: Path, monkeypatch):
+    """Garbage collection is best-effort: a repo that cannot collect must still reconcile. The
+    failure is reported, never swallowed."""
+
+    def boom(self, *a, **kw):
+        raise RuntimeError("gc unavailable")
+
+    _divergent_strays(tmp_path)
+    monkeypatch.setattr(Workspace, "gc", boom)
+
+    res = do_reconcile(Session.load(tmp_path, GitmanConfig(trunk="main")), abandon_=True)
+
+    assert res.outcome == "RECONCILED"
+    assert any("garbage collection skipped" in m for m in res.messages), res.messages
+    assert capture_state(Session.load(tmp_path, GitmanConfig(trunk="main"))).canonical
+
+
+def test_init_colocate_collects_garbage_when_adopting(tmp_path: Path, monkeypatch):
+    """The adopt path is where the removed behaviour used to run, so `gitman init --colocate` calls
+    `gc` there — and only there. Initializing an already-colocated repo collects nothing."""
+    calls: list[tuple] = []
+    monkeypatch.setattr(Workspace, "gc", lambda self, *a, **kw: calls.append((a, kw)))
+
+    ws = Workspace.init(tmp_path, colocate=True)
+    (tmp_path / "f.txt").write_text("base\n")
+    with ws.transaction("initial") as tx:
+        tx.describe("@", "initial")
+
+    do_init(Session.load(tmp_path, GitmanConfig()), trunk_opt=None, colocated_now=True)
+    assert calls == [((), {})], calls
+
+    calls.clear()
+    (tmp_path / "gitman.toml").unlink()  # re-init the same repo, this time already colocated
+    do_init(Session.load(tmp_path, GitmanConfig()), trunk_opt=None)
+    assert calls == []
+
+
 def test_reconcile_nondivergent_stray_unchanged(tmp_path: Path):
     """Happy path: a single, non-divergent stray still adopts into exactly one `adopted-*` lane
     (guards the commit-id naming change against altering the common case)."""

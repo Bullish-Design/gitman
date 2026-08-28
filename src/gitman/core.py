@@ -137,7 +137,9 @@ def _target(change) -> str:
     bare change_id.
 
     A divergent change-id (one change_id → ≥2 commits — manufactured on a fresh `git_import` of a
-    forge repo with orphaned `refs/jj/keep/*`) resolves to >1 revision, so `tx.abandon(change_id)`
+    forge repo with orphaned `refs/jj/keep/*`; pyjutsu 0.17 moved that pruning out of
+    `Workspace.init` into `ws.gc()`, which `gitman init --colocate` and `gitman reconcile` now call)
+    resolves to >1 revision, so `tx.abandon(change_id)`
     / `tx.create_bookmark(name, change_id)` raise `Change ID … is divergent` and dead-end the
     intent. A full commit hex always resolves to exactly one commit, so mutating by commit_id is
     strictly safer with no downside. Works for both pyjutsu `Commit` rows (`view.log(...)`) and

@@ -33,6 +33,22 @@ def do_reconcile(session: Session, abandon_: bool):
     trunk = require_trunk(session.config)
     with repo_lock(session.repo_root):
         op_before = session.ws.head_operation()
+        # Garbage-collect first (project 34, lane 5). pyjutsu 0.17 dropped `Workspace.init`'s
+        # adopt-time pruning of orphaned `refs/jj/keep/*` and moved it into `ws.gc()`, which also
+        # refreshes jj's internal keep-refs. An obsolete keep-ref makes one change_id resolve to two
+        # commits, and a divergent change_id dead-ends the very transactions this verb runs. gc is
+        # the documented cure and reconcile is the documented recovery intent, so it belongs here.
+        #
+        # Two placement facts. gc publishes NO operation, so `op_before` stays the right undo anchor
+        # and no canonical_guard postcondition sees a phantom op — this is why the call sits in the
+        # lock and not inside a guard. And the cutoff is left at pyjutsu's default (two weeks, as
+        # `jj util gc`); an aggressive expiry can destroy objects a concurrent writer is mid-write on.
+        # Best-effort: a repo that cannot collect garbage must still be able to reconcile.
+        gc_notes: list[str] = []
+        try:
+            session.ws.gc()
+        except Exception as exc:  # noqa: BLE001 — never block the recovery verb
+            gc_notes.append(f"garbage collection skipped ({exc}).")
         # A truly-stale `@` (its recorded commit rewritten away — the §1.3 fractal-lanes case, or a
         # `pull` under this workspace) can't be snapshotted by `fresh_view()` and never got refreshed.
         # Refresh it FIRST (the one genuinely-new reconcile mutation), then heal refs/strays as before.
@@ -55,10 +71,13 @@ def do_reconcile(session: Session, abandon_: bool):
                 surveyed = True
             if surveyed and not conflicted and not strays and not mismatched and not leftover and not refresh_notes:
                 return IntentResult(
-                    intent="reconcile", outcome="CLEAN", messages=["already canonical — no strays, refs in sync."]
+                    intent="reconcile",
+                    outcome="CLEAN",
+                    messages=["already canonical — no strays, refs in sync."],
+                    notes=gc_notes,
                 )
 
-            actions: list[str] = list(refresh_notes)
+            actions: list[str] = gc_notes + list(refresh_notes)
             # Colocated refs FIRST (gap B). The import step can bring in git-only history — trunk
             # included — so everything downstream must read the *post*-import view: strays scanned
             # against a stale trunk get adopted onto a stale base and report a diff that double-counts
