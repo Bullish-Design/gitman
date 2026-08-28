@@ -59,9 +59,29 @@ failed a correct wheel.)
 and `pyjutsu-0.20.0.tar.gz`. The extension needs only `libgcc_s`, `libm`, `libc`, and
 `ld-linux` — all permitted by manylinux.
 
-**Gitman side:** `[tool.uv.sources]` pins pyjutsu to that asset URL.
+**Gitman side:** `[tool.uv.sources]` pins pyjutsu to that asset URL, and gitman's own devenv
+**dropped the vendomat input entirely** (`devenv.yaml`, the `vendor` block in `devenv.nix`).
+The shell builds and `import pyjutsu` reports 0.20.0 with vendomat gone, so the wheelhouse is
+no longer a build dependency of this repo either. `nix/gitman.nix` gained `gitman:wheel` and
+`gitman:publish`, mirroring pyjutsu's pair; gitman is pure Python, so there is no relocation
+step.
 
-**Verified.** A clean venv installs the wheel straight from the URL and imports it
+**Released:** `gitman v0.5.0` with `gitman-0.5.0-py3-none-any.whl` and `gitman-0.5.0.tar.gz`.
+
+**Verified end to end.** A throwaway repo whose entire gitman configuration is
+
+```toml
+[dependency-groups]
+dev = ["gitman"]
+
+[tool.uv.sources]
+gitman = { git = "https://github.com/Bullish-Design/gitman", tag = "v0.5.0" }
+```
+
+runs `uv sync && uv run gitman doctor` successfully, pulling pyjutsu from its release wheel.
+No nix, no vendomat, no Rust. `doctor` then correctly reports the repo is not colocated yet.
+
+A clean venv also installs the pyjutsu wheel straight from the URL and imports it
 (`pyjutsu 0.20.0, jj-lib 0.44.0`). A throwaway consumer project that declares only
 `gitman = { git = ... }` resolves pyjutsu from the release URL in its own lock — uv **does**
 carry a dependency's `[tool.uv.sources]` into the consumer's resolution, for both a `path` and
@@ -79,6 +99,14 @@ and `uv lock --check`. Both files uv rewrites land in the one bump change, so th
 the lock can never be committed apart. A legacy `[version]` table is **rejected** with a
 migration message rather than ignored — ignoring it would reintroduce the drift under a config
 that looks honoured.
+
+A bump reports **the paths it actually committed** and says so when it could not commit the
+lock. Dogfooding this release exposed the case: gitman's own `.gitignore` lists `uv.lock`, so
+jj cannot snapshot it and only `pyproject.toml` entered the bump change — while the first draft
+of the report claimed "updated pyproject.toml + uv.lock" unconditionally. A lock kept out of
+history is the second copy of the version that G2 was about, so the report now names it rather
+than implying both moved. **Open for the owner:** gitman ignores its own `uv.lock`; committing
+it would restore the one-change guarantee in this repo.
 
 `release` calls `check_lock` before verify, so a stale lock is refused as a **decision**
 (exit 1), cheaply, before anything runs. A repo with **no** lockfile is not drifting and
@@ -107,11 +135,12 @@ bumps inline from clean trunk.
 ## Verification
 
 - `ruff check src tests` clean.
-- `python -W error::DeprecationWarning -m pytest -q` — **286 passed**, zero deprecations
+- `python -W error::DeprecationWarning -m pytest -q` — **287 passed**, zero deprecations
   (278 at trunk).
 - `gitman doctor` — HEALTHY, eight checks, `uv` row present.
-- The wheel installs from its release URL into a clean venv and imports.
-- A consumer project resolves pyjutsu transitively from gitman's pin.
+- Both wheels are published; the pyjutsu wheel installs from its release URL and imports.
+- A consumer project installs `gitman v0.5.0` from git and resolves pyjutsu from the pin.
+- The devenv shell builds with no vendomat input.
 
 New tests live in `tests/test_project32_contracts.py`; each pins one issue by name so a
 regression says which one it reopens.

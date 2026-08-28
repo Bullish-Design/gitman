@@ -29,12 +29,18 @@ against the tree at trunk `4d0890a3`.
 | D5 | **`shape`** — squash/reorder + **hunk-level/interactive `split`** | New intent | M | You need partial-file carving or history tidy-up before land |
 | D6 | **Pre-release / build version metadata** | Semver extension | S | A real pre-release/RC flow is needed |
 | D7 | **Pluggable forges** (GitLab / Gitea) | Forge abstraction | M | A repo lives somewhere other than GitHub |
-| D8 | **`resolve --show` / `--from -`** — a write mode for the existing intent | Intent extension | S | An agent computes a resolution and has to write it to disk itself |
+| D8 | **`resolve --show` / `--from -`** — a write mode for the existing intent | Intent extension | S | An agent computes a resolution and has to write it to disk itself; **or `--list` not naming the conflicted files costs time** |
 | D9 | **`gitman absorb`** — fold a fixup draft into the lane commits that introduced the lines | New intent | M | Hand `squash`-after-`save` becomes a repeated chore |
 | D10 | **Signing visibility** — a `doctor` check over `Commit.is_signed` | `doctor` row | S | A repo with a signing backend produces unsigned commits and nothing says so |
 
 Size: S ≈ hours, M ≈ a focused PR, L ≈ a multi-PR effort. All estimates assume the current architecture
 holds.
+
+**Project 35 (2026-08-28) closed project 32's G1–G4** — published wheels, uv as the only
+version backend, and the documented release sequence. See
+[`../35-wheel-distribution/OUTCOME.md`](../35-wheel-distribution/OUTCOME.md). Nothing on this
+list changed, but D8 gained a second friction signal: `gitman resolve --list` reports
+conflicted *lanes* and not the files, which cost time during that project.
 
 **D8–D10 were added 2026-08-27** from project 34 lane 9. Unlike D1–D7 they arrive **already
 decided** — the design question each one carried is answered in
