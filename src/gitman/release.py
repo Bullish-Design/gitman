@@ -1,7 +1,9 @@
 """Release flow: (optional bump →) annotated git tag on the release commit → push tag.
 The verify hook runs **before any write**, so a blocked release leaves no tag and no bump.
-Tags are written through pyjutsu (`Workspace.create_tag` / `push_tag`, 0.11.0) onto the colocated
-`.git`; jj-lib is read-only on tags, so pyjutsu writes the annotated object directly. See concept §13.
+Tags are written through pyjutsu (`ws.git.create_tag` / `push_tag`) onto the colocated `.git`.
+pyjutsu 0.17 made lightweight jj tags the default, so gitman names the annotated writer directly
+(project 34, lane 3): a release tag carries a message that forges display, and dropping it would
+silently change a published artifact. See concept §13.
 """
 
 from __future__ import annotations
@@ -32,7 +34,8 @@ def _target_version(
 
 def _tag_exists(session: Session, tag: str) -> bool:
     """Whether an annotated tag `tag` already exists — resolved through jj's `tags()` revset (the
-    tag was imported into the jj view by a prior `create_tag`), so no git subprocess."""
+    tag was imported into the jj view by a prior `create_tag`), so no git subprocess. The
+    `exact:` prefix pins the pattern, so the glob default flip in pyjutsu 0.16 cannot reach it."""
     from pyjutsu import RevsetError
 
     try:

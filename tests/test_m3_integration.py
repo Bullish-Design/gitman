@@ -143,6 +143,32 @@ def test_release_creates_tag(tmp_path: Path):
     assert "v1.2.3" in tags
 
 
+def test_release_tag_is_annotated_and_reads_back(tmp_path: Path):
+    """DECISION (project 34, lane 3): gitman keeps ANNOTATED release tags, now written through the
+    explicit `ws.git.create_tag`. pyjutsu 0.17 made lightweight jj tags the default, and the old
+    three-argument `ws.create_tag(name, target, message)` spelling deprecates. Pin both halves: the
+    object kind on the git side, and the `tags(exact:…)` read that `_tag_exists` depends on."""
+    from gitman.init import do_init
+    from gitman.release import _tag_exists, do_release
+
+    _fresh(tmp_path)
+    do_init(_uninit_sess(tmp_path), trunk_opt=None)
+    do_release(_isess(tmp_path), level=None, set_version=None)
+
+    kind = subprocess.run(
+        ["git", "cat-file", "-t", "refs/tags/v1.2.3"], cwd=tmp_path, capture_output=True, text=True
+    ).stdout.strip()
+    assert kind == "tag", "release tags must stay annotated objects, not lightweight refs"
+    message = subprocess.run(
+        ["git", "tag", "-l", "--format=%(contents)", "v1.2.3"], cwd=tmp_path, capture_output=True, text=True
+    ).stdout
+    assert "Release 1.2.3" in message
+
+    # And the read side still finds it through jj's tags() revset.
+    assert _tag_exists(_isess(tmp_path), "v1.2.3")
+    assert not _tag_exists(_isess(tmp_path), "v9.9.9")
+
+
 def test_release_bump_on_lane_refused(tmp_path: Path):
     """H3/Option A: release <bump> on a live lane is refused (exit 1); no tag, no bump left."""
     from gitman.init import do_init
