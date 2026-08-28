@@ -16,6 +16,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+import pytest
 from pyjutsu import Workspace
 
 from gitman.config import GitmanConfig, LanesConfig
@@ -101,6 +102,53 @@ def test_workspace_start_leaves_no_stray_change(tmp_path: Path):
     from gitman.state import find_strays
 
     assert find_strays(_sess(repo).fresh_view(), "main") == []
+
+
+def test_failed_workspace_start_leaves_no_registration(tmp_path: Path, monkeypatch):
+    """pyjutsu 0.16 splits workspace creation into two published ops, so a failure can leave a
+    REGISTERED workspace with no working copy (`PartialWorkspaceError`). `_start_workspace` removes
+    the directory; the enclosing `canonical_guard` rewinds the registration with
+    `restore_operation`. Prove the row does not outlive the failure."""
+    import pyjutsu
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _repo(repo)
+
+    def boom(*a, **kw):  # fail AFTER add_workspace registered the name
+        raise RuntimeError("simulated failure after registration")
+
+    monkeypatch.setattr(pyjutsu.Workspace, "load", staticmethod(boom))
+
+    with pytest.raises(RuntimeError):
+        do_start(_sess(repo), "wlane", workspace=True)
+
+    monkeypatch.undo()
+    assert not (repo / ".worktrees" / "wlane").exists()
+    assert {w.name for w in Workspace.load(repo).workspaces()} == {"default"}
+    state = capture_state(_sess(repo))
+    assert state.canonical, state.off_canonical
+    assert state.lanes == []
+    # The repo is still usable: the same name starts cleanly afterwards.
+    assert do_start(_sess(repo), "wlane", workspace=True).outcome == "STARTED"
+
+
+def test_partial_workspace_error_keeps_the_recovery_action(tmp_path: Path):
+    """`PartialWorkspaceError` carries its recovery action in the message. Map it before the plain
+    `WorkspaceError` branch so the operator reads the action, not a bare exception string."""
+    from pyjutsu.errors import PartialWorkspaceError
+
+    from gitman.core import map_pyjutsu_error
+
+    exc = PartialWorkspaceError(
+        "workspace 'wlane' was registered at '/x/.worktrees/wlane', but initialization failed: "
+        "disk full; recover with source_workspace.forget_workspace('wlane'); files remain at "
+        "'/x/.worktrees/wlane'"
+    )
+    err = map_pyjutsu_error(exc)
+    assert err.exit_code == 2
+    assert "workspace half-created" in str(err)
+    assert "forget_workspace('wlane')" in str(err)
 
 
 # --- cleanup removes the in-repo dir --------------------------------------------------

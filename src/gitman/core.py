@@ -9,6 +9,7 @@ import fnmatch
 import os
 import shutil
 import subprocess
+from contextlib import suppress
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -38,6 +39,7 @@ def map_pyjutsu_error(exc: PyjutsuError) -> GitmanError:
         HookAbort,
         ImmutableCommitError,
         JjCliError,
+        PartialWorkspaceError,
         PostHookError,
         RevsetError,
         StaleWorkingCopyError,
@@ -76,6 +78,14 @@ def map_pyjutsu_error(exc: PyjutsuError) -> GitmanError:
                 exit_code=1,
             )
         return GitmanError(f"bad revision/revset: {exc}", exit_code=3)
+    if isinstance(exc, PartialWorkspaceError):
+        # pyjutsu 0.16 split `add_workspace` into two published ops: registration, then the initial
+        # commit. This is the gap between them — the workspace is registered, its files are on disk,
+        # and it has no working-copy commit. Exit 2: infrastructure, not a VC decision. pyjutsu puts
+        # the recovery action in the message (`forget_workspace(<name>)` + the path), so pass it
+        # through verbatim rather than paraphrasing it. gitman's own `start` unwinds this itself —
+        # see `_start_workspace` — so reaching here means an unguarded caller.
+        return GitmanError(f"workspace half-created: {exc}", exit_code=2)
     if isinstance(exc, (WorkspaceError, BackendError, WorkingCopyError, JjCliError)):
         return GitmanError(f"infra/config: {exc}", exit_code=2)
     return GitmanError(str(exc), exit_code=2)  # base PyjutsuError
@@ -457,6 +467,16 @@ def _start_workspace(
                 tx.create_bookmark(name, "@")
         except Exception:
             shutil.rmtree(wpath, ignore_errors=True)  # drop the half-made workspace dir
+            # The jj-side record is unwound by the enclosing `canonical_guard`: its `except` calls
+            # `restore_operation(op_before)`, and a workspace registration lives in the operation's
+            # view, so the rewind drops the row along with everything else this intent published.
+            # Removing the dir alone would otherwise leave a registered workspace with no working
+            # copy. Belt-and-braces below for the `PartialWorkspaceError` shape, where pyjutsu names
+            # `forget_workspace` as the recovery: forget it here too, so the row cannot outlive the
+            # dir if the restore is ever weakened. Both are idempotent; never mask the real error.
+            with suppress(Exception):
+                if any(w.name == name for w in session.ws.workspaces()):
+                    session.ws.forget_workspace(name)
             raise
     messages.append(
         f"lane '{name}' stacked on '{base_name}'." if stacked else f"lane '{name}' created on {trunk}."
