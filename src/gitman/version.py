@@ -108,6 +108,17 @@ def bump_change_on_lane(session: Session, lane: str, new: str, op_desc: str = "g
         tx.set_bookmark(lane, "@")  # lane head = the bump change
 
 
+def _changed_paths(session: Session, revset: str) -> list[str]:
+    """The paths in `revset`'s own change. `[]` on any engine failure — a report detail must
+    never turn a completed bump into an error."""
+    from pyjutsu import PyjutsuError
+
+    try:
+        return sorted({change.path for change in session.ws.diff(revset).files})
+    except (PyjutsuError, AttributeError):
+        return []
+
+
 def do_version(session: Session, action: str | None, level: str | None):
     """`gitman version` (show) / `gitman version bump <level>` (write + save a bump change)."""
     from gitman.invariants import canonical_guard
@@ -127,11 +138,26 @@ def do_version(session: Session, action: str | None, level: str | None):
     with canonical_guard(session, "version") as canon:
         lane = require_current_lane(session, trunk)  # @ must be on a lane (read pre-mutation)
         bump_change_on_lane(session, lane, new)
+
+    committed = _changed_paths(session, lane)
+    messages = [f"{current} → {new}"]
+    if committed:
+        messages.append(f"changed: {', '.join(committed)}")
+    notes: list[str] = []
+    # uv rewrites the lock, but jj cannot snapshot a path the repo ignores. Say so: a lock kept
+    # out of history is the second copy of the version that G2 was about, and silence here
+    # would read as "both files moved together" when only one did.
+    if (session.repo_root / "uv.lock").is_file() and "uv.lock" not in committed:
+        notes.append(
+            "uv.lock was updated on disk but is not in the change (untracked or gitignored), "
+            "so the manifest and the lock are versioned apart."
+        )
     return IntentResult(
         intent="version",
         outcome="BUMPED",
         lane=lane,
-        messages=[f"{current} → {new}", "updated pyproject.toml + uv.lock"],
+        messages=messages,
+        notes=notes,
         undo_command=canon.undo_command,
         state=canon.state,
     )
