@@ -97,6 +97,63 @@ def test_seed_refuses_when_trunk_has_history(tmp_path: Path) -> None:
     assert exc.value.exit_code == 3
 
 
+def test_seed_with_a_fetched_origin_stays_guard_bound(tmp_path: Path) -> None:
+    """Project 34, lane 6b. `seed` rewrites `@` while the trunk bookmark points at it. Since pyjutsu
+    0.16 a rewrite is refused when the target is immutable, and `trunk()` is a term of the default
+    `immutable_heads()` alias. At real seed time no remote is fetched, so `trunk()` collapses to
+    `root()` and `@` (a child of root) stays mutable. A fetched but UNRELATED `origin/main` leaves it
+    mutable too. Once `@` really sits inside `::(trunk())`, gitman's own guard rejects first, with
+    exit 3 — a raw `ImmutableCommitError` never reaches the operator."""
+    upstream = tmp_path / "upstream"
+    upstream.mkdir()
+    up_ws = Workspace.init(upstream, colocate=True)
+    (upstream / "u.txt").write_text("upstream\n")
+    with up_ws.transaction("upstream initial") as tx:
+        tx.describe("@", "upstream initial")
+        tx.create_bookmark("main", "@")
+    up_ws.git_export()
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    ws = _init_unseeded(repo)
+    ws.add_remote("origin", str(upstream))
+    ws.git_fetch("origin")
+    origin_tip = ws.resolve("main@origin").commit_id
+
+    # Unrelated local history: `@` is no ancestor of `trunk()`, so the rewrite stays legal and
+    # `seed` behaves exactly as it does with no remote at all.
+    assert do_seed(_sess(repo), "Initial commit").outcome == "SEEDED"
+
+    # Now park trunk ON the fetched origin tip and edit a child of it. `@` is inside
+    # `::(trunk())` — the immutable set. gitman's own guard must reject first, with exit 3.
+    with ws.transaction("adopt origin tip") as tx:
+        tx.set_bookmark("main", origin_tip)
+        tx.new(origin_tip)
+    (repo / "later.txt").write_text("later\n")
+    ws.snapshot()
+
+    with pytest.raises(GitmanError) as exc:
+        do_seed(_sess(repo), "second seed")
+    assert exc.value.exit_code == 3
+    assert "immutable" not in str(exc.value)
+
+
+def test_seed_with_an_unfetched_origin_still_works(tmp_path: Path) -> None:
+    """A configured remote alone must not freeze the seed: `trunk()` matches a fetched REMOTE
+    bookmark, so an empty remote leaves `@` mutable."""
+    upstream = tmp_path / "upstream"
+    upstream.mkdir()
+    Workspace.init(upstream, colocate=True)
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    ws = _init_unseeded(repo)
+    ws.add_remote("origin", str(upstream))
+
+    assert do_seed(_sess(repo), "Initial commit").outcome == "SEEDED"
+    assert capture_state(_sess(repo)).canonical
+
+
 def test_seed_noop_on_empty_working_copy(tmp_path: Path) -> None:
     # trunk on an empty @ (no on-disk work yet) → nothing to seed.
     ws = Workspace.init(tmp_path, colocate=True)

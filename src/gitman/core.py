@@ -60,7 +60,15 @@ def map_pyjutsu_error(exc: PyjutsuError) -> GitmanError:
     if isinstance(exc, StaleWorkingCopyError):
         return GitmanError("working copy is stale — run `gitman reconcile`.", exit_code=1)
     if isinstance(exc, ImmutableCommitError):
-        return GitmanError(f"immutable commit: {exc}", exit_code=1)
+        # pyjutsu 0.16 checks `immutable_heads().ancestors()` before every rewrite verb. The default
+        # alias is `trunk() | tags() | untracked_remote_bookmarks()`, so three different protections
+        # produce this one error. Name them here; `explain_immutable` names the exact one where a
+        # session is in hand. gitman never passes `ignore_immutable=True` (project 34, lane 6c).
+        return GitmanError(
+            f"immutable commit: {exc} — a tag, trunk, or an untracked remote bookmark protects it. "
+            f"Remove that protection and retry.",
+            exit_code=1,
+        )
     if isinstance(exc, ConflictError):
         return GitmanError(f"conflict: {exc}", exit_code=1)
     if isinstance(exc, GitError):
@@ -178,6 +186,48 @@ def pick_remote(ws: Workspace) -> str:
         f"(`gitman remote add origin <url>`, or set `[gitman].default_remote`). "
         f"Available: {', '.join(sorted(names))}",
         exit_code=2,
+    )
+
+
+_IMMUTABLE_TERMS = (
+    ("tags()", "a tag"),
+    ("trunk()", "jj's `trunk()` (a remote main/master/trunk branch)"),
+    ("untracked_remote_bookmarks()", "an untracked remote bookmark"),
+)
+
+
+def explain_immutable(session: Session, exc: Exception, action: str) -> GitmanError:
+    """Turn an `ImmutableCommitError` into a report that names WHICH protection fired.
+
+    pyjutsu 0.16 refuses to rewrite anything in `::(trunk() | tags() | untracked_remote_bookmarks())`.
+    All three protections raise the same error, and "commit is immutable" leaves the operator with no
+    move. Resolve the commit against each term and say which one holds it (project 34, lane 6c).
+
+    Policy: gitman REFUSES; it never opens a transaction with `ignore_immutable=True`. A tag is the
+    deliberate "this is intentional history" signal `state._stray_revset` already honours, and a
+    remote bookmark is history someone else can see. Both outrank a local cleanup. Falls back to the
+    generic text when the commit id cannot be read or no term matches."""
+    import re
+
+    match = re.search(r"\b([0-9a-f]{8,64})\b", str(exc))
+    if match is None:
+        return map_pyjutsu_error(exc)  # type: ignore[arg-type]
+    commit_id = match.group(1)
+    protection = None
+    try:
+        view = session.view()
+        for term, label in _IMMUTABLE_TERMS:
+            with suppress(Exception):  # a term that doesn't evaluate simply doesn't match
+                if view.log(f"{commit_id} & ::({term})", limit=1):
+                    protection = label
+                    break
+    except Exception:  # noqa: BLE001 — reporting must never raise over the original failure
+        protection = None
+    cause = f"{protection} protects it" if protection else "an immutability rule protects it"
+    return GitmanError(
+        f"cannot {action}: commit {commit_id[:12]} is immutable — {cause}. "
+        f"Remove the protection (delete the tag, or prune the remote bookmark) and retry.",
+        exit_code=1,
     )
 
 
@@ -1203,13 +1253,20 @@ def _abandon_range(session: Session, trunk: str, target: str) -> None:
     abandoned, so each child's base resolves and only the child's commits are removed. Target by
     commit_id (via `_target`) so a divergent change can't dead-end the abandon (issue 06 §G2). Call
     inside a `canonical_guard` body."""
+    from pyjutsu.errors import ImmutableCommitError
+
     from gitman.lanes import lane_base
 
     base = lane_base(session, trunk, target) or trunk
-    with session.ws.transaction("gitman:abandon", auto_snapshot=False) as tx:
-        for c in session.view().log(f"{base}..{target}"):
-            tx.abandon(_target(c))
-        tx.delete_bookmark(target)
+    try:
+        with session.ws.transaction("gitman:abandon", auto_snapshot=False) as tx:
+            for c in session.view().log(f"{base}..{target}"):
+                tx.abandon(_target(c))
+            tx.delete_bookmark(target)
+    except ImmutableCommitError as exc:
+        # A tagged (or pushed-and-untracked) lane commit is protected since pyjutsu 0.16. Refuse
+        # with a report that names the protection — never `ignore_immutable=True` (lane 6c).
+        raise explain_immutable(session, exc, f"abandon lane '{target}'") from exc
     # Retire the colocated ref too, or a later import resurrects the lane we just abandoned.
     _retire_git_ref(session, target)
 

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from pyjutsu.errors import RevsetError
+from pyjutsu.errors import ImmutableCommitError, RevsetError
 
 from gitman.core import _target, require_trunk
 from gitman.invariants import _refresh_stale_working_copy
@@ -121,19 +121,28 @@ def do_reconcile(session: Session, abandon_: bool):
                 # transaction — and, critically, the two divergent sides *share* a change_id, so naming
                 # by change_id collides them onto one bookmark. commit_id is what actually differs, so
                 # it both resolves unambiguously and yields distinct lane names (issue 06 §G2).
-                with session.ws.transaction("gitman:reconcile", auto_snapshot=False) as tx:
-                    for change in strays:
-                        cid = _target(change)
-                        if abandon_:
-                            tx.abandon(cid)
-                            actions.append(f"abandoned {cid[:12]}")
-                        else:
-                            name = f"adopted-{cid[:8]}"
-                            if name in existing:
-                                name = f"adopted-{cid[:12]}"
-                            tx.create_bookmark(name, cid)
-                            existing.add(name)
-                            actions.append(f"adopted {cid[:12]} → lane '{name}'")
+                # A stray under a tag or an untracked remote bookmark is immutable since pyjutsu
+                # 0.16, so `--abandon` can refuse. Report which protection fired; recovery does not
+                # override it (project 34, lane 6c — `ignore_immutable=True` appears nowhere in
+                # gitman). Adoption is unaffected: `create_bookmark` moves a ref, not a commit.
+                try:
+                    with session.ws.transaction("gitman:reconcile", auto_snapshot=False) as tx:
+                        for change in strays:
+                            cid = _target(change)
+                            if abandon_:
+                                tx.abandon(cid)
+                                actions.append(f"abandoned {cid[:12]}")
+                            else:
+                                name = f"adopted-{cid[:8]}"
+                                if name in existing:
+                                    name = f"adopted-{cid[:12]}"
+                                tx.create_bookmark(name, cid)
+                                existing.add(name)
+                                actions.append(f"adopted {cid[:12]} → lane '{name}'")
+                except ImmutableCommitError as exc:
+                    from gitman.core import explain_immutable
+
+                    raise explain_immutable(session, exc, "abandon a stray change") from exc
             actions += ref_notes
             if not actions:
                 actions = ["nothing to do."]

@@ -18,9 +18,11 @@ from __future__ import annotations
 import subprocess as sp
 from pathlib import Path
 
+import pytest
 from pyjutsu import Workspace
 
 from gitman.config import GitmanConfig
+from gitman.core import do_abandon
 from gitman.init import do_init
 from gitman.reconcile import do_reconcile
 from gitman.session import Session
@@ -109,6 +111,55 @@ def test_untagged_offmain_commit_is_still_a_stray(tmp_path: Path):
     state = capture_state(Session.load(tmp_path, GitmanConfig(trunk="main")))
     assert state.canonical is False
     assert "belong to no lane" in (state.off_canonical or "")
+
+
+# --- lane 6c: a tag protects a commit from abandon -------------------------------------
+
+
+def test_abandon_refuses_a_tagged_lane_and_names_the_tag(tmp_path: Path):
+    """Project 34, lane 6c. Since pyjutsu 0.16 `tags()` is a term of `immutable_heads()`, so a
+    tagged lane commit cannot be abandoned. gitman REFUSES and names the protection — it never
+    opens a transaction with `ignore_immutable=True`. The lane survives the refusal intact."""
+    from gitman.core import GitmanError, do_save, do_start
+
+    ws = _init_main(tmp_path)
+    sess = lambda: Session.load(tmp_path, GitmanConfig(trunk="main"))  # noqa: E731
+    do_start(sess(), "tagged-lane", workspace=False)
+    (tmp_path / "work.txt").write_text("work\n")
+    do_save(sess(), "lane work")
+
+    head = sess().fresh_view().resolve("tagged-lane").commit_id
+    _git(tmp_path, "tag", "-a", "-m", "v2.0.0", "v2.0.0", head)
+    ws.git_import()
+
+    with pytest.raises(GitmanError) as exc:
+        do_abandon(sess(), "tagged-lane")
+    assert exc.value.exit_code == 1
+    assert "a tag protects it" in str(exc.value)
+    assert "ignore_immutable" not in str(exc.value)
+    # Nothing was destroyed: the lane is still there.
+    assert "tagged-lane" in {lane.name for lane in capture_state(sess()).lanes}
+
+
+def test_gitman_never_overrides_immutability():
+    """The lane 6c policy is checkable, not only stated: no gitman transaction passes
+    `ignore_immutable=True`. Prose that names the escape hatch is fine; code that uses it is not,
+    so the scan reads each line with its comment stripped."""
+    import io
+    import tokenize
+
+    src = Path(__file__).resolve().parents[1] / "src" / "gitman"
+    hits = []
+    for path in sorted(src.rglob("*.py")):
+        text = path.read_text()
+        code = [
+            tok.string
+            for tok in tokenize.generate_tokens(io.StringIO(text).readline)
+            if tok.type not in (tokenize.COMMENT, tokenize.STRING)
+        ]
+        if "ignore_immutable" in code:
+            hits.append(str(path.relative_to(src)))
+    assert hits == [], hits
 
 
 # --- G2: reconcile recovers a divergent stray -----------------------------------------
