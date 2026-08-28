@@ -230,8 +230,12 @@ workspace an agent may still be in is kept (never rmtree'd). **The fractal-lanes
 **Deferred:** the forge extra's PR `land`/`pr-status`; a `decompose <task> --into a,b,c` batch fan-out
 wrapper (loop `subtask` for now); a `reconcile` *repair* that re-roots an orphaned child; `shape`
 (squash/reorder + **hunk-level/interactive**
-split — the path-scoped `split` above shipped; only partial-file selection needs a native pyjutsu
-`split` binding), pre-release version metadata, pluggable forges.
+split — the path-scoped `split` above shipped; partial-file selection is unbuilt but **no longer
+blocked**: pyjutsu binds `tx.split(commit, selection, mode)` with hunk-level selection, so the work is
+gitman-side only — see `.scratch/projects/27-implementation-guides/D5_HUNK_SPLIT_GUIDE.md`),
+pre-release version metadata, pluggable forges. Three further items are
+**designed and unbuilt** — a write mode for `resolve`, `gitman absorb`, and a signing-visibility
+`doctor` check; see `.scratch/projects/24-deferred-backlog/BACKLOG.md` D8–D10.
 
 ## 8. Lane & workspace flow (parallel agents)
 
@@ -641,8 +645,9 @@ the eleven intents (§7) incl. lane lifecycle + workspaces (§8); `RepoState` + 
 (§16); the agent skill (§17); `init`/`doctor`/`reconcile`; devenv boundary.
 
 **Deferred until dogfooding demands it:** the forge extra (PR `publish`/`land`/`pr-status`),
-stacked PRs, `shape` (squash/reorder + hunk-level/interactive split — path-scoped `split` shipped),
-pre-release/build version metadata, pluggable forges (GitLab/Gitea).
+stacked PRs, `shape` (squash/reorder + hunk-level/interactive split — path-scoped `split` shipped;
+the hunk binding exists, so this is gitman-side work), pre-release/build version metadata, pluggable forges
+(GitLab/Gitea), a write mode for `resolve`, `gitman absorb`, and signing visibility in `doctor`.
 
 ## 20. Resolved questions
 

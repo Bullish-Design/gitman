@@ -604,6 +604,18 @@ Do not add an intent in this lane. Write a short proposal per candidate, put it 
 directory, and let the owner pick. `tx.absorb`, `tx.fix`, and signing all need a concept decision
 before code.
 
+> **Outcome, 2026-08-27.** The proposals are in
+> [`LANE-9-NEW-SURFACE-PROPOSALS.md`](LANE-9-NEW-SURFACE-PROPOSALS.md), and the three concept
+> decisions are taken (see [`COMPLETION.md`](COMPLETION.md) → "Resolved later"). Two rows of the
+> table above were wrong and are corrected in the proposals document:
+>
+> - **`tx.resolve_conflict`** — "a real implementation behind `gitman resolve`" reads as though the
+>   intent does not exist. It does (`cli.py:343`, read-only). The work is a write *mode*.
+> - **`Workspace.load(..., sign_behavior=...)`** — "needs a configuration design" is wrong twice.
+>   Gitman already honours jj's `signing.behavior` because it passes no override, and the backend
+>   and key stay in jj's configuration, so there is no configuration for gitman to design. The
+>   decision was to observe, not to configure.
+
 ---
 
 ## 2. Definition of done

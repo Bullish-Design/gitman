@@ -37,6 +37,25 @@ Deliverables in this directory: [`LANE-6-IMMUTABILITY-AUDIT.md`](LANE-6-IMMUTABI
 | Immutable-commit policy (lane 6c) | **Refuse everywhere**, with a report naming the protection. `ignore_immutable=True` appears nowhere in `src/gitman/`, enforced by a token scan. | `LANE-6-IMMUTABILITY-AUDIT.md` §5 |
 | Pin `immutable_heads()` in jj config (lane 6d) | **No.** Gitman writes no jj configuration. The consequence (a non-standard trunk name gets no `trunk()` protection) is documented. | `LANE-6-IMMUTABILITY-AUDIT.md` §6 |
 
+### Resolved later — 2026-08-27
+
+Lane 9 left three candidates marked "needs a design note first". Reviewing them against the API and
+the gitman source resolved all three, and corrected three false statements in the first draft of the
+proposals document. No design note is needed; each is now an ordinary unbuilt item.
+
+| Decision | Outcome | Where recorded |
+|---|---|---|
+| `tx.resolve_conflict` interface | **`resolve --show` / `resolve --from -`.** Content in, marked text out. No `--ours`/`--theirs` — that vocabulary maps cleanly only onto a regular 3-way conflict. | `LANE-9-…§5`; backlog D8 |
+| `tx.absorb` | **Build it, `into` pinned to the lane range** — never the `mutable()` default, which includes trunk wherever the `trunk()` term is inert. | `LANE-9-…§7`; backlog D9 |
+| Commit signing | **Observe only** — a `doctor` check over `Commit.is_signed`. No configuration key, consistent with 6d. | `LANE-9-…§8`; backlog D10 |
+
+Corrections made to `LANE-9-NEW-SURFACE-PROPOSALS.md` at the same time:
+
+1. It claimed gitman writes unsigned commits. It does not — `session.py:71` passes no
+   `sign_behavior`, so jj's own `signing.behavior` applies.
+2. It proposed `gitman resolve` as a new intent. It ships already, read-only.
+3. It did not name absorb's `into=mutable()` trunk hazard.
+
 ---
 
 ## Definition of done
@@ -74,3 +93,8 @@ Test count: 260 at the baseline → **278**.
 3. **A fractal-name ref written out of band is unretirable through pyjutsu** (the reflog D/F limit
    recorded in `BASELINE.md` §9). Gitman's "report stale, point at `reconcile`" stance is the only
    safe option there.
+4. **Check a capability claim against the running API before you record it.** All three lane 9
+   corrections above were single `dir()` / `__doc__` reads away. The same review found a fourth
+   stale claim outside this project: backlog D5 and `GITMAN_CONCEPT.md` said hunk-level `split` was
+   hard-blocked on a missing pyjutsu binding. It shipped in 0.20.0 (`tx.split`, `tx.select_tree`,
+   `Hunk`/`HunkLine`), so D5 is now gitman-side work only. Both documents are corrected.

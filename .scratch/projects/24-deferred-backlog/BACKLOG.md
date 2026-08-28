@@ -26,12 +26,20 @@ against the tree at trunk `4d0890a3`.
 | D2 | **`decompose <task> --into a,b,c [--workspace]`** batch fan-out | Ergonomic wrapper | S | Looping `subtask` N× becomes a repeated chore |
 | D3 | **`reconcile` *repair*** — re-root an orphaned child | New recovery path | M | Out-of-band parent deletes actually happen and stick |
 | D4 | **`reconcile` UX** — auto-decide vs ask | Open *design* decision | S–M | First real ambiguous reconcile in an agent (non-interactive) context |
-| D5 | **`shape`** — squash/reorder + **hunk-level/interactive `split`** | New intent + pyjutsu binding | M–L | You need partial-file carving or history tidy-up before land |
+| D5 | **`shape`** — squash/reorder + **hunk-level/interactive `split`** | New intent | M | You need partial-file carving or history tidy-up before land |
 | D6 | **Pre-release / build version metadata** | Semver extension | S | A real pre-release/RC flow is needed |
 | D7 | **Pluggable forges** (GitLab / Gitea) | Forge abstraction | M | A repo lives somewhere other than GitHub |
+| D8 | **`resolve --show` / `--from -`** — a write mode for the existing intent | Intent extension | S | An agent computes a resolution and has to write it to disk itself |
+| D9 | **`gitman absorb`** — fold a fixup draft into the lane commits that introduced the lines | New intent | M | Hand `squash`-after-`save` becomes a repeated chore |
+| D10 | **Signing visibility** — a `doctor` check over `Commit.is_signed` | `doctor` row | S | A repo with a signing backend produces unsigned commits and nothing says so |
 
 Size: S ≈ hours, M ≈ a focused PR, L ≈ a multi-PR effort. All estimates assume the current architecture
 holds.
+
+**D8–D10 were added 2026-08-27** from project 34 lane 9. Unlike D1–D7 they arrive **already
+decided** — the design question each one carried is answered in
+[`../34-pyjutsu-0-19-adoption/LANE-9-NEW-SURFACE-PROPOSALS.md`](../34-pyjutsu-0-19-adoption/LANE-9-NEW-SURFACE-PROPOSALS.md)
+§5, §7, and §8. They are unbuilt, not undesigned.
 
 ---
 
@@ -200,31 +208,58 @@ dependency — **hunk-level / interactive `split`** (carve *part of a file* into
 **path-scoped** `split --paths <sel> --into <lane>` already shipped (project 08); only **partial-file
 (hunk) selection** is missing (CONCEPT §19, §7 note lines 231–234, §643).
 
-**Why deferred.** Partial-file selection "needs a native pyjutsu `split` binding" (CONCEPT line 233) —
-pyjutsu currently exposes no hunk-level split primitive, so this is blocked on a **pyjutsu MP-level
-addition**, not just gitman work. Squash/reorder are deferred as lower-value until history-tidiness before
-land becomes a felt need.
+**Why deferred — and what changed.** The original reason was a hard block: partial-file selection
+"needs a native pyjutsu `split` binding" (CONCEPT line 233), and pyjutsu exposed no hunk-level split
+primitive. **That block is gone.** The binding landed in **pyjutsu 0.11.0** and is present in the
+0.20.0 engine gitman runs today (re-verified against the running API, 2026-08-27):
+
+- `tx.split(commit, selection, mode="siblings"|"stacked")` splits at hunk granularity and returns
+  `(first, second)`. `selection` maps each path to `None` (whole file) or a list of **0-based hunk
+  indices** into that path's `view.diff` hunks for the same commit.
+- `tx.select_tree(commit, selection)` is the lower-level primitive `split` composes on.
+- `Hunk` / `HunkLine` are read-surface models, so the indices come from the same structured hunks
+  gitman would show. **No patch-header parsing anywhere.**
+
+Two consequences. First, the "machine-drivable selector, not a TUI" requirement in *Dependencies*
+below is already satisfied by construction — a path→hunk-index map is exactly that. Second, pyjutsu's
+own docstring notes that a whole-file selection through `split` reproduces the path-scoped `restore`
+carve, so `split` **subsumes** gitman's shipped path-scoped `split` rather than sitting beside it.
+That makes this a single unified implementation, not a second code path.
+
+Constraints to respect: hunk-level selection covers plain modified/added text files only. Binary,
+symlink, conflicted, removed, and renamed/copied paths must be selected whole-file (`None`). An empty
+or a full selection raises `PyjutsuError`.
+
+**A full implementation guide already exists** and reached the same conclusion independently:
+[`../27-implementation-guides/D5_HUNK_SPLIT_GUIDE.md`](../27-implementation-guides/D5_HUNK_SPLIT_GUIDE.md)
+(file anchors, code sketches, test plan, verification recipe). Read it before starting; this entry is
+the framing, that one is the build.
+
+Squash/reorder remain deferred as lower-value until history-tidiness before land becomes a felt need.
 
 **Friction signal.** You repeatedly need to peel a few hunks (not whole files) out of an entangled `@`
 into another lane, or you're landing messy multi-commit lanes that want a squash/reorder pass first.
 
 **Where it plugs in.**
-- **pyjutsu first** (`../Pyjutsu`) — a hunk-level `split`/`diffedit` binding. This is the blocking
-  prerequisite; see `[[pyjutsu-mp1-rough-edges]]` for the MP process.
-- `src/gitman/core.py` — extend the existing `split` path (path-scoped today) with a hunk selector; add
-  `do_shape` for squash/reorder over `parentHead..laneHead`.
-- `src/gitman/cli.py` — `split` gains a hunk/interactive mode; new `shape` command.
+- `src/gitman/core.py` — extend the existing `split` path (path-scoped today) with a hunk selector over
+  `tx.split(..., mode="siblings")`, which is the carve-into-two-siblings topology gitman already means;
+  add `do_shape` for squash/reorder over `parentHead..laneHead`.
+- `src/gitman/cli.py` — `split` gains a hunk selector; new `shape` command.
+- **pyjutsu: nothing.** The binding shipped in 0.20.0. No MP is needed.
 
 **Design sketch.** Squash/reorder operate within a lane's own `base..head` range (never crossing the
 base, so no invariant exemption — same property as land's internal folds). Hunk-split mirrors the
 path-scoped split's transactional shape (carve → new sibling lane → both stay canonical) but selects at
-hunk granularity via the new pyjutsu binding.
+hunk granularity through `tx.split`. `mode="siblings"` is the correct topology: the remainder keeps its
+change id, bookmarks, descendants, and the working copy, which is what gitman's lane model requires of
+the surviving lane.
 
-**Dependencies / risks.** **Hard-blocked on a pyjutsu binding** for the hunk part — schedule that first.
-Squash/reorder are unblocked but lower priority. Interactive selection in a non-interactive agent context
-needs a machine-drivable selector (path+hunk-id list), not a TUI.
+**Dependencies / risks.** No longer blocked — the pyjutsu binding shipped in 0.20.0. The remaining risk
+is interface, not plumbing: the CLI needs a selector syntax for `path:hunk-index` that an agent can emit
+without a TUI, and it must reject the file kinds that only accept whole-file selection with a clear
+message rather than a `PyjutsuError`.
 
-**Rough size:** M (squash/reorder) + L-ish once you count the pyjutsu binding for hunk-split.
+**Rough size:** M (squash/reorder) + M (hunk-split, now that the binding exists).
 
 ---
 
@@ -275,6 +310,104 @@ new impl + auth wiring, no core change. Build only after D1 and only for a concr
 **Dependencies / risks.** Blocked on D1 (needs the protocol to exist first). Otherwise self-contained.
 
 **Rough size:** M (per forge, once the protocol exists).
+
+---
+
+## D8 — `resolve --show` / `resolve --from -`: a write mode for the existing intent
+
+**What it is.** The write half of `gitman resolve`. The intent already ships as a **read**
+(`cli.py:343`, `core.py:2181`): it lists conflicted paths at `@` with their side count and returns
+exit 1 `CONFLICTS`. D8 adds `--show` (print the marked text at a path) and `--from <file|->` (write a
+resolution back).
+
+**Why deferred.** Not deferred for lack of design — the interface is decided (see below). It is
+unbuilt because the current advice, "edit the file on disk and let gitman re-snapshot", works.
+
+**Friction signal.** An agent computes a resolution and must write the file itself, then re-snapshot —
+the scrape-and-poke pattern gitman exists to remove.
+
+**Where it plugs in.**
+- `src/gitman/core.py` — `do_resolve` gains two branches; the write branch opens a `canonical_tx` and
+  calls `tx.resolve_conflict(path, content)`.
+- `src/gitman/cli.py` — `resolve` gains `--show <path>` and `--from <file|->`.
+
+**Design sketch (decided — LANE-9 §5).** Content in, marked text out. **No `--ours`/`--theirs`:** jj
+conflicts carry N sides, and that git vocabulary maps cleanly only onto a regular 3-way. `--take <n>`
+over `view.conflict_sides` stays available later if the mechanical case proves common.
+`tx.resolve_conflict` rewrites `@` only — which matches `do_resolve`, since it reports conflicts at
+`@` and nowhere else — preserves the change id, and **honors markers left in the content**, so a
+partial resolution is expressible and stays exit 1. A fully cleared file returns exit 0.
+
+**Dependencies / risks.** UTF-8 only; binary content is out of scope for this pyjutsu release, so the
+report must say so rather than mangling bytes. `ConflictError` (path not conflicted) and
+`ImmutableCommitError` (immutable `@`) both need mapping; the latter already routes through lane 6's
+`core.explain_immutable` at no cost.
+
+**Rough size:** S.
+
+---
+
+## D9 — `gitman absorb`: fold a fixup draft into the commits that introduced the lines
+
+**What it is.** An intent over `tx.absorb(source, into=…)` → `AbsorbResult(rewritten_source,
+rewritten_destinations, num_rebased, skipped_paths)`. Each hunk of the source moves to the closest
+mutable ancestor that last modified its lines.
+
+**Why deferred.** No design question remains; it is simply unbuilt. `save` then a hand `squash` covers
+the case today.
+
+**Friction signal.** You repeatedly `save` a fixup and then hand-`squash` it into the commit it
+belongs to.
+
+**Where it plugs in.** `src/gitman/core.py` (a `do_absorb` inside `canonical_tx`) and
+`src/gitman/cli.py` (a new `absorb` command). `lanes.lane_base` already computes the scope it needs.
+
+**Design sketch (decided — LANE-9 §7).** **Pin `into` to the lane's own range** (`lane_base`…head),
+never pyjutsu's `mutable()` default. The reason is specific: per
+[`../34-pyjutsu-0-19-adoption/LANE-6-IMMUTABILITY-AUDIT.md`](../34-pyjutsu-0-19-adoption/LANE-6-IMMUTABILITY-AUDIT.md)
+§6, the `trunk()` term of `immutable_heads()` is **inert** on a repo whose trunk is not named
+`main`/`master`/`trunk` or that has no remote yet — precisely the repos the local-authored trunk model
+(projects 16–21) supports. On those, trunk commits sit inside `mutable()` and an unscoped absorb can
+move a hunk into trunk, violating I1 and I5. `canonical_guard` would catch and roll back, but that
+makes the postcondition the first line of defence instead of the second. Scoped to the lane range,
+absorb cannot cross the base at all — the same "no invariant exemption" property D5 claims for
+squash/reorder.
+
+**Dependencies / risks.** Absorb is **partial by design**: hunks with no unique ancestor stay in the
+source. `skipped_paths` and `num_rebased` are the fields for reporting that honestly. Pin one
+behaviour at build time: when `source` is `@` and `@` carries the lane bookmark, an emptied and
+undescribed source is abandoned and the bookmark moves to the parent — canonical, but the report must
+name it. Divergence from `jj absorb`'s `mutable()` default must be documented.
+
+**Rough size:** M.
+
+---
+
+## D10 — Signing visibility
+
+**What it is.** A `doctor` row reporting the repository's commit-signing posture, read from
+`Commit.is_signed` (with `CommitSignature.status`/`key`/`display` available for detail).
+
+**Why deferred / what is NOT wrong today.** Gitman **already signs correctly**: `session.py:71` calls
+`Workspace.load(start)` with no `sign_behavior`, so jj's own `signing.behavior` setting applies
+(`doctor.py:98` and `core.py:516` load the same way). The gap is visibility, not behaviour.
+
+**Friction signal.** A repo has a signing backend configured, gitman's commits come out unsigned
+because of a behaviour setting, and no report says so until a push is rejected.
+
+**Where it plugs in.** `src/gitman/doctor.py` — one new check. Optionally a pre-`push` warning in
+`src/gitman/core.py`.
+
+**Design sketch (decided — LANE-9 §8).** **Observe only. No configuration key.** A `gitman.toml` knob
+mapping to `sign_behavior` was rejected: it creates two sources of truth for one policy while jj still
+holds the key and the backend, and it contradicts decision 6d (gitman writes and owns no jj
+configuration). Note the hard limit — the backend and key come from jj's `signing.*`; with no backend
+configured nothing is signed whatever `sign_behavior` says, so an override could not fix an
+unconfigured repo anyway.
+
+**Dependencies / risks.** None. Additive, read-only.
+
+**Rough size:** S.
 
 ---
 

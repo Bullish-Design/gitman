@@ -3,6 +3,12 @@
 **Status: complete.** Gitman runs on pyjutsu 0.20.0 / jj-lib 0.44.0. See
 [COMPLETION.md](COMPLETION.md) for what landed and which decisions were taken.
 
+**Follow-on, 2026-08-27.** The three lane 9 candidates that were left as "design note first" are
+now decided, and three false statements in the first draft of
+[LANE-9-NEW-SURFACE-PROPOSALS.md](LANE-9-NEW-SURFACE-PROPOSALS.md) are corrected in place. The
+decisions are catalogued as D8–D10 in
+[`../24-deferred-backlog/BACKLOG.md`](../24-deferred-backlog/BACKLOG.md). No code changed.
+
 Gitman ran against pyjutsu 0.15.0 / jj-lib 0.42.0. Pyjutsu was at 0.19.0 / jj-lib 0.44.0,
 plus three unreleased commits on `HEAD`. This project moved gitman onto the new engine.
 

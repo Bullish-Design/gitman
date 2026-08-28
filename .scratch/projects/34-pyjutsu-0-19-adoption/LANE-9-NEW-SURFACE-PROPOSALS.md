@@ -6,6 +6,19 @@ a concept decision before code. The owner picks.
 
 Engine: pyjutsu 0.20.0 / jj-lib 0.44.0.
 
+> **Revised 2026-08-27.** The first draft of this document stated three things that the API and the
+> gitman source contradict. Each is corrected in place below, and each changed the recommendation:
+>
+> 1. **Gitman already signs** (§8). `session.py:71` calls `Workspace.load(start)` with no
+>    `sign_behavior`, so jj's own `signing.behavior` setting applies. The draft claimed gitman
+>    writes unsigned commits.
+> 2. **`gitman resolve` already exists** (§5). `cli.py:343` / `core.py:2181` ship a read-only
+>    `resolve [--list]`. The decision is a write *mode*, not a new intent.
+> 3. **`tx.absorb` carries a trunk hazard** (§7) that the draft did not name: its `into` default is
+>    `mutable()`, which includes trunk on any repo where the `trunk()` term is inert.
+>
+> All three decisions are now taken. See the summary table at the end.
+
 ---
 
 ## 0. Already free — no work needed
@@ -85,31 +98,46 @@ concept decision.
 
 ## 4. `view.conflict_content` / `view.conflict_sides` — richer conflict reports
 
-**Use.** `status` reports conflicted files by name via `view.conflicts("@")`.
+**Use.** `status` reports conflicted files by name via `view.conflicts("@")`. `do_resolve`
+(`core.py:2197`) already prints each path with its `num_sides`, so part of this is shipped.
 
-**Buys.** The report could show which sides conflict and how large the conflicted region is, so an
-agent can decide whether to resolve or to abandon without opening the file.
+**Buys.** The report could show the sides themselves, so an agent can decide whether to resolve or
+to abandon without opening the file.
 
 **Costs.** Content in a report means content in `--json`, which means a model change (`ConflictFile`
 gains fields) and a size question. Conflicts can be large.
 
-**Recommendation.** Adopt `conflict_sides` (structural, small, bounded). Leave `conflict_content`
-behind a flag if it is wanted at all.
+**Recommendation.** Adopt `conflict_sides` (structural, small, bounded) — it pairs with §5's write
+mode. Leave `conflict_content` to §5's `--show`, where the marked text has a caller that needs it.
 
 ---
 
-## 5. `tx.resolve_conflict(path, content)` — a real `gitman resolve`
+## 5. `tx.resolve_conflict(path, content)` — a write mode for `gitman resolve`
 
-**Use.** Gitman reports conflicts and tells the operator to resolve them on disk.
+**Correction.** The intent exists. `cli.py:343` declares `resolve [--list]`, and `core.py:2181`
+implements it as a read: it lists conflicted paths at `@` with their side count, returns exit 1
+`CONFLICTS`, and tells the operator to edit the files on disk. What is missing is the **write**
+half, not the intent.
 
-**Buys.** A first-class `gitman resolve <path>` intent, so an agent that has computed a resolution
-can apply it through gitman instead of writing the file and re-snapshotting.
+**What the binding gives.** `tx.resolve_conflict(path, content)` rewrites `@` **only**, preserves
+the change id, and **honors conflict markers left in `content`** — so a partial resolution is a
+legal, expressible outcome. It raises `ConflictError` for a path that is not conflicted, and
+`ImmutableCommitError` for an immutable `@`. UTF-8 only; binary is out of scope. `@`-only is not a
+gap: `do_resolve` reports conflicts at `@` and nowhere else.
 
-**Costs.** A new intent, a new report shape, and a real design question: does `resolve` take content
-on stdin, from a file, or a strategy name (`--ours`/`--theirs`)? Each is a different contract.
+**The options considered.**
 
-**Recommendation.** **Needs a concept decision before code.** The plumbing is ready; the interface
-is not designed. Worth a short design note of its own.
+| | A — content in | B — side selection | C — both | D — stay read-only |
+|---|---|---|---|---|
+| Shape | `resolve <path> --from <file>` or stdin | `resolve <path> --take <n>`, over `conflict_sides` | A plus B | `conflict_sides` in the report only |
+| Pro | Matches how an agent works: it computed the merged text, it writes the merged text | No content round trip for the common case | Covers both cases | No new surface |
+| Con | Needs a paired read of the marked text | **The vocabulary is unsound.** jj conflicts have N sides; `--ours`/`--theirs` is git wording that maps cleanly only onto a regular 3-way | B's naming problem survives, plus two ways to do one thing | An agent that computed a resolution still writes a file and re-snapshots |
+| Implication | `resolve` gains an exit-0 outcome (cleared); partial stays exit 1, honest because the markers survive | Must refuse `num_sides > 2` or select by index, which reintroduces A's read | Both of the above | None |
+
+**Decision: A, with the paired read.** Ship `gitman resolve <path> --show` (marked text out, via
+`conflict_content`) and `gitman resolve <path> --from -` (resolved text in). That closes the loop
+for an agent, invents no vocabulary, and leaves `--take` available later if the mechanical case
+proves common. `ImmutableCommitError` routes into lane 6's `explain_immutable` with no new work.
 
 ---
 
@@ -136,27 +164,61 @@ Needs no concept decision.
 fit for the lane model and would be a strong `gitman absorb`. `duplicate` and `fix` are further from
 gitman's concerns.
 
-**Costs.** Each is a new intent with its own report, guards, and undo semantics. `absorb` in
-particular rewrites several commits at once, which interacts with the lane 6 immutability policy:
-absorbing into a tagged commit must refuse the whole operation, not half of it.
+**The signature.** `tx.absorb(source, into="mutable()")` → `AbsorbResult(rewritten_source,
+rewritten_destinations, num_rebased, skipped_paths)`. Only ancestors of `source` are candidates.
+Each hunk moves to the closest mutable ancestor that last touched its lines; **hunks with no unique
+ancestor stay behind** — absorb is partial by design. An immutable source is refused. The source is
+abandoned when it becomes empty and carries no description.
 
-**Recommendation.** **Out of scope without a design decision.** If one is picked, pick `absorb`.
+**The hazard the first draft missed.** The `into` default is `mutable()`. Per
+[`LANE-6-IMMUTABILITY-AUDIT.md`](LANE-6-IMMUTABILITY-AUDIT.md) §6, the `trunk()` term of
+`immutable_heads()` is **inert** on a repo whose trunk is not named `main`/`master`/`trunk`, or that
+has no remote yet — and gitman supports exactly those repos (the local-authored trunk model,
+projects 16–21). On such a repo trunk commits are inside `mutable()`, so an unscoped absorb can move
+a hunk into a trunk commit. That violates I1 (trunk frozen) and I5 (trunk advances only via `land`).
+`canonical_guard` would catch it and roll back — but after the fact, which is the one place gitman
+deliberately does not rely on the postcondition.
+
+**Decision: build `gitman absorb`, with `into` pinned to the lane's own range** (`lanes.lane_base`
+… head), never the `mutable()` default. Scoped that way it cannot cross the lane base, so it
+inherits the same "no invariant exemption" property §D5 claims for squash/reorder, and the guard
+becomes a second belt rather than the first. It diverges from `jj absorb` semantics, so the docs
+must say why. `skipped_paths` and `num_rebased` map straight onto a compact honest report — the
+fields for saying "partial" are already in the result.
+
+**Pin at build time:** when `source` is `@` and `@` carries the lane bookmark, an emptied source is
+abandoned and the bookmark moves to the parent. That is canonical, but the report must name it.
+
+`duplicate` and `fix` stay out — neither has a lane-model story.
 
 ---
 
 ## 8. `Workspace.load(..., sign_behavior=…)` — commit signing
 
-**Use.** None today. Gitman writes unsigned commits.
+**Correction.** The first draft said gitman writes unsigned commits and that a repo requiring
+signatures could not be driven by gitman. Both are false. `session.py:71` calls
+`Workspace.load(start)` and passes no `sign_behavior`. The default `None` means "use jj's own
+`signing.behavior` setting", so **gitman already signs wherever the repo's jj configuration says to
+sign**. `doctor.py:98` and `core.py:516` load the same way.
 
-**Buys.** Repositories that require signed commits could be driven by gitman at all. Today they
-cannot without a post-hoc re-sign.
+**What the knob actually is.** `sign_behavior` takes `'drop' | 'keep' | 'own' | 'force'`. The
+backend and the key still come from jj's `signing.*` configuration — pyjutsu adds no configuration
+keys of its own. With no backend configured, nothing is signed whatever the value says. So the knob
+cannot make an unconfigured repo sign; it can only change behaviour where a backend exists.
 
-**Costs.** A configuration design (where does the key come from? per-repo or per-agent?), a failure
-mode when signing is unavailable, and a `doctor` check. It also touches every mutating intent.
+**What is genuinely missing** is visibility. `Commit.is_signed` is a plain read field, and
+`CommitSignature` carries `status`/`key`/`display`, but no gitman report mentions either.
 
-**Recommendation.** **Needs a concept decision.** The right first step is a `doctor` check that
-*detects* a repo requiring signatures and says gitman cannot satisfy it, rather than silently
-writing unsigned commits.
+**The options considered.**
+
+| | A — observe only | B — expose an override | C — nothing |
+|---|---|---|---|
+| Shape | A `doctor` check reading `is_signed`; report the repo's signing posture | A `gitman.toml` knob mapping to `sign_behavior` | — |
+| Pro | Consistent with decision 6d — gitman writes and owns no jj configuration. Answers the real question at near-zero cost | An operator could force signing without editing jj config | Today's behaviour is already correct |
+| Con | Cannot make gitman sign where jj has no backend — but neither can B | **Two sources of truth for one policy**, and jj holds the key. Contradicts 6d. It applies per invocation, so it silently governs every mutating intent in that call | A misconfigured backend produces unsigned commits and gitman never says so |
+
+**Decision: A.** One new `doctor` row — a `log` plus a field read. The same field feeds a
+pre-`push` warning ("trunk's last land is unsigned") if that proves wanted. No configuration key.
 
 ---
 
@@ -167,8 +229,13 @@ writing unsigned commits.
 | `shortest_prefix` for `reconcile` lane names | Adopt — fixes a latent correctness bug |
 | `file_content` for the version read | Adopt, scoped to file sources, hook stays |
 | `evolution` in `undo --list` | Adopt — additive |
-| `conflict_sides` in `status` | Adopt; `conflict_content` behind a flag |
+| `conflict_sides` in `resolve` / `status` | Adopt; the marked text ships as `resolve --show` |
 | `file_list` in reports | Only behind `--files` |
-| `tx.resolve_conflict` | Design note first |
-| `tx.absorb` | Design note first; `duplicate`/`fix` out of scope |
-| signing | Design note first; start with a `doctor` detection |
+| `tx.resolve_conflict` | **Decided** — `resolve --show` / `resolve --from -`; no `--ours`/`--theirs` |
+| `tx.absorb` | **Decided** — build it, `into` pinned to the lane range; `duplicate`/`fix` out of scope |
+| signing | **Decided** — `doctor` detection via `Commit.is_signed`; no configuration key |
+
+The three items that the first draft left as "design note first" are resolved above. None of them
+needs a further note; each is now a lane. They are catalogued in
+[`24-deferred-backlog/BACKLOG.md`](../24-deferred-backlog/BACKLOG.md) as D8, D9, and D10 so that a
+future session finds them where every other unbuilt item lives.
