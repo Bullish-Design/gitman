@@ -119,6 +119,11 @@ def run_doctor(repo_root: Path, config: GitmanConfig | None = None) -> DoctorRep
         else Check(FAIL, "uv", "uv not found on PATH (gitman's version backend)")
     )
 
+    # A retired config table is a warning, not a failure (see config.RETIRED_TABLES). doctor is
+    # where an owner looks for "what should I clean up", so name it once, in full, here.
+    for note in cfg.deprecations:
+        checks.append(Check(WARN, "config", note))
+
     # colocated jj-bookmark ↔ git-ref drift (round-09 gap B): a stuck/leftover ref makes every
     # later `git_export` raise, silently desyncing trunk. Surface it (warn, recoverable) so it
     # can't hide; `gitman reconcile` re-syncs. Skipped when the repo isn't colocated/loadable.

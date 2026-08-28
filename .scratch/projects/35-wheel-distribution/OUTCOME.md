@@ -96,9 +96,21 @@ number and `release` tagged the drift. The correction then landed *after* the ta
 The configurable backends (`[version].file`/`pattern`, and the `read`/`write` script hooks)
 are **removed**. `version.py` now calls `uv version --short`, `uv version --no-sync <new>`,
 and `uv lock --check`. Both files uv rewrites land in the one bump change, so the manifest and
-the lock can never be committed apart. A legacy `[version]` table is **rejected** with a
-migration message rather than ignored — ignoring it would reintroduce the drift under a config
-that looks honoured.
+the lock can never be committed apart.
+
+A legacy `[version]` table was first made a **hard rejection** (exit 2), on the reasoning that
+silently ignoring it would reintroduce the drift under a config that looks honoured. **That was
+wrong and is now reversed.** Gitman is installed editable from the repo it manages, so the
+rejection went live the moment the lane's code was on disk — while trunk's `gitman.toml` still
+carried the table. Gitman refused to run against its own repo, including refusing the `sync`
+that would have landed the migration. It locked itself out.
+
+A retired table now **warns** for one minor release and becomes an error in 0.7.0. The list
+lives in `config.RETIRED_TABLES`; `load_config` strips retired keys before validation and
+carries them out as `cfg.deprecations`, which `doctor` shows as a WARN row and `status` and
+every intent report as a `note:`. A live table with an invalid value is still a hard failure —
+the leniency is only for schema changes gitman itself introduces. The rule is written up in
+concept §15, "Retiring a config table", and should be read before tightening any schema.
 
 A bump reports **the paths it actually committed** and says so when it could not commit the
 lock. Dogfooding this release exposed the case: gitman's own `.gitignore` lists `uv.lock`, so

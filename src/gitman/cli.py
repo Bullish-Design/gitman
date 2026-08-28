@@ -99,9 +99,13 @@ def _emit(text: str, payload: dict | None = None) -> None:
 
 
 def _finish_intent(result) -> None:
+    from gitman.config import load_config
     from gitman.markdown import MarkdownProjectionError, sync_markdown
     from gitman.render import render_intent
 
+    # A retired config table warns on every intent until the owner migrates it. `render_intent`
+    # shows `result.notes` only, so this cannot be left to `RepoState`.
+    result.notes.extend(load_config(_repo_root()).deprecations)
     if result.state is not None:
         try:
             sync_markdown(result.state)

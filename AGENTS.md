@@ -85,8 +85,10 @@ nix/gitman.nix  reusable devenv module (tasks + enterTest)
   clean exit-1 reports at the CLI boundary.
 - **uv owns the version.** `version.py` shells out to `uv version --short` / `uv version
   --no-sync <new>` / `uv lock --check`, so `pyproject.toml` and `uv.lock` move in one change
-  and `release` refuses to tag a stale lock. `[version]` is no longer configurable and a
-  leftover table is rejected (project 32, G2).
+  and `release` refuses to tag a stale lock. `[version]` is no longer configurable (project 32,
+  G2); a leftover table **warns** via `config.RETIRED_TABLES` and never fails. Gitman manages
+  the repo that configures it, so a hard rejection locks the tool out of landing its own
+  migration — see concept §15 "Retiring a config table" before tightening any schema.
 - **pyjutsu is pinned to a published GitHub release wheel** in `[tool.uv.sources]`, not to
   vendomat's wheelhouse. uv carries that pin into a consumer's lock, so adopting gitman needs
   one `[tool.uv.sources]` entry and no nix (project 32, G3). Publish a new pyjutsu with

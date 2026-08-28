@@ -18,4 +18,4 @@ def test_config_defaults(tmp_path: Path):
     assert cfg.publish.on_fail == "block"
     assert cfg.release.tag_format == "v{version}"
     assert cfg.source_path is None
-    assert cfg.version is None
+    assert cfg.deprecations == []

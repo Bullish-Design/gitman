@@ -546,7 +546,7 @@ script hooks). That backend rewrote the manifest and stopped. In a uv project th
 the old number, `release` tagged the drift, and the correction landed *after* the tag was
 pushed — project 32, G2. A second copy of the version that gitman does not know about is the
 whole defect, so gitman stopped hand-editing metadata uv owns. A legacy `[version]` table is
-**rejected** with a migration message rather than ignored.
+**warned about**, not silently ignored and not fatal — see §15 "Retiring a config table".
 
 ```toml
 [release]
@@ -600,6 +600,27 @@ Pydantic-validated.
 | `[publish] branch_prefix` | Optional prefix on the lane→branch name (default none). |
 | `[release] …` | Tag format, verify, push behavior (see §13). |
 | `[policy] protected` | Refs that must never be rewritten/force-pushed. |
+
+### Retiring a config table
+
+**A retired table warns for one minor release. It is never a hard failure.**
+
+Gitman manages the repo that configures gitman, and it is installed from that repo's working
+copy. So a rejection is live the moment the new code is on disk — *before* the change that
+migrates the config can land. Removing `[version]` in 0.5.0 did exactly that: gitman refused to
+run against its own trunk `gitman.toml`, including refusing the `sync` that would have landed
+the fix. The tool locked itself out of its own repo.
+
+The rule that prevents it:
+
+- A retired table is listed in `config.RETIRED_TABLES` with the migration the owner must make.
+- `load_config` strips it before validation and carries it out as `cfg.deprecations`.
+- `doctor` shows it as a `WARN` row; `status` and every intent report it as a `note:`.
+- It becomes an error only in a later minor release, named in the message itself.
+
+This applies to *retired* tables only. A live table with an invalid value is still a hard
+failure (exit 2) — leniency is about schema changes gitman itself introduces, not about
+accepting broken configuration.
 
 ## 16. Report design
 

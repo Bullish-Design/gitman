@@ -644,7 +644,7 @@ def capture_state(session: Session) -> RepoState:
 
     off_canonical = " ".join(reasons) if reasons else None
 
-    notes: list[str] = []
+    notes: list[str] = list(session.config.deprecations)  # retired config tables — warn, never fail
     if session.is_stale():
         notes.append("working copy is stale — run `gitman reconcile`.")
     if not has_remote(session.ws):

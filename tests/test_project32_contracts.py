@@ -51,14 +51,32 @@ def test_arguments_after_a_separator_are_left_alone():
 # G2 — the version lives in uv, and a stale lock never reaches a tag.
 
 
-def test_legacy_version_config_is_rejected(tmp_path: Path):
+def test_a_legacy_version_table_warns_and_does_not_break_the_tool(tmp_path: Path):
+    """Gitman manages the repo that configures gitman.
+
+    Rejecting a retired table would be live before the migration could land — that is how
+    removing `[version]` in 0.5.0 made gitman refuse to run against its own trunk config,
+    including refusing the `sync` that would have fixed it. It must warn, and keep working.
+    """
     (tmp_path / "gitman.toml").write_text(
         'trunk = "main"\n\n[version]\nfile = "pyproject.toml"\npattern = \'version = "{version}"\'\n'
     )
+
+    cfg = load_config(tmp_path)  # must not raise
+
+    assert cfg.trunk == "main"  # the rest of the config is still honoured
+    assert len(cfg.deprecations) == 1
+    assert "[version] is ignored" in cfg.deprecations[0]
+    assert "gitman.toml" in cfg.deprecations[0]  # names the file to edit
+    assert "0.7.0" in cfg.deprecations[0]  # and when it stops being a warning
+
+
+def test_a_malformed_config_is_still_a_hard_failure(tmp_path: Path):
+    """Leniency is for *retired* tables only. A live table with a bad value still exits 2."""
+    (tmp_path / "gitman.toml").write_text('trunk = "main"\n\n[release]\npush_tag = "yes please"\n')
     with pytest.raises(GitmanError) as exc:
         load_config(tmp_path)
     assert exc.value.exit_code == 2
-    assert "[version] is no longer configurable" in str(exc.value)
 
 
 @needs_uv

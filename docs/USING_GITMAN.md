@@ -185,7 +185,8 @@ gitman release                         # annotated tag vX.Y.Z on trunk → push 
 
 **uv owns the version.** Gitman reads it with `uv version --short` and writes it with
 `uv version --no-sync`, so `pyproject.toml` and `uv.lock` move together inside one lane
-change. There is nothing to configure, and a leftover `[version]` table is rejected.
+change. There is nothing to configure; a leftover `[version]` table is reported as a
+warning by `doctor`, `status`, and every intent until you delete it.
 
 `release` runs the verify hook **before any write**, so a blocked release leaves no tag and
 no bump. It also refuses to tag while `uv.lock` disagrees with `pyproject.toml`.
