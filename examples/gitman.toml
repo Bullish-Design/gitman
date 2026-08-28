@@ -23,13 +23,9 @@ on_fail = "block"
 # Optional prefix applied to the lane name when it becomes a git branch.
 branch_prefix = ""
 
-[version]
-# Mechanism A — declarative (the common case): rewrite {version} in `pattern` within `file`.
-file = "pyproject.toml"
-pattern = 'version = "{version}"'
-# Mechanism B — script hook (the repo owns the logic; uncomment to use instead of A):
-# read  = ["./scripts/version.sh", "get"]
-# write = ["./scripts/version.sh", "set", "{version}"]
+# There is no [version] table. uv owns the version: gitman reads it with `uv version --short`
+# and writes it with `uv version --no-sync`, so pyproject.toml and uv.lock always move
+# together. A leftover [version] table is rejected with a migration message.
 
 [release]
 # Tag name format for `gitman release`. Default: "v{version}".

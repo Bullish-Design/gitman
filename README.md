@@ -69,13 +69,43 @@ off-canonical) · `2` infra/config · `3` invalid usage.
 
 ## Requirements
 
-Runs only inside a [`devenv.sh`](https://devenv.sh) shell, which provides a pinned
-`jj` (0.38.0), `git`, and Python 3.13.
+Runs inside a [`devenv.sh`](https://devenv.sh) shell, which provides `git`, `uv`, and
+Python 3.13. There is no `jj` CLI: jj-lib 0.44.0 is embedded in-process through
+[pyjutsu](https://github.com/Bullish-Design/Pyjutsu). uv is the version backend.
 
 ```bash
 devenv shell -- gitman doctor
 devenv shell -- gitman status
 ```
+
+## Installing gitman in another repo
+
+Gitman and pyjutsu are not on PyPI. Both publish to **GitHub releases**, and pyjutsu's wheel
+is pinned in gitman's own `[tool.uv.sources]`. uv carries that pin into your lock, so one
+entry is enough:
+
+```toml
+# your pyproject.toml
+[dependency-groups]
+dev = ["gitman"]
+
+[tool.uv.sources]
+gitman = { git = "https://github.com/Bullish-Design/gitman", tag = "v0.5.0" }
+```
+
+```bash
+uv sync
+uv run gitman doctor
+```
+
+No nix, no wheelhouse, and no Rust toolchain: `uv` fetches the prebuilt pyjutsu wheel from
+its release. The wheel is abi3 and manylinux_2_39, so it serves CPython 3.13 and later on
+x86-64 Linux with glibc 2.39 or newer. On another platform uv builds pyjutsu from the release
+sdist, which does need Rust.
+
+Earlier versions resolved pyjutsu from a vendomat wheelhouse via `UV_FIND_LINKS`. That worked
+only in a repo wired to the exact vendomat revision gitman was built against — see project 32,
+G3.
 
 ## Use it in your repo
 

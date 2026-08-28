@@ -11,19 +11,16 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from gitman.config import GitmanConfig
 from gitman.core import GitmanError, has_remote, require_trunk, run_verify
 
 if TYPE_CHECKING:
     from gitman.session import Session
 
 
-def _target_version(
-    config: GitmanConfig, repo_root: Path, level: str | None, set_version: str | None
-) -> tuple[str, str]:
+def _target_version(repo_root: Path, level: str | None, set_version: str | None) -> tuple[str, str]:
     from gitman.version import bump, parse_semver, read_version
 
-    current = read_version(config, repo_root)
+    current = read_version(repo_root)
     if set_version:
         parse_semver(set_version)
         return current, set_version
@@ -50,11 +47,17 @@ def do_release(session: Session, level: str | None, set_version: str | None):
     from gitman.invariants import canonical_guard
     from gitman.lanes import require_current_lane
     from gitman.models import IntentResult
-    from gitman.version import bump_change_on_lane
+    from gitman.version import bump_change_on_lane, check_lock
 
     config, repo_root = session.config, session.repo_root
     trunk = require_trunk(config)
-    current, new = _target_version(config, repo_root, level, set_version)
+    current, new = _target_version(repo_root, level, set_version)
+
+    # A stale `uv.lock` must never reach a tag. Project 32 (G2) released v0.4.1 against a tree
+    # whose lock still said 0.4.0, and the correction landed *after* the tag was pushed —
+    # anyone building from that tag got an inconsistent pair. This is a read, so it runs before
+    # verify: the cheap refusal comes first.
+    check_lock(repo_root)
 
     # Verify FIRST — before any write or tag (concept §13). [] / inherits [publish].verify.
     verify_cmds = config.release.verify if config.release.verify is not None else config.publish.verify

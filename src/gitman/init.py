@@ -140,11 +140,23 @@ for migrating a repo that already carries re-hash-twin residue).
 
 ## Versioning
 
+uv owns the version. `gitman version bump` calls uv, so `pyproject.toml` and `uv.lock` move
+together in one change. `release` refuses to tag a stale lock.
+
+The canonical release is six steps, because `release <level>` refuses to tag a lane commit
+that `land` will rewrite:
+
 ```
-gitman version                       # show current version
+gitman start <name>-version-bump
 gitman version bump <major|minor|patch>
-gitman release [<level>|--version X.Y.Z]   # (bump →) tag vX.Y.Z → push tag
+gitman save -m "chore: bump version to X.Y.Z"
+gitman land
+gitman push
+gitman release                       # no level — tags trunk
 ```
+
+`release <level>` does the bump inline, but only when trunk is already checked out and clean.
+With any live lane it refuses and prints the sequence above.
 
 This repo's version lives at: {version_location}
 
@@ -176,12 +188,16 @@ def detect_trunk(session: Session) -> str:
 
 
 def _version_scaffold(repo_root: Path) -> tuple[str, str]:
-    """Return (toml_snippet, human_location) for a detected pyproject version, else ("", note)."""
+    """Return (toml_snippet, human_location) describing where the version lives.
+
+    There is nothing to configure: uv owns the version. The snippet is always empty; only the
+    human-readable location varies, so the scaffolded skill tells the truth in a repo that uv
+    does not manage.
+    """
     pyproject = repo_root / "pyproject.toml"
     if pyproject.is_file() and re.search(r'version\s*=\s*"\d+\.\d+\.\d+"', pyproject.read_text()):
-        snippet = '\n[version]\nfile = "pyproject.toml"\npattern = \'version = "{version}"\'\n'
-        return snippet, 'pyproject.toml (`version = "X.Y.Z"`)'
-    return "", "not configured — add a [version] section to gitman.toml to enable version/release"
+        return "", 'pyproject.toml (`version = "X.Y.Z"`), read and written through uv'
+    return "", "no pyproject.toml version — `version`/`release` need a uv project"
 
 
 def ensure_colocated(repo_root: Path, trunk: str | None = None) -> bool:

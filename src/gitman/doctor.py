@@ -2,7 +2,7 @@
 
 Checks: inside devenv · **pyjutsu importable + its linked jj-lib matches the build target**
 (`JJ_VERSION == JJ_LIB_TARGET`) · git present (for the jj escape hatch) · colocated `.git`+`.jj` · git
-remote · frozen trunk exists · version source configured. Hard failures (missing/mismatched
+remote · frozen trunk exists · uv present. Hard failures (missing/mismatched
 engine, not colocated) → exit 2; missing-but-expected-later items (no trunk yet) are warnings.
 
 There is no `jj` CLI to probe: jj-lib is embedded in-process via pyjutsu.
@@ -111,10 +111,13 @@ def run_doctor(repo_root: Path, config: GitmanConfig | None = None) -> DoctorRep
     else:
         checks.append(Check(FAIL, "trunk", f"configured trunk '{cfg.trunk}' not found in repo"))
 
-    if cfg.version.configured:
-        checks.append(Check(OK, "version-source", "version source configured"))
-    else:
-        checks.append(Check(WARN, "version-source", "no [version] source (version/release unavailable)"))
+    # uv is the version backend: `version` and `release` shell out to it. Without uv on PATH
+    # both intents fail at the point of use, so name the cause here instead.
+    checks.append(
+        Check(OK, "uv", "uv on PATH")
+        if shutil.which("uv")
+        else Check(FAIL, "uv", "uv not found on PATH (gitman's version backend)")
+    )
 
     # colocated jj-bookmark ↔ git-ref drift (round-09 gap B): a stuck/leftover ref makes every
     # later `git_export` raise, silently desyncing trunk. Surface it (warn, recoverable) so it

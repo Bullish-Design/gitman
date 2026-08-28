@@ -9,6 +9,6 @@
   ```
 
 - **[`gitman.toml`](gitman.toml)** — an annotated sample config covering every key
-  (`trunk`, `[lanes]`, `[publish]` verify hook, `[version]`, `[release]`, `[policy]`).
+  (`trunk`, `[lanes]`, `[publish]` verify hook, `[release]`, `[policy]`).
 
 For adopting Gitman in your own repo, see [`../docs/USING_GITMAN.md`](../docs/USING_GITMAN.md).

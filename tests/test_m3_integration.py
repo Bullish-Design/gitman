@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 from pyjutsu import Workspace
 
-from gitman.config import GitmanConfig, ReleaseConfig, VersionConfig
+from gitman.config import GitmanConfig, ReleaseConfig
 from gitman.core import GitmanError, do_save, do_start, do_sync, do_undo
 from gitman.session import Session
 from gitman.state import capture_state
@@ -65,7 +65,10 @@ def test_undo_reverts_last_intent(tmp_path: Path):
 def _fresh(d: Path) -> Workspace:
     """A colocated repo with a pyproject version, but no gitman trunk yet (init freezes it)."""
     ws = Workspace.init(d, colocate=True)
-    (d / "pyproject.toml").write_text('[project]\nname = "demo"\nversion = "1.2.3"\n')
+    # A complete uv project: `version`/`release` read and write the number through uv.
+    (d / "pyproject.toml").write_text(
+        '[project]\nname = "demo"\nversion = "1.2.3"\nrequires-python = ">=3.13"\ndependencies = []\n'
+    )
     (d / "app.py").write_text("print(1)\n")
     with ws.transaction("initial") as tx:
         tx.describe("@", "initial")  # NO bookmark yet — init freezes trunk
@@ -110,7 +113,7 @@ def test_version_show_and_bump(tmp_path: Path):
     do_start(_isess(tmp_path), "rel", workspace=False)
     res = do_version(_isess(tmp_path), "bump", "minor")
     assert res.outcome == "BUMPED"
-    assert read_version(_isess(tmp_path).config, tmp_path) == "1.3.0"
+    assert read_version(tmp_path) == "1.3.0"
     state = capture_state(_isess(tmp_path))
     assert state.lanes[0].change_count == 2
 
@@ -123,10 +126,10 @@ def test_version_bump_undo_round_trip(tmp_path: Path):
     do_init(_uninit_sess(tmp_path), trunk_opt=None)
     do_start(_isess(tmp_path), "rel", workspace=False)
     do_version(_isess(tmp_path), "bump", "minor")
-    assert read_version(_isess(tmp_path).config, tmp_path) == "1.3.0"
+    assert read_version(tmp_path) == "1.3.0"
 
     do_undo(_isess(tmp_path), op=None, list_=False)
-    assert read_version(_isess(tmp_path).config, tmp_path) == "1.2.3"  # file reverted
+    assert read_version(tmp_path) == "1.2.3"  # file reverted
     assert "1.2.3" in (tmp_path / "pyproject.toml").read_text()
     assert capture_state(_isess(tmp_path)).lanes[0].change_count == 1  # back to the start change
 
@@ -190,7 +193,7 @@ def test_release_bump_on_lane_refused(tmp_path: Path):
         != 0
     )
     # No bump left behind: version unchanged, lane still just the start change.
-    assert read_version(_isess(tmp_path).config, tmp_path) == "1.2.3"
+    assert read_version(tmp_path) == "1.2.3"
     assert capture_state(_isess(tmp_path)).lanes[0].change_count == 1
 
 
@@ -207,7 +210,7 @@ def test_release_safe_flow_bump_land_release(tmp_path: Path):
 
     do_version(_isess(tmp_path), "bump", "minor")  # bump on the lane
     do_land(_isess(tmp_path), ["rel"])  # folds the bump commit onto trunk
-    assert read_version(_isess(tmp_path).config, tmp_path) == "1.3.0"
+    assert read_version(tmp_path) == "1.3.0"
 
     res = do_release(_isess(tmp_path), level=None, set_version=None)  # no bump → tags trunk
     assert res.outcome == "RELEASED"
@@ -239,7 +242,6 @@ def test_release_verify_blocks_before_write(tmp_path: Path):
 
     cfg = GitmanConfig(
         trunk="main",
-        version=VersionConfig(file="pyproject.toml"),
         release=ReleaseConfig(verify=["false"]),
     )
     with pytest.raises(GitmanError) as exc:
@@ -252,7 +254,7 @@ def test_release_verify_blocks_before_write(tmp_path: Path):
         ).returncode
         != 0
     )
-    assert read_version(_isess(tmp_path).config, tmp_path) == "1.2.3"
+    assert read_version(tmp_path) == "1.2.3"
 
 
 def _make_stray(d: Path) -> None:

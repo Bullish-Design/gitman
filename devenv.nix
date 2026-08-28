@@ -13,22 +13,15 @@
   # https://devenv.sh/packages/
   # No `jj` CLI: gitman talks to jj-lib in-process via pyjutsu. `git` stays for `doctor`'s
   # escape-hatch check and for the test suite; gitman itself runs no git subprocess (annotated
-  # tags go through `ws.git.create_tag`). No Rust/maturin: pyjutsu now arrives as
-  # a prebuilt wheel from vendomat's store wheelhouse (see vendor.* below), so this repo
-  # never compiles the native extension.
+  # tags go through `ws.git.create_tag`). No Rust/maturin: pyjutsu arrives as a prebuilt wheel
+  # pinned in [tool.uv.sources], so this repo never compiles the native extension.
+  #
+  # `gh` publishes release assets (nix/gitman.nix, gitman:publish).
   packages = [
     pkgs.git
     pkgs.uv
+    pkgs.gh
   ];
-
-  # Install pyjutsu from vendomat's prebuilt wheelhouse instead of building ../Pyjutsu's
-  # maturin extension on every `uv sync`. UV_FIND_LINKS + UV_NO_BUILD_PACKAGE are set by the
-  # imported vendomat/modules; no sccache here since gitman compiles no Rust of its own.
-  vendor = {
-    enable = true;
-    libs = [ "pyjutsu" ];
-    sharedCargo = false;
-  };
 
   # https://devenv.sh/languages/
   languages.python = {
@@ -38,7 +31,7 @@
     uv = {
       enable = true;
       # Install gitman (editable) + deps into the venv on shell entry. pyjutsu resolves to the
-      # prebuilt cp313-abi3 wheel via UV_FIND_LINKS (vendomat) — no maturin/cargo build. The
+      # published cp313-abi3 wheel named in [tool.uv.sources] — no maturin/cargo build. The
       # console script and ruff/pytest resolve to the venv.
       sync.enable = true;
     };

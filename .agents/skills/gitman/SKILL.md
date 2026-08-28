@@ -125,15 +125,26 @@ for migrating a repo that already carries re-hash-twin residue).
 
 ## Versioning
 
+uv owns the version. `gitman version bump` calls uv, so `pyproject.toml` and `uv.lock` move
+together in one change. `release` refuses to tag while they disagree. Nothing is configurable.
+
+The canonical release is six steps, because `release <level>` refuses to tag a lane commit
+that `land` will rewrite:
+
 ```
-gitman version                       # show current version
+gitman start release-x-y-z
 gitman version bump <major|minor|patch>
-gitman release [<level>|--version X.Y.Z]   # (bump →) tag vX.Y.Z → push tag
+gitman save -m "chore: bump version to X.Y.Z"
+gitman land
+gitman push
+gitman release                       # no level — tags trunk
 ```
 
-This repo's version lives at: {version_location}
+`release <level>` bumps inline only from clean trunk.
+
+This repo's version lives in `pyproject.toml`, read and written through uv.
 
 ## Exit codes
 
 `0` ok · `1` a VC decision is needed (conflict / push rejected / verify blocked /
-off-canonical) · `2` infra/config · `3` invalid usage. Pass `--json` for structured output.
+off-canonical) · `2` infra/config · `3` invalid usage. Pass `--json` for structured output; it binds before or after the intent.

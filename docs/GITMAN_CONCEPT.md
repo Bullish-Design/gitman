@@ -202,7 +202,7 @@ verbs. Anything not listed is deferred until friction proves it.
 | `undo` | `gitman undo [--op <id>] [--list]` | Revert the last intent, or to a chosen op. | `jj undo` / `jj op restore` |
 | `resolve` | `gitman resolve [--list]` | Surface remaining conflicts / confirm cleared. | `jj resolve --list` |
 | `version` | `gitman version [bump <major\|minor\|patch>]` | Show or bump the repo's semver. | version-source read/write |
-| `release` | `gitman release [<level> \| --version X.Y.Z]` | (bump →) tag `vX.Y.Z` → push tag. Verify hook first. | version write + `git tag` + push |
+| `release` | `gitman release [<level> \| --version X.Y.Z]` | (bump →) tag `vX.Y.Z` → push tag. Verify hook first; refuses a stale `uv.lock`. Normally called with no level, after `land` + `push`. | version write + `git tag` + push |
 
 **Global flags:** `--json`, `--repo <path>`.
 **Exit codes:** `0` ok · `1` VC decision needed (conflict / push rejected / verify
@@ -530,18 +530,25 @@ Constraints that are only *documented* drift. The lane model holds by constructi
 ## 13. Versioning & release
 
 Gitman owns the **semver math and the tag/release flow** but delegates *reading/writing
-the number* to the repo. Two mechanisms:
+the number* to **uv**. There is nothing to configure.
+
+```
+uv version --short          # read
+uv version --no-sync <new>  # write pyproject.toml + uv.lock, leave the venv alone
+uv lock --check             # prove the pair agrees
+```
+
+A bump therefore moves `pyproject.toml` and `uv.lock` inside **one** lane change, and
+`release` refuses to tag while a lockfile disagrees with the manifest.
+
+This replaced a configurable backend (a `{version}` pattern in a named file, or `read`/`write`
+script hooks). That backend rewrote the manifest and stopped. In a uv project the lock kept
+the old number, `release` tagged the drift, and the correction landed *after* the tag was
+pushed — project 32, G2. A second copy of the version that gitman does not know about is the
+whole defect, so gitman stopped hand-editing metadata uv owns. A legacy `[version]` table is
+**rejected** with a migration message rather than ignored.
 
 ```toml
-[version]
-# Mechanism A — declarative (default, common case):
-file    = "pyproject.toml"
-pattern = 'version = "{version}"'        # {version} marks the slot to rewrite
-
-# Mechanism B — script hook (repo owns the logic; the agent may edit the script):
-# read  = ["./scripts/version.sh", "get"]
-# write = ["./scripts/version.sh", "set", "{version}"]
-
 [release]
 tag_format = "v{version}"     # default
 verify     = []               # inherits [publish].verify if set; [] = no gate
@@ -556,9 +563,13 @@ push_tag   = true
   commit (tags live on the git side — colocated; jj tag support is read-only) and push it.
   The **verify hook runs before any write**, so a blocked release leaves no tag and no
   bump. Release normally happens from a landed change on trunk.
+- **The canonical release is six steps**, because `release <level>` refuses to tag a lane
+  commit that `land` will later rewrite: `start` → `version bump` → `save` → `land` → `push`
+  → `release` (no level; tags trunk). The inline `release <level>` bump still works, but only
+  from clean trunk. The refusal names the sequence — project 32, G4.
 - **Agent angle:** `gitman init` scaffolds `.agents/skills/gitman/SKILL.md` documenting
-  the lane loop *and* where this repo's version lives + how to bump it. If versioning is
-  unusual, the agent edits `scripts/version.sh`, not Gitman.
+  the lane loop *and* where this repo's version lives + how to bump it. Versioning is not
+  configurable: a repo with an unusual scheme is a repo uv does not manage.
 
 ## 14. Safety & policy
 
@@ -587,7 +598,6 @@ Pydantic-validated.
 | `[publish] verify` | Command run before publish/release (`[]` → no gate). |
 | `[publish] on_fail` | `block` (default) or `warn`. |
 | `[publish] branch_prefix` | Optional prefix on the lane→branch name (default none). |
-| `[version] …` | Version source (see §13). |
 | `[release] …` | Tag format, verify, push behavior (see §13). |
 | `[policy] protected` | Refs that must never be rewritten/force-pushed. |
 

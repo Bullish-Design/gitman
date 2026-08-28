@@ -11,14 +11,55 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
+from typer.core import TyperGroup
 
 from gitman.core import GitmanError, resolve_repo_root
+
+
+def _global_options_first(args: list[str]) -> list[str]:
+    """Lift `--json` / `--repo` out of the intent's arguments and put them before it.
+
+    Click binds a group option only when it appears before the subcommand, so
+    `gitman status --json` failed with "No such option" while `gitman --json status`
+    worked. Both are documented, and an agent writes the first one — project 32, G1.
+    Everything after a `--` separator is left untouched.
+    """
+    root_options: list[str] = []
+    intent_args: list[str] = []
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if arg == "--":
+            intent_args.extend(args[index:])
+            break
+        if arg == "--json":
+            root_options.append(arg)
+            index += 1
+        elif arg == "--repo" and index + 1 < len(args):
+            root_options.extend((arg, args[index + 1]))
+            index += 2
+        elif arg.startswith("--repo="):
+            root_options.append(arg)
+            index += 1
+        else:
+            intent_args.append(arg)
+            index += 1
+    return [*root_options, *intent_args]
+
+
+class GitmanGroup(TyperGroup):
+    """A Typer group whose root options bind wherever they appear on the line."""
+
+    def parse_args(self, ctx, args: list[str]) -> list[str]:
+        return super().parse_args(ctx, _global_options_first(args))
+
 
 app = typer.Typer(
     name="gitman",
     help="The single version-control interface for coding agents (jj + colocated git).",
     no_args_is_help=True,
     add_completion=False,
+    cls=GitmanGroup,
 )
 
 # Populated by the callback; read by commands.

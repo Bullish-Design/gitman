@@ -21,7 +21,7 @@ and mirrors its shape. The authority is `docs/GITMAN_CONCEPT.md`.
   helper all retired), 0.13.0 added `git_default_branch` + trunk-aware init, and 0.15.0 added the
   per-repo hook surface (`.pyjutsu-hooks.toml`, `ws.hooks`) — gitman maps `HookAbort`/
   `PostHookError` to clean exit-1 reports in `map_pyjutsu_error`. The only remaining `subprocess`
-  uses are **user-configured hooks** (`run_verify`, the version read/write hooks).
+  uses are the **verify hook** (`run_verify`) and **uv**, which is gitman's version backend.
 - **What pyjutsu 0.16–0.20 changed** (project 34; see `.scratch/projects/34-pyjutsu-0-19-adoption/`):
   - **Revsets read configuration.** `trunk()`, `immutable_heads()`, `mutable()`, and `visible()`
     evaluate. String patterns inside revset functions glob by default; gitman's one pattern
@@ -80,9 +80,18 @@ nix/gitman.nix  reusable devenv module (tasks + enterTest)
 - pyjutsu is the engine: all jj reads/mutations go through a `Session` (`view()` for frozen
   reads, `fresh_view()` to snapshot-then-read, `ws.transaction(...)` for mutations). The raw-git
   subprocess surface is zero (pyjutsu project 14 retired it; see the pyjutsu bullet above). The
-  only `subprocess` uses left are user-configured hooks (`run_verify`, version read/write).
+  only `subprocess` uses left are the verify hook (`run_verify`) and `uv`.
   pyjutsu hook errors (`HookAbort` vetoes, `PostHookError` post-failures) are mapped to
   clean exit-1 reports at the CLI boundary.
+- **uv owns the version.** `version.py` shells out to `uv version --short` / `uv version
+  --no-sync <new>` / `uv lock --check`, so `pyproject.toml` and `uv.lock` move in one change
+  and `release` refuses to tag a stale lock. `[version]` is no longer configurable and a
+  leftover table is rejected (project 32, G2).
+- **pyjutsu is pinned to a published GitHub release wheel** in `[tool.uv.sources]`, not to
+  vendomat's wheelhouse. uv carries that pin into a consumer's lock, so adopting gitman needs
+  one `[tool.uv.sources]` entry and no nix (project 32, G3). Publish a new pyjutsu with
+  `devenv tasks run pyjutsu:wheel && devenv tasks run pyjutsu:publish` in that repo, then move
+  the URL here.
 - Exit codes: `0` ok · `1` VC decision needed · `2` infra/config · `3` invalid usage.
 - Every mutating report ends with an inline **Undo** line. Reports are compact and honest.
 - **`.scratch/projects/<NN-name>/`** holds **tracked** design docs — the per-project ISSUE / PLAN /

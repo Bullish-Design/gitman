@@ -51,10 +51,20 @@ include = [
   "pyproject.toml",
 ]
 
-# No [tool.uv.sources] for pyjutsu: it resolves from vendomat's prebuilt wheelhouse via
-# UV_FIND_LINKS (set by the imported vendomat devenv module), instead of being built from
-# the sibling ../Pyjutsu checkout. UV_NO_BUILD_PACKAGE=pyjutsu makes a missing wheel fail
-# loudly rather than silently recompiling.
+# pyjutsu is not on PyPI, so it is pinned to a published GitHub release asset. This is the
+# authoritative source. It replaced vendomat's prebuilt wheelhouse (resolved via UV_FIND_LINKS
+# from the imported devenv module), which worked only in a repo wired to the *same* vendomat
+# revision gitman was built against; anywhere else uv failed to resolve pyjutsu at all, or
+# started a Rust build — project 32, G3.
+#
+# The wheel is abi3 + manylinux_2_39: one build serves CPython 3.13 and later on x86-64 Linux
+# with glibc >= 2.39. Other platforms build from the release sdist and need a Rust toolchain.
+#
+# uv carries this entry into a consumer's own lock (verified against both a `path` and a `git`
+# dependency on gitman), so a consumer declares gitman and nothing else. See README
+# "Installing gitman in another repo".
+[tool.uv.sources]
+pyjutsu = { url = "https://github.com/Bullish-Design/Pyjutsu/releases/download/v0.20.0/pyjutsu-0.20.0-cp313-abi3-manylinux_2_39_x86_64.whl" }
 
 # Seed policy; `gitman init` writes the frozen trunk here (or to gitman.toml). See concept §15.
 [tool.gitman]

@@ -10,7 +10,7 @@ from __future__ import annotations
 import tomllib
 from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 
 class LanesConfig(BaseModel):
@@ -29,19 +29,6 @@ class PublishConfig(BaseModel):
     verify_timeout: float | None = None  # seconds; None → no limit (bounds a hung verify hook)
 
 
-class VersionConfig(BaseModel):
-    # Mechanism A — declarative (default): rewrite {version} in `pattern` within `file`.
-    file: str | None = None
-    pattern: str = 'version = "{version}"'
-    # Mechanism B — script hook (repo owns the logic).
-    read: list[str] = Field(default_factory=list)
-    write: list[str] = Field(default_factory=list)
-
-    @property
-    def configured(self) -> bool:
-        return bool(self.file or self.read)
-
-
 class ReleaseConfig(BaseModel):
     tag_format: str = "v{version}"
     verify: list[str] | None = None  # None → inherit [publish].verify; [] → no gate
@@ -57,12 +44,26 @@ class GitmanConfig(BaseModel):
     trunk: str | None = None
     lanes: LanesConfig = Field(default_factory=LanesConfig)
     publish: PublishConfig = Field(default_factory=PublishConfig)
-    version: VersionConfig = Field(default_factory=VersionConfig)
+    # uv is gitman's only version backend. The field stays declared purely so a legacy
+    # [version] table is *rejected* with a migration message rather than silently ignored —
+    # silently ignoring it would reintroduce project 32's G2 drift under a config that looks
+    # honoured.
+    version: None = None
     release: ReleaseConfig = Field(default_factory=ReleaseConfig)
     policy: PolicyConfig = Field(default_factory=PolicyConfig)
 
     # Where this config was loaded from (None if defaults). Not part of the schema input.
     source_path: Path | None = Field(default=None, exclude=True)
+
+    @field_validator("version", mode="before")
+    @classmethod
+    def _reject_version_config(cls, value):
+        if value is not None:
+            raise ValueError(
+                "[version] is no longer configurable; gitman reads and writes the version "
+                "through uv. Delete the table."
+            )
+        return None
 
 
 def _read_toml(path: Path) -> dict:
@@ -91,6 +92,12 @@ def find_config(repo_root: Path) -> tuple[dict, Path | None]:
 def load_config(repo_root: Path) -> GitmanConfig:
     """Load + validate Gitman policy for `repo_root`. Missing config → defaults."""
     table, path = find_config(repo_root)
-    cfg = GitmanConfig.model_validate(table)
+    try:
+        cfg = GitmanConfig.model_validate(table)
+    except ValidationError as exc:
+        from gitman.core import GitmanError
+
+        source = path.name if path else "configuration"
+        raise GitmanError(f"invalid gitman config in {source}: {exc}", exit_code=2) from exc
     cfg.source_path = path
     return cfg

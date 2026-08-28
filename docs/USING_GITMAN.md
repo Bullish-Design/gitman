@@ -79,8 +79,8 @@ colocate=True)'` then plain `gitman init` — but `--colocate` is the supported 
 - **Resolves and freezes trunk** (an existing `main`/`master`/`trunk` bookmark, else
   `origin/HEAD`, else creates `main`) — written once to `gitman.toml`, then frozen (it is
   never re-detected).
-- Writes **`gitman.toml`** (trunk + a `[version]` source if a `pyproject.toml` version is
-  found).
+- Writes **`gitman.toml`** (trunk). There is no version source to configure — uv owns the
+  version.
 - Scaffolds **`.agents/skills/gitman/SKILL.md`** — the agent's how-to for this repo.
 
 Commit `gitman.toml` and the skill. Gitman's own state lives under `.gitman/` (a
@@ -172,7 +172,6 @@ generated frontmatter.
 | `[publish].verify` | Command run before publish (`[]` → no gate). Any verifier. |
 | `[publish].on_fail` | `block` (default) or `warn`. |
 | `[publish].branch_prefix` | Optional prefix on the lane→branch name. |
-| `[version]` | Version source: declarative `file`+`pattern`, or `read`/`write` script hooks. |
 | `[release]` | `tag_format` (default `v{version}`), `verify`, `push_tag`. |
 | `[policy].protected` | Refs that must never be rewritten/force-pushed. |
 
@@ -181,11 +180,30 @@ generated frontmatter.
 ```bash
 gitman version                         # show current version
 gitman version bump <major|minor|patch>   # bump (on a lane) + save a "Bump version" change
-gitman release [<level>|--version X.Y.Z]  # (bump →) annotated tag vX.Y.Z → push tag
+gitman release                         # annotated tag vX.Y.Z on trunk → push tag
 ```
 
+**uv owns the version.** Gitman reads it with `uv version --short` and writes it with
+`uv version --no-sync`, so `pyproject.toml` and `uv.lock` move together inside one lane
+change. There is nothing to configure, and a leftover `[version]` table is rejected.
+
 `release` runs the verify hook **before any write**, so a blocked release leaves no tag and
-no bump. Release normally happens from a landed change on trunk.
+no bump. It also refuses to tag while `uv.lock` disagrees with `pyproject.toml`.
+
+### The release sequence
+
+`release <level>` bumps inline, but only from clean trunk. With any live lane it refuses —
+tagging a lane commit that `land` will rewrite would orphan the tag. The canonical sequence
+is six steps:
+
+```bash
+gitman start release-x-y-z
+gitman version bump minor
+gitman save -m "chore: bump version to X.Y.Z"
+gitman land
+gitman push
+gitman release                         # no level — tags trunk
+```
 
 ## 8. Exit codes (for scripting/agents)
 
