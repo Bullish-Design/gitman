@@ -4,16 +4,24 @@
 **For:** a fresh session. Read this file and
 [`CONCURRENT_WORKING_ISSUE.md`](CONCURRENT_WORKING_ISSUE.md) first; nothing else is required.
 **Goal:** name the cause of a `git ref(s) lag jj` desync that occurs while **only gitman
-commands run**. Not to fix it — to explain it, reproducibly.
+commands run**.
+
+**Status when this was written: the mechanism is identified and a live specimen exists.**
+Writing the guide turned into a partial investigation. §4 is no longer a hypothesis — the
+swallowed error has been read, and a second, independent defect was confirmed along the way.
+What remains is the *trigger*: the exact sequence that puts the repo into the state. Read §4
+before anything else.
 
 ---
 
 ## 1. Why this is worth a session
 
 This is the last unexplained defect standing between gitman and daily use. It has now been
-observed **three times across two sessions and two repositories**, and every time the repair
-was `gitman reconcile`, which worked. Nothing has been lost. But an unexplained desync in the
-component that owns "is this repo trustworthy" is the one bug you cannot reason around.
+observed **four times across two sessions and two repositories**. Nothing has been lost — but
+`gitman reconcile`, the documented recovery, is now known **not** to repair the underlying
+state (§4.3), and `status` and `doctor` both report the repo healthy while it is broken. A
+silent fault in the component that owns "is this repo trustworthy" is the one bug you cannot
+reason around.
 
 The sibling report in this directory covers the case where a human ran **raw git**. That cause
 is understood. **This guide is about the cases with no raw git at all**, which the existing
@@ -63,7 +71,12 @@ note: colocated git ref(s) stale for: some bookmarks — run `gitman reconcile` 
 note: colocated git checkout not re-synced — run `gitman reconcile` if raw git looks stale.
 ```
 
-This is the most informative artifact in the whole file. See §4.
+This is what pointed at the mechanism. See §4.
+
+### Event 4 — same repo, 2026-08-28, **still live at the time of writing**
+
+A routine `gitman land` printed `colocated git checkout not re-synced`. This time the
+exception was read directly instead of being swallowed. See §4 — this event is the specimen.
 
 ### Context common to events 2 and 3
 
@@ -89,7 +102,7 @@ gitman intents. Whatever fails, it is **not** a missing call to the exporter.
 
 ---
 
-## 4. The leading hypothesis (H1): the exporter is failing and the error is being discarded
+## 4. CONFIRMED: what is actually happening
 
 `src/gitman/invariants.py::_export_colocated_git` (line ~470) is the only post-mutation
 exporter. It contains **three** broad handlers that throw the diagnosis away:
@@ -128,9 +141,65 @@ The comment above the handler says the type was widened deliberately
 a reasonable robustness choice and it is also why nobody knows what is happening. The bug and
 its own diagnostics were suppressed by the same commit.
 
-**This is where to start.** Everything in §5 is cheap once the exception text exists.
+### 4.1 The swallowed error, read at last
 
-### Secondary hypotheses, in order
+Calling the two failing functions directly on the live repo:
+
+```
+git_export     : GitError: Failed to update Git HEAD ref
+sync_colocated : GitError: Failed to update Git HEAD ref
+```
+
+**It is not the bookmark refs. It is `.git/HEAD`.**
+
+### 4.2 The repo state that produces it
+
+```
+jj @             c53e6b2a872f
+jj @ parents     8f7dec5de7b0      <- current trunk head; where jj wants HEAD
+.git/HEAD        e4686d3142bf      <- detached, and NOT an ancestor of main
+HEAD object      exists (a commit)
+```
+
+`e4686d31` is the **abandoned version-bump commit from an operation that was undone earlier in
+the session**. `.git/HEAD` is pinned to a commit that is no longer reachable from any branch.
+
+jj will not move a HEAD it does not recognise — that guard exists so jj never clobbers an
+out-of-band checkout. So the guard is firing correctly on a state that should not exist, and
+**every colocated export from that moment on fails, permanently, until something repairs HEAD.**
+
+### 4.3 The second defect: all three health surfaces say the repo is fine
+
+At the exact moment both exports were failing:
+
+```
+$ gitman status      → CANONICAL · 1 lane
+$ gitman doctor      → HEALTHY  (including "ok colocated-refs  jj bookmarks ↔ git refs in sync")
+$ gitman reconcile   → CLEAN — "already canonical — no strays, refs in sync."
+```
+
+`reconcile` is the documented recovery for exactly this class of problem, and **it does not
+detect or repair a stuck HEAD.** It compares bookmarks against refs; nothing looks at
+`.git/HEAD`. This is independently actionable and arguably worse than the export failure: a
+user following the tool's own advice is told everything is fine.
+
+This also explains why the earlier events "recovered": `reconcile` fixed the *bookmark* drift
+those events surfaced, while the HEAD problem either was not present or stayed hidden.
+
+### 4.4 What is still unknown — the trigger
+
+The obvious candidate was tested and **does not reproduce**: `init → start → save → land →
+undo` leaves HEAD correct and both exports OK (probe in §6, extended with `do_land` /
+`do_undo`). So a plain undo-after-land is not enough.
+
+The real session did something more specific. The strongest remaining lead is that the undone
+operation was a **version bump that had already been exported**, and that it was then
+**re-applied** (the bump was undone and redone), leaving jj's recorded git-head and `.git/HEAD`
+on divergent lines. A stale second workspace was also present throughout.
+
+**Finding the trigger is the remaining work.** §5 is written for that.
+
+### Secondary hypotheses for the trigger, in order
 
 - **H2 — the stale second workspace.** A stale workspace has its own `@` and its own operation
   view. `git_export` may be refusing, or exporting a different workspace's idea of the
@@ -150,7 +219,10 @@ its own diagnostics were suppressed by the same commit.
 
 ## 5. The protocol
 
-### Step 0 — make the failure speak (do this first, it is 20 minutes)
+### Step 0 — instrument (still worth doing; it is 20 minutes)
+
+The error text is now known, but only because it was extracted by hand from a live repo. It
+must not require that again.
 
 Patch `_export_colocated_git` to record what it caught, on all three handlers. Keep the
 best-effort behaviour — only add detail:
@@ -165,10 +237,19 @@ full traceback to `.gitman/export-failures.log` as well, since the note is size-
 interesting case may be rare.
 
 **Do not ship this as-is.** Decide at the end whether the final form is a note, a log, or a
-`doctor` row. But get the text first: it very likely names the cause outright, and every step
-below is guesswork without it.
+`doctor` row.
 
-### Step 1 — reproduce
+### Step 1 — reproduce the trigger
+
+Start from the known end state and work backwards. The assertion is cheap and exact:
+
+```python
+head = (repo / ".git" / "HEAD").read_text().strip()
+ws.git_export()          # must not raise
+```
+
+Drive **gitman intents only**, checking after each. Concentrate on the sequence §4.4 names:
+a bump that is exported, then undone, then re-applied. Then widen:
 
 Build a harness (see §6 for a working skeleton) that drives **gitman intents only** and asserts
 canonicity after every single one. Then add, one at a time, in this order:
@@ -205,6 +286,17 @@ Only then. Candidates, depending on what you find:
   it and continuing.
 - If H4 holds: this may be a pyjutsu-side limit (see project 34 `BASELINE.md` §9). Escalate
   there rather than papering over it in gitman.
+
+**Independently of the trigger, two fixes are already justified by §4.2–4.3:**
+
+1. **`reconcile` must check and repair `.git/HEAD`.** Detect a HEAD that jj does not recognise
+   or that is unreachable from any branch, re-point it at the working copy's parent, and report
+   the move with both ids like every other ref repair.
+2. **`doctor` must have a HEAD row.** A repo whose every export is failing must not report
+   HEALTHY. This is the cheapest guard against the whole class.
+
+Both can land before the trigger is understood, and both would have turned three of the four
+sightings into a one-line diagnosis.
 
 ---
 
