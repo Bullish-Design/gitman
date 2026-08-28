@@ -261,9 +261,11 @@ corrupting, and named the recovery.
 
 - **Event 2: confirmed my fault.** I ran a raw `git add -A .claude/skills`,
   which is exactly what the law forbids. Self-inflicted; no gitman defect.
-- **Event 1: unexplained.** It appeared after a `uv run --project` gitman call
-  (see G5), with no raw git command in between. Possibly the venv churn, but I
-  did not isolate it.
+- **Event 1: EXPLAINED, 2026-08-28.** Not the venv churn. `gitman undo`
+  (`restore_operation`) rewinds jj's record of the exported git HEAD but leaves
+  `.git/HEAD` where the undone operation put it; the next operation that must
+  move HEAD then fails forever. Fixed — the exporter self-heals. See
+  [`../29-concurrent-worktree-raw-git-desync/INVESTIGATION_GUIDE.md`](../29-concurrent-worktree-raw-git-desync/INVESTIGATION_GUIDE.md) §4.4.
 
 **Why it is worth filing.** Existing project `29-concurrent-worktree-raw-git-desync`
 covers the raw-git trigger. Event 1 may be a second trigger — a foreign-uv

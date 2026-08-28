@@ -491,7 +491,15 @@ def _export_colocated_git(session: Session) -> list[str]:
     notes: list[str] = []
     try:
         session.ws.git_export()
-    except Exception:  # was: except PyjutsuError — GitError/AttributeError on pyjutsu versions escapes
+    except Exception as exc:  # was: except PyjutsuError — GitError/AttributeError on pyjutsu versions escapes
+        # A HEAD failure is its own fault with its own cure, and it must be tried FIRST: while it
+        # stands, no export can succeed, so the ref healing below cannot land either. Self-heal
+        # here rather than only reporting, because the state is *permanent* once entered — see
+        # `repair_git_head` for how it is entered (project 29).
+        if _is_head_error(exc):
+            repaired = repair_git_head(session)
+            if repaired is not None:
+                return notes + [repaired] + _sync_colocated_checkout(session)
         # git_export refuses two things: a D/F conflict from fractal lane names (refs/heads/T
         # blocking refs/heads/T/api) and any ref that moved out from under jj. Repair via the
         # shared classifier — the *only* ref writer — so a git-ahead ref can never be force-reset
@@ -504,16 +512,69 @@ def _export_colocated_git(session: Session) -> list[str]:
             mismatched, leftover = [], []
         stuck = sorted([n for n, _, _ in mismatched] + leftover)
         names = ", ".join(stuck) if stuck else "some bookmarks"
-        notes.append(f"colocated git ref(s) stale for: {names} — run `gitman reconcile` to re-sync.")
+        # Name the underlying error. Reporting only "stale refs" is what hid a total, permanent
+        # colocated-export failure across two sessions and four sightings.
+        notes.append(
+            f"colocated git ref(s) stale for: {names} ({type(exc).__name__}: {exc}) "
+            "— run `gitman reconcile` to re-sync."
+        )
         notes += sync_colocated_refs(session)
-    # Total colocated sync (HEAD + index) after every mutation so raw-git tooling never lags jj
-    # (15-RC6). Best-effort and last: a non-colocated repo (or a rare sync failure) must never undo
-    # the already-committed, already-recorded intent.
+    return notes + _sync_colocated_checkout(session)
+
+
+def _sync_colocated_checkout(session: Session) -> list[str]:
+    """Total colocated sync (HEAD + index) so raw-git tooling never lags jj (15-RC6).
+
+    Best-effort and last: a non-colocated repo (or a rare sync failure) must never undo the
+    already-committed, already-recorded intent.
+    """
     try:
         session.sync_colocated()
-    except Exception:  # was: except PyjutsuError — GitError/AttributeError on pyjutsu versions escapes
-        notes.append("colocated git checkout not re-synced — run `gitman reconcile` if raw git looks stale.")
-    return notes
+        return []
+    except Exception as exc:  # was: except PyjutsuError — GitError/AttributeError escapes
+        return [
+            f"colocated git checkout not re-synced ({type(exc).__name__}: {exc}) "
+            "— run `gitman reconcile` if raw git looks stale."
+        ]
+
+
+def _is_head_error(exc: Exception) -> bool:
+    """Whether `exc` is jj refusing to move `.git/HEAD` (as opposed to a bookmark-ref refusal)."""
+    return "HEAD" in str(exc)
+
+
+def repair_git_head(session: Session) -> str | None:
+    """Re-establish a `.git/HEAD` jj can move again. Returns a note, or `None` if it did not work.
+
+    **How the repo gets here.** jj keeps `HEAD` detached at `@`'s parent and refuses to move a
+    `HEAD` that disagrees with its own record — the guard that stops it clobbering an
+    out-of-band checkout. `gitman undo` (`restore_operation`) rewinds jj's record but leaves the
+    on-disk `HEAD` where the undone operation put it, so the two silently diverge. Reproduced as
+    `version bump` → `undo` → `version bump`: after the undo, `.git/HEAD` points at `@` instead
+    of `@`'s parent, and the next operation that must move `HEAD` fails the compare-and-swap.
+
+    **Why it must self-heal.** The failure is *permanent*: every later `git_export` and
+    `sync_colocated` raises, so the colocated `.git` silently stops tracking jj — while `status`
+    and `doctor` report a healthy repo. It went unexplained across two sessions and four
+    sightings (project 29).
+
+    The repair uses the only writer pyjutsu offers: `git.set_head` points `HEAD` symbolically at
+    trunk, which is reachable by definition, and jj's own export then re-detaches it at `@`'s
+    parent — the shape a colocated repo expects. No raw git.
+    """
+    trunk = session.config.trunk
+    if not trunk:
+        return None
+    try:
+        before = session.ws.git.head()
+        was = before.oid[:12] if before is not None and before.oid else "unknown"
+        session.ws.git.set_head(trunk)
+        session.ws.git_export()  # re-detaches HEAD at @'s parent, and now succeeds
+    except Exception:  # noqa: BLE001 — the caller falls through to the generic ref repair
+        return None
+    after = session.ws.git.head()
+    now = after.oid[:12] if after is not None and after.oid else trunk
+    return f"repaired colocated git HEAD: {was} -> {now} (it had stopped tracking jj)."
 
 
 @dataclass

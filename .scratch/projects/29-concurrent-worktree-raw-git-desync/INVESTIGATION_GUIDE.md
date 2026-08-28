@@ -6,7 +6,10 @@
 **Goal:** name the cause of a `git ref(s) lag jj` desync that occurs while **only gitman
 commands run**.
 
-**Status: mechanism confirmed, detection and repair SHIPPED, trigger still unknown.**
+**Status: CLOSED. Mechanism, trigger, and fix all confirmed and shipped.**
+
+This file is now a record, not a task. The remaining open item is the *other* desync in this
+directory — the raw-git one in `CONCURRENT_WORKING_ISSUE.md`.
 
 Writing this guide turned into a partial investigation, and the two fixes it justified were
 then built. As of trunk `35ccd012`:
@@ -18,9 +21,8 @@ then built. As of trunk `35ccd012`:
 - `tests/test_orphaned_git_head.py` pins all of it, including that the guard only trips once
   `@` advances past the stranded `HEAD`.
 
-**What is left for this session: the trigger.** The state is now *detected and repairable*, but
-nothing stops it being entered. §4.4 and §5 are the remaining work. Everything else here is
-kept as the evidence trail.
+**The trigger was then found: `gitman undo`.** See §4.4. The mutating path now self-heals, so
+the state can no longer persist. Everything below is kept as the evidence trail.
 
 ---
 
@@ -196,18 +198,44 @@ user following the tool's own advice is told everything is fine.
 This also explains why the earlier events "recovered": `reconcile` fixed the *bookmark* drift
 those events surfaced, while the HEAD problem either was not present or stayed hidden.
 
-### 4.4 What is still unknown — the trigger
+### 4.4 CONFIRMED: the trigger is `gitman undo`
 
-The obvious candidate was tested and **does not reproduce**: `init → start → save → land →
-undo` leaves HEAD correct and both exports OK (probe in §6, extended with `do_land` /
-`do_undo`). So a plain undo-after-land is not enough.
+Found by running seven candidate sequences against a fresh repo and probing after every step.
+Two broke, both at the same step:
 
-The real session did something more specific. The strongest remaining lead is that the undone
-operation was a **version bump that had already been exported**, and that it was then
-**re-applied** (the bump was undone and redone), leaving jj's recorded git-head and `.git/HEAD`
-on divergent lines. A stale second workspace was also present throughout.
+| Sequence | Result |
+|---|---|
+| `save → undo` | clean |
+| `save → land → undo` | clean |
+| `bump → undo` | clean |
+| **`bump → undo → bump`** | **BROKEN at the second bump** |
+| **`bump → undo → bump → save → land`** | **BROKEN at the second bump** |
+| `save → undo → save → land` | clean |
+| `start → abandon` | clean |
+| `bump → bump` (no undo) | clean — so the restore is the trigger, not the bump |
 
-**Finding the trigger is the remaining work.** §5 is written for that.
+The state right after the `undo`, with `.git/HEAD` read directly:
+
+```
+start        @=eec2ee94  parent=[9f9cc296]  .git/HEAD=9f9cc296   export=OK
+bump         @=805a8d97  parent=[eec2ee94]  .git/HEAD=eec2ee94   export=OK
+undo         @=eec2ee94  parent=[9f9cc296]  .git/HEAD=eec2ee94   export=OK   <-- HEAD is @, not @'s parent
+bump again   @=4c7f6914  parent=[eec2ee94]  .git/HEAD=eec2ee94   export=GitError
+```
+
+**`gitman undo` is `restore_operation`. It rewinds jj's own record of the exported git HEAD but
+leaves the on-disk `.git/HEAD` where the undone operation put it.** After the undo, `HEAD`
+points at `@` rather than `@`'s parent — jj's invariant, violated. The two records have
+silently diverged. The next operation that must *move* `HEAD` fails the compare-and-swap, and
+because jj will never move a `HEAD` it does not recognise, it fails forever.
+
+Two details that make it hard to spot, and explain the four sightings:
+
+- **The undo itself looks fine.** jj only trips the guard when it has to move `HEAD`, so the
+  export right after the undo succeeds. The damage is latent until the next commit.
+- **`HEAD` is still reachable at that point**, so `orphaned_git_head` — the detector written
+  before the trigger was known — does **not** fire. It only starts firing later, once a `land`
+  rewrites the commit `HEAD` is stranded on. Detection alone was never going to be enough.
 
 ### Secondary hypotheses for the trigger, in order
 
@@ -301,14 +329,25 @@ Only then. Candidates, depending on what you find:
 this fault from silent and permanent into a `doctor` failure with a working one-command
 recovery. They do **not** prevent it.
 
-Remaining candidates once the trigger is known:
+### The fix that shipped
 
-- Narrow `_export_colocated_git`'s three `except Exception` handlers, or record the exception
-  text permanently, so the next unknown fault arrives with evidence attached.
-- Make `land`/`save` retry the export after a repair, rather than leaving the repo for the
-  *next* command to refuse.
-- If the trigger turns out to be `undo`/`restore_operation` leaving `HEAD` behind, the fix
-  belongs in the undo path: re-point `HEAD` as part of the restore, not afterwards.
+`_export_colocated_git` now **self-heals**. When `git_export` fails with a HEAD error it calls
+`invariants.repair_git_head` — `git.set_head(trunk)` (reachable by definition) followed by a
+re-export, which re-detaches `HEAD` where jj wants it — and only falls through to the generic
+ref repair if that does not work.
+
+It was deliberately **not** put in the undo path, though that is where the trigger lives. The
+choke point catches *any* cause, including whatever produced project 32's G6 event 1, and there
+is only one place to get right. `undo` needs no special case.
+
+Also shipped alongside:
+
+- Both handlers now **name the underlying exception** in their note. Reporting only "stale
+  refs" is what hid a total, permanent export failure across four sightings.
+- `reconcile` keeps the unreachable-HEAD repair as a safety net for a repo left broken by an
+  older gitman, delegating to the same `repair_git_head`.
+- `tests/test_orphaned_git_head.py` — 7 tests, including `bump → undo → bump`, which fails
+  without the self-heal with the exact production error.
 
 ---
 
@@ -359,7 +398,7 @@ Model API notes that cost time to discover:
 
 ---
 
-## 7. What "done" looks like
+## 7. What "done" looked like — all met
 
 1. A named, reproducible trigger, written up in this directory.
 2. A regression test in `tests/` that fails before the fix and passes after — assert on the
@@ -369,9 +408,9 @@ Model API notes that cost time to discover:
    sightings.
 4. Project 32's G6 event 1 marked explained or explicitly still open.
 
-If it does not reproduce after a solid attempt, that is a real result too. Record what was
-tried and what was ruled out, and add the instrumentation from Step 0 permanently so the next
-sighting arrives with evidence attached.
+All four were met on 2026-08-28. Project 32's G6 event 1 is **explained**: it is the same
+fault. That session ran `gitman undo` and the desync appeared afterwards with no raw git in
+between, which is exactly this signature.
 
 ---
 

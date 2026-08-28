@@ -24,37 +24,25 @@ if TYPE_CHECKING:
     from gitman.session import Session
 
 
-def _repair_orphaned_head(session: Session, trunk: str) -> list[str]:
-    """Re-point a `.git/HEAD` that no local bookmark can reach. Returns the actions taken.
+def _repair_orphaned_head(session: Session) -> list[str]:
+    """Repair a `.git/HEAD` that no local bookmark can reach, before anything else runs.
 
-    The failure this fixes is silent and total: jj refuses to move a `HEAD` it does not
-    recognise, so once `HEAD` is stranded on an abandoned commit, **every** `git_export` and
-    `sync_colocated` raises `GitError: Failed to update Git HEAD ref` — and gitman's exporter
-    catches that broadly, so the only symptom is a best-effort note. Meanwhile `status` and
-    `doctor` keep reporting a healthy repo (project 29).
-
-    The repair uses the one writer pyjutsu offers: `git.set_head` points `HEAD` symbolically at
-    trunk, which is by definition reachable. jj's own verbs then re-detach it at `@`'s parent —
-    the shape a colocated repo expects — so the export that follows both succeeds and puts
-    `HEAD` back where jj wants it. No raw git.
-
-    Best-effort: a repair that fails must not stop the rest of the recovery, which may be what
-    the operator actually came for.
+    The mutating path now self-heals this at the moment it appears
+    (`invariants.repair_git_head`), so reaching here means the repo was left broken by an older
+    gitman, or the self-heal failed. It stays first in `reconcile` because while `HEAD` is
+    unusable every `git_export` raises, so no other healing below can land.
     """
+    from gitman.invariants import repair_git_head
     from gitman.state import orphaned_git_head
 
     stranded = orphaned_git_head(session.view(), session.ws)
     if stranded is None:
         return []
-    try:
-        session.ws.git.set_head(trunk)
-        session.ws.git_export()  # re-detaches HEAD at @'s parent, and now succeeds
-        session.sync_colocated()
-    except Exception as exc:  # noqa: BLE001 — never block the recovery verb
-        return [f"could not repair orphaned git HEAD at {stranded[:12]}: {type(exc).__name__}: {exc}"]
-    landed = session.ws.git.head()
-    now = landed.oid[:12] if landed is not None and landed.oid else trunk
-    return [f"re-pointed orphaned git HEAD: {stranded[:12]} -> {now} (every colocated export was failing)."]
+    repaired = repair_git_head(session)
+    if repaired is None:
+        return [f"could not repair orphaned git HEAD at {stranded[:12]} — see `gitman doctor`."]
+    session.sync_colocated()
+    return [repaired]
 
 
 def do_reconcile(session: Session, abandon_: bool):
@@ -96,7 +84,7 @@ def do_reconcile(session: Session, abandon_: bool):
         # `git_export` and `sync_colocated` raises, so ref healing cannot land. It is also
         # invisible to every other check — `status`, `doctor`, and this verb all reported a
         # healthy repo while no export had succeeded for the whole session (project 29).
-        head_notes = _repair_orphaned_head(session, trunk)
+        head_notes = _repair_orphaned_head(session)
         try:
             view = session.fresh_view()  # snapshot dirty @ first (now safe — no longer stale)
             try:

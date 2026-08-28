@@ -20,12 +20,13 @@ import pytest
 from pyjutsu import Workspace
 
 from gitman.config import GitmanConfig
-from gitman.core import do_abandon, do_save, do_start
+from gitman.core import do_abandon, do_save, do_start, do_undo
 from gitman.doctor import FAIL, OK, run_doctor
 from gitman.init import do_init
 from gitman.reconcile import do_reconcile
 from gitman.session import Session
 from gitman.state import orphaned_git_head
+from gitman.version import do_version
 
 
 def _repo(d: Path) -> None:
@@ -116,3 +117,44 @@ def test_reconcile_stays_clean_on_a_healthy_repo(tmp_path: Path):
     """The repair must not make `reconcile` claim work it did not do."""
     _repo(tmp_path)
     assert do_reconcile(Session.load(tmp_path), abandon_=False).outcome == "CLEAN"
+
+
+# The trigger. `undo` (restore_operation) rewinds jj's record of the exported HEAD but leaves
+# the on-disk `.git/HEAD` where the undone operation put it. The next operation that must move
+# HEAD then fails the compare-and-swap — permanently, and silently.
+
+
+def test_bump_undo_bump_keeps_the_export_working(tmp_path: Path):
+    """The exact sequence that produced the fault in real use.
+
+    Without the self-heal in `_export_colocated_git`, `git_export` raises
+    `GitError: Failed to update Git HEAD ref` from the second bump onward, for the life of the
+    repo. `bump -> bump` with no undo is clean, so the restore is the trigger, not the bump.
+    """
+    _repo(tmp_path)
+    do_start(Session.load(tmp_path), "rel", workspace=False)
+    do_version(Session.load(tmp_path), "bump", "minor")
+    do_undo(Session.load(tmp_path), op=None, list_=False)
+
+    do_version(Session.load(tmp_path), "bump", "minor")  # the step that used to break it
+
+    session = Session.load(tmp_path)
+    session.ws.git_export()  # must not raise
+    session.sync_colocated()
+    assert orphaned_git_head(session.view(), session.ws) is None
+
+
+def test_head_still_tracks_jj_after_an_undo(tmp_path: Path):
+    """`undo` leaves `.git/HEAD` on `@` rather than `@`'s parent — where the divergence starts.
+
+    The placement itself is jj's business; what must hold is that HEAD still tracks something
+    jj knows about, so the *next* operation can move it. That is the property that broke.
+    """
+    _repo(tmp_path)
+    do_start(Session.load(tmp_path), "rel", workspace=False)
+    do_version(Session.load(tmp_path), "bump", "minor")
+    do_undo(Session.load(tmp_path), op=None, list_=False)
+
+    session = Session.load(tmp_path)
+    session.ws.git_export()  # must not raise
+    assert orphaned_git_head(session.view(), session.ws) is None
