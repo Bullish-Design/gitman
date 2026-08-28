@@ -117,6 +117,29 @@ def test_version_show_and_bump(tmp_path: Path):
     state = capture_state(_isess(tmp_path))
     assert state.lanes[0].change_count == 2
 
+    # The G2 guarantee: uv rewrites both files and both land in the one bump change. The
+    # report names what was actually committed, so it cannot claim a lock it did not capture.
+    assert res.messages[1] == "changed: pyproject.toml, uv.lock"
+    assert res.notes == []
+
+
+def test_a_bump_reports_a_lock_it_could_not_commit(tmp_path: Path):
+    """A gitignored `uv.lock` is versioned apart from the manifest. Say so, never imply it moved."""
+    from gitman.init import do_init
+    from gitman.version import do_version
+
+    _fresh(tmp_path)
+    (tmp_path / ".gitignore").write_text("uv.lock\n")
+    do_init(_uninit_sess(tmp_path), trunk_opt=None)
+    do_start(_isess(tmp_path), "rel", workspace=False)
+
+    res = do_version(_isess(tmp_path), "bump", "minor")
+
+    assert res.outcome == "BUMPED"
+    assert "uv.lock" not in res.messages[1]
+    assert (tmp_path / "uv.lock").is_file()  # uv wrote it; jj could not snapshot it
+    assert any("versioned apart" in note for note in res.notes)
+
 
 def test_version_bump_undo_round_trip(tmp_path: Path):
     from gitman.init import do_init
