@@ -405,7 +405,9 @@ def _start_workspace(
 ) -> None:
     """`start --workspace`: add a secondary workspace, then put its `@` on a new lane bookmark.
 
-    `add_workspace` publishes its own op and bases the new `@` on root, so a sub-workspace tx
+    `add_workspace` publishes its own op, and gitman asks it for `revisions="root()"` so the new
+    `@` starts on root — an initial commit on a trunk descendant would look like a stray change.
+    A sub-workspace tx
     re-bases it onto trunk (or, with `--onto`, the parent lane's head — the stacking atom in an
     isolated workspace, the fractal-lanes fan-out default) and creates the lane (which lands on the
     shared op-log → visible from the default workspace). On any failure, remove the half-made
@@ -441,9 +443,14 @@ def _start_workspace(
             # pyjutsu >= 0.20 no longer creates missing parents, so a `/`-path name like `T/api`
             # needs `.worktrees/T` to exist first. The `*` self-ignore above already covers it.
             wpath.parent.mkdir(parents=True, exist_ok=True)
-            # Own op. The new `@` inherits the source `@`'s parents (the pyjutsu 0.16 default);
-            # the sub-transaction below moves it onto `base_ref` regardless.
-            session.ws.add_workspace(str(wpath), name=name)
+            # Own op. `revisions="root()"` is explicit on purpose. pyjutsu 0.16 changed the
+            # default parent from the root commit to the source `@`'s parents, which puts the
+            # workspace's initial commit on a trunk descendant — the exact shape `_stray_revset`
+            # matches, so a leftover would read as "edited outside gitman" (I2). Asking for
+            # `root()` states the intent in code, so a later default change cannot move it
+            # silently. Cheaper than abandoning the leftover: a rewrite verb is now subject to
+            # the immutability check.
+            session.ws.add_workspace(str(wpath), name=name, revisions="root()")
             sub = Workspace.load(wpath)
             with sub.transaction("gitman:start", auto_snapshot=False) as tx:
                 tx.new(base_ref)  # put the new workspace's @ on trunk (or the parent head)
