@@ -90,7 +90,7 @@ entry is enough:
 dev = ["gitman"]
 
 [tool.uv.sources]
-gitman = { git = "https://github.com/Bullish-Design/gitman", tag = "v0.5.0" }
+gitman = { git = "https://github.com/Bullish-Design/gitman", tag = "v0.6.0" }
 ```
 
 ```bash
