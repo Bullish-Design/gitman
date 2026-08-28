@@ -272,6 +272,37 @@ def _tracked_but_ignored(ws: Workspace) -> list[str]:
         return []
 
 
+def orphaned_git_head(view: RepoView, ws: Workspace) -> str | None:
+    """The `.git/HEAD` commit id when **no local bookmark can reach it**, else `None`.
+
+    In a colocated repo jj keeps `HEAD` detached at `@`'s parent, and it refuses to move a
+    `HEAD` it does not recognise — the guard that stops it clobbering an out-of-band checkout.
+    If `HEAD` is ever left on a commit that later becomes unreachable (an undone operation's
+    abandoned commit), that guard fires forever: **every** `git_export` and `sync_colocated`
+    then raises `GitError: Failed to update Git HEAD ref`, and gitman's own exporter swallows it.
+
+    A canonical repo cannot reach this state legitimately. `@`'s parent is a lane head or trunk,
+    and every lane head carries a bookmark, so a healthy detached `HEAD` is always reachable
+    from some local bookmark. Unreachable therefore means broken, with no false positives from
+    ordinary lane work.
+
+    Detection only — `reconcile` owns the repair. Returns `None` on any engine failure, so a
+    diagnostic can never crash `status` or `doctor`.
+    """
+    from pyjutsu import PyjutsuError
+
+    try:
+        head = ws.git.head()
+        if head is None or head.oid is None or not head.detached:
+            return None  # symbolic HEAD (or unborn) — git resolves it through the branch
+        targets = [t for b in view.bookmarks() if b.remote is None for t in b.target_ids]
+        if any(ws.is_ancestor(head.oid, target) for target in targets):
+            return None
+        return head.oid
+    except (PyjutsuError, AttributeError):
+        return None
+
+
 def colocated_ref_desync(view: RepoView, ws: Workspace) -> tuple[list[tuple[str, str, str | None]], list[str]]:
     """Detect jj-bookmark ↔ colocated-git-ref drift (round-09 gap B).
 

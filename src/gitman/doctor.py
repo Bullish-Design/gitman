@@ -124,6 +124,28 @@ def run_doctor(repo_root: Path, config: GitmanConfig | None = None) -> DoctorRep
     for note in cfg.deprecations:
         checks.append(Check(WARN, "config", note))
 
+    # An orphaned `.git/HEAD` breaks *every* colocated export while every other check passes.
+    # It reported HEALTHY through a whole session in which no export had succeeded, so it gets
+    # its own row (project 29).
+    if ws is not None and _is_colocated(repo_root):
+        try:
+            from gitman.state import orphaned_git_head
+
+            stranded = orphaned_git_head(ws.head(), ws)
+        except Exception:  # noqa: BLE001 — a diagnostic must never crash doctor
+            stranded = None
+        if stranded is not None:
+            checks.append(
+                Check(
+                    FAIL,
+                    "colocated-head",
+                    f"git HEAD is stranded at {stranded[:12]} (no bookmark reaches it) — every "
+                    "colocated export is failing; run `gitman reconcile`",
+                )
+            )
+        else:
+            checks.append(Check(OK, "colocated-head", "git HEAD reachable from a bookmark"))
+
     # colocated jj-bookmark ↔ git-ref drift (round-09 gap B): a stuck/leftover ref makes every
     # later `git_export` raise, silently desyncing trunk. Surface it (warn, recoverable) so it
     # can't hide; `gitman reconcile` re-syncs. Skipped when the repo isn't colocated/loadable.

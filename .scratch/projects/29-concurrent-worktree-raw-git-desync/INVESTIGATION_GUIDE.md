@@ -6,11 +6,21 @@
 **Goal:** name the cause of a `git ref(s) lag jj` desync that occurs while **only gitman
 commands run**.
 
-**Status when this was written: the mechanism is identified and a live specimen exists.**
-Writing the guide turned into a partial investigation. §4 is no longer a hypothesis — the
-swallowed error has been read, and a second, independent defect was confirmed along the way.
-What remains is the *trigger*: the exact sequence that puts the repo into the state. Read §4
-before anything else.
+**Status: mechanism confirmed, detection and repair SHIPPED, trigger still unknown.**
+
+Writing this guide turned into a partial investigation, and the two fixes it justified were
+then built. As of trunk `35ccd012`:
+
+- `state.orphaned_git_head` detects a `.git/HEAD` no local bookmark can reach.
+- `doctor` fails on it (`colocated-head` row) instead of reporting HEALTHY.
+- `reconcile` repairs it through `git.set_head` + re-export — no raw git — and reports the
+  move. It ran on the live specimen and fixed it; second run reports CLEAN.
+- `tests/test_orphaned_git_head.py` pins all of it, including that the guard only trips once
+  `@` advances past the stranded `HEAD`.
+
+**What is left for this session: the trigger.** The state is now *detected and repairable*, but
+nothing stops it being entered. §4.4 and §5 are the remaining work. Everything else here is
+kept as the evidence trail.
 
 ---
 
@@ -287,16 +297,18 @@ Only then. Candidates, depending on what you find:
 - If H4 holds: this may be a pyjutsu-side limit (see project 34 `BASELINE.md` §9). Escalate
   there rather than papering over it in gitman.
 
-**Independently of the trigger, two fixes are already justified by §4.2–4.3:**
+**The two fixes justified by §4.2–4.3 are done** (see the status note at the top). They turn
+this fault from silent and permanent into a `doctor` failure with a working one-command
+recovery. They do **not** prevent it.
 
-1. **`reconcile` must check and repair `.git/HEAD`.** Detect a HEAD that jj does not recognise
-   or that is unreachable from any branch, re-point it at the working copy's parent, and report
-   the move with both ids like every other ref repair.
-2. **`doctor` must have a HEAD row.** A repo whose every export is failing must not report
-   HEALTHY. This is the cheapest guard against the whole class.
+Remaining candidates once the trigger is known:
 
-Both can land before the trigger is understood, and both would have turned three of the four
-sightings into a one-line diagnosis.
+- Narrow `_export_colocated_git`'s three `except Exception` handlers, or record the exception
+  text permanently, so the next unknown fault arrives with evidence attached.
+- Make `land`/`save` retry the export after a repair, rather than leaving the repo for the
+  *next* command to refuse.
+- If the trigger turns out to be `undo`/`restore_operation` leaving `HEAD` behind, the fix
+  belongs in the undo path: re-point `HEAD` as part of the restore, not afterwards.
 
 ---
 

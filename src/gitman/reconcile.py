@@ -24,11 +24,49 @@ if TYPE_CHECKING:
     from gitman.session import Session
 
 
+def _repair_orphaned_head(session: Session, trunk: str) -> list[str]:
+    """Re-point a `.git/HEAD` that no local bookmark can reach. Returns the actions taken.
+
+    The failure this fixes is silent and total: jj refuses to move a `HEAD` it does not
+    recognise, so once `HEAD` is stranded on an abandoned commit, **every** `git_export` and
+    `sync_colocated` raises `GitError: Failed to update Git HEAD ref` — and gitman's exporter
+    catches that broadly, so the only symptom is a best-effort note. Meanwhile `status` and
+    `doctor` keep reporting a healthy repo (project 29).
+
+    The repair uses the one writer pyjutsu offers: `git.set_head` points `HEAD` symbolically at
+    trunk, which is by definition reachable. jj's own verbs then re-detach it at `@`'s parent —
+    the shape a colocated repo expects — so the export that follows both succeeds and puts
+    `HEAD` back where jj wants it. No raw git.
+
+    Best-effort: a repair that fails must not stop the rest of the recovery, which may be what
+    the operator actually came for.
+    """
+    from gitman.state import orphaned_git_head
+
+    stranded = orphaned_git_head(session.view(), session.ws)
+    if stranded is None:
+        return []
+    try:
+        session.ws.git.set_head(trunk)
+        session.ws.git_export()  # re-detaches HEAD at @'s parent, and now succeeds
+        session.sync_colocated()
+    except Exception as exc:  # noqa: BLE001 — never block the recovery verb
+        return [f"could not repair orphaned git HEAD at {stranded[:12]}: {type(exc).__name__}: {exc}"]
+    landed = session.ws.git.head()
+    now = landed.oid[:12] if landed is not None and landed.oid else trunk
+    return [f"re-pointed orphaned git HEAD: {stranded[:12]} -> {now} (every colocated export was failing)."]
+
+
 def do_reconcile(session: Session, abandon_: bool):
     from gitman.core import _resolve_conflicted_lane
     from gitman.invariants import repo_lock, sync_colocated_refs, write_undo_checkpoint
     from gitman.models import IntentResult
-    from gitman.state import _conflicted_lanes, capture_state, colocated_ref_desync, find_strays
+    from gitman.state import (
+        _conflicted_lanes,
+        capture_state,
+        colocated_ref_desync,
+        find_strays,
+    )
 
     trunk = require_trunk(session.config)
     with repo_lock(session.repo_root):
@@ -53,6 +91,12 @@ def do_reconcile(session: Session, abandon_: bool):
         # `pull` under this workspace) can't be snapshotted by `fresh_view()` and never got refreshed.
         # Refresh it FIRST (the one genuinely-new reconcile mutation), then heal refs/strays as before.
         refresh_notes = _refresh_stale_working_copy(session, trunk)
+        # An orphaned `.git/HEAD` must be repaired BEFORE anything below, because it is the one
+        # fault that breaks the tools the rest of this function uses: while it stands, every
+        # `git_export` and `sync_colocated` raises, so ref healing cannot land. It is also
+        # invisible to every other check — `status`, `doctor`, and this verb all reported a
+        # healthy repo while no export had succeeded for the whole session (project 29).
+        head_notes = _repair_orphaned_head(session, trunk)
         try:
             view = session.fresh_view()  # snapshot dirty @ first (now safe — no longer stale)
             try:
@@ -69,7 +113,15 @@ def do_reconcile(session: Session, abandon_: bool):
                 surveyed = False
             else:
                 surveyed = True
-            if surveyed and not conflicted and not strays and not mismatched and not leftover and not refresh_notes:
+            if (
+                surveyed
+                and not conflicted
+                and not strays
+                and not mismatched
+                and not leftover
+                and not refresh_notes
+                and not head_notes
+            ):
                 return IntentResult(
                     intent="reconcile",
                     outcome="CLEAN",
@@ -77,7 +129,7 @@ def do_reconcile(session: Session, abandon_: bool):
                     notes=gc_notes,
                 )
 
-            actions: list[str] = gc_notes + list(refresh_notes)
+            actions: list[str] = gc_notes + list(head_notes) + list(refresh_notes)
             # Colocated refs FIRST (gap B). The import step can bring in git-only history — trunk
             # included — so everything downstream must read the *post*-import view: strays scanned
             # against a stale trunk get adopted onto a stale base and report a diff that double-counts
