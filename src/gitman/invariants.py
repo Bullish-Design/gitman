@@ -276,7 +276,7 @@ def sync_colocated_refs(session: Session, *, preserve_orphans: bool = False) -> 
 
       * **rewrite** (git's commit is known to jj) — jj moved off it deliberately: an `undo` rewind,
         or an export that failed on a D/F conflict. jj is authoritative → force the ref with
-        `write_git_ref`. jj's export *refuses* to rewind a ref (`GitError: failed to export some
+        `ws.git.write_ref`. jj's export *refuses* to rewind a ref (`GitError: failed to export some
         bookmarks`), so the escape hatch is genuinely required here — and what it drops stays
         reachable in jj's op log, so `gitman undo` can still reach it.
       * **adopt** (git's commit is unknown to jj) — git holds history jj never imported. Only

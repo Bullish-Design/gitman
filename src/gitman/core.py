@@ -153,7 +153,7 @@ def run_verify(commands: list[str], repo_root: Path, timeout: float | None = Non
 def pick_remote(ws: Workspace) -> str:
     """The remote to push/fetch against: `origin` if configured, else the sole remote.
     Raises GitmanError(exit_code=2) when multiple remotes exist and none is named 'origin'.
-    Callers gate on `ws.git.remotes()` being non-empty."""
+    Callers gate on `has_remote(ws)`."""
     names = [r.name for r in ws.git.remotes()]
     if "origin" in names:
         return "origin"
@@ -167,6 +167,14 @@ def pick_remote(ws: Workspace) -> str:
         f"Available: {', '.join(sorted(names))}",
         exit_code=2,
     )
+
+
+def has_remote(ws: Workspace) -> bool:
+    """True if the colocated git repo has at least one remote configured.
+
+    The one adapter point for the remote gate. Eleven call sites ask this same question, so the
+    next pyjutsu rename of the git namespace touches one line here, not eleven."""
+    return bool(ws.git.remotes())
 
 
 def _retire_git_ref(session: Session, lane: str) -> list[str]:
@@ -950,7 +958,7 @@ def do_publish(session: Session):
     from gitman.models import IntentResult
 
     trunk = require_trunk(session.config)
-    if not session.ws.git.remotes():
+    if not has_remote(session.ws):
         raise GitmanError("no git remote configured — cannot publish.", exit_code=2)
 
     notes: list[str] = []
@@ -1289,7 +1297,7 @@ def do_sync(session: Session, all_: bool):
     conflicted: list[str] = []
     synced: list[str] = []
     with canonical_guard(session, "sync") as canon:
-        if session.ws.git.remotes() and targets:
+        if has_remote(session.ws) and targets:
             # Capture pre-fetch commit-ids for every target lane so vanished lanes can be
             # content-checked against trunk after the fetch prunes them (S9d auto-retire).
             pre_fetch_heads: dict[str, str] = {}
@@ -1307,7 +1315,7 @@ def do_sync(session: Session, all_: bool):
             # in-filter lane (validated). (verb: adopt)
             session.ws.git_fetch(pick_remote(session.ws), bookmarks=sorted(targets))  # own op
             messages.append("fetched remote.")
-        elif not session.ws.git.remotes():
+        elif not has_remote(session.ws):
             notes.append("no remote — rebasing onto the local base (trunk or parent lane) only.")
         # A fetch can prune a lane whose remote branch was deleted server-side (e.g.
         # `gh pr merge --delete-branch`): jj drops the un-diverged local bookmark too, so a later
@@ -1321,7 +1329,7 @@ def do_sync(session: Session, all_: bool):
 
         for lane in targets:
             if lane not in surviving:
-                lane_sha = pre_fetch_heads.get(lane) if session.ws.git.remotes() else None
+                lane_sha = pre_fetch_heads.get(lane) if has_remote(session.ws) else None
                 if lane_sha is not None:
                     relation = _merge_tree_relation(session.view(), lane_sha, trunk_tip)
                     if relation is not None and not relation[1]:
@@ -1724,7 +1732,7 @@ def do_pull(session: Session, *, dry_run: bool = False):
     from gitman.state import _lane_index, _trunk_conflicted
 
     trunk = require_trunk(session.config)
-    if not session.ws.git.remotes():
+    if not has_remote(session.ws):
         raise GitmanError("no git remote — run `gitman remote add <url>` first.", exit_code=2)
     remote = pick_remote(session.ws)
 
@@ -1933,7 +1941,7 @@ def do_push(session: Session, *, reset_origin: bool = False):
     from gitman.state import _trunk_content_relation
 
     trunk = require_trunk(session.config)
-    if not session.ws.git.remotes():
+    if not has_remote(session.ws):
         raise GitmanError("no git remote — run `gitman remote add <url>` first.", exit_code=2)
     remote = pick_remote(session.ws)
 

@@ -16,7 +16,7 @@ from pyjutsu import RepoView, Workspace
 from pyjutsu.errors import RevsetError
 from pyjutsu.models import Commit, DiffStat, Operation
 
-from gitman.core import GitmanError
+from gitman.core import GitmanError, has_remote
 from gitman.models import Change, Conflict, ConflictFile, Lane, LaneState, Op, RepoState, TrunkRef
 from gitman.session import Session
 
@@ -211,7 +211,7 @@ def _trunk_content_relation(
     """
     from gitman.core import pick_remote
 
-    if not session.ws.git.remotes():
+    if not has_remote(session.ws):
         return None, 0, 0, None
     remote = pick_remote(session.ws)
     try:
@@ -243,8 +243,9 @@ def _trunk_content_relation(
 
 
 def _git_refs_heads(ws: Workspace) -> dict[str, str]:
-    """`{bookmark_name: commit_sha}` from the colocated `refs/heads/*` via pyjutsu `Workspace.git_refs`
-    (project 14 P2; formerly a raw `git for-each-ref`).
+    """`{bookmark_name: commit_sha}` from the colocated `refs/heads/*` via pyjutsu `ws.git.refs`
+    (project 14 P2; formerly a raw `git for-each-ref`. pyjutsu 0.19 moved the direct git readers and
+    writers onto the `ws.git` namespace; `Workspace.git_refs` is a deprecating alias).
 
     The one place gitman reads colocated git refs directly: detecting jj-bookmark↔git-ref desync
     (round-09 gap B). jj commit ids ARE the git SHAs in a colocated repo, so the values compare
@@ -437,11 +438,10 @@ def capture_state(session: Session) -> RepoState:
     if _trunk_conflicted(view, trunk_name):
         from gitman.core import pick_remote
 
-        has_remote = bool(session.ws.git.remotes())
         tracked_on_remote = any(
             b.name == trunk_name and b.remote not in (None, "git") for b in view.bookmarks()
         )
-        remote_name = pick_remote(session.ws) if has_remote else "origin"
+        remote_name = pick_remote(session.ws) if has_remote(session.ws) else "origin"
         if tracked_on_remote:
             reason = f"trunk '{trunk_name}' diverged from {remote_name} (un-pushed local lands + origin moved)."
             note = f"run `gitman pull` to rebase your local lands onto {remote_name}/{trunk_name}."
@@ -647,7 +647,7 @@ def capture_state(session: Session) -> RepoState:
     notes: list[str] = []
     if session.is_stale():
         notes.append("working copy is stale — run `gitman reconcile`.")
-    if not session.ws.git.remotes():
+    if not has_remote(session.ws):
         notes.append("no git remote — publish/release unavailable.")
     # Content-aware trunk↔origin note (twin-proof — a re-hash twin reads in-sync/local-ahead, so it
     # never fires). `forge-ahead` → `pull` (safe FF; local has nothing to lose). `diverged` → `pull`

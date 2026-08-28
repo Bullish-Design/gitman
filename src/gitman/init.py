@@ -9,7 +9,7 @@ import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from gitman.core import GitmanError
+from gitman.core import GitmanError, has_remote
 
 if TYPE_CHECKING:
     from gitman.session import Session
@@ -168,7 +168,7 @@ def detect_trunk(session: Session) -> str:
     for cand in TRUNK_CANDIDATES:
         if cand in local:
             return cand
-    if session.ws.git.remotes():
+    if has_remote(session.ws):
         head = session.ws.git_default_branch(pick_remote(session.ws))
         if head:
             return head

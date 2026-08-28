@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from gitman.config import GitmanConfig, load_config
-from gitman.core import in_devenv
+from gitman.core import has_remote, in_devenv
 
 OK = "ok"
 WARN = "warn"
@@ -99,7 +99,7 @@ def run_doctor(repo_root: Path, config: GitmanConfig | None = None) -> DoctorRep
     except Exception:  # noqa: BLE001 — not a loadable workspace; downstream checks degrade to warn
         ws = None
 
-    if ws is not None and ws.git.remotes():
+    if ws is not None and has_remote(ws):
         checks.append(Check(OK, "remote", "git remote configured"))
     else:
         checks.append(Check(WARN, "remote", "no git remote (publish/release will be unavailable)"))

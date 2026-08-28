@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from gitman.config import GitmanConfig
-from gitman.core import GitmanError, require_trunk, run_verify
+from gitman.core import GitmanError, has_remote, require_trunk, run_verify
 
 if TYPE_CHECKING:
     from gitman.session import Session
@@ -111,7 +111,7 @@ def do_release(session: Session, level: str | None, set_version: str | None):
     )
 
     if config.release.push_tag:
-        if not session.ws.git.remotes():
+        if not has_remote(session.ws):
             notes.append("no remote — tag created locally but not pushed.")
         else:
             session.ws.push_tag(tag, pick_remote(session.ws))  # GitError → exit 1 on fail
