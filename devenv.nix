@@ -11,8 +11,9 @@
   dotenv.disableHint = true;
 
   # https://devenv.sh/packages/
-  # No `jj` CLI: gitman talks to jj-lib in-process via pyjutsu. `git` stays for the one
-  # retained subprocess (annotated tags, tags.py). No Rust/maturin: pyjutsu now arrives as
+  # No `jj` CLI: gitman talks to jj-lib in-process via pyjutsu. `git` stays for `doctor`'s
+  # escape-hatch check and for the test suite; gitman itself runs no git subprocess (annotated
+  # tags go through `ws.git.create_tag`). No Rust/maturin: pyjutsu now arrives as
   # a prebuilt wheel from vendomat's store wheelhouse (see vendor.* below), so this repo
   # never compiles the native extension.
   packages = [

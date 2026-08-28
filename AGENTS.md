@@ -13,16 +13,30 @@ and mirrors its shape. The authority is `docs/GITMAN_CONCEPT.md`.
   environment, so **batch** commands into a single invocation. Use the `--` form so flags
   reach the command, not `devenv shell`.
 - **jj-lib is embedded in-process via [pyjutsu](../Pyjutsu)** (PyO3) — there is **no `jj` CLI**
-  on PATH and no `-T` templates. The jj-lib 0.42 pin lives solely in pyjutsu (currently 0.15.0);
+  on PATH and no `-T` templates. The jj-lib 0.44.0 pin lives solely in pyjutsu (currently 0.20.0);
   gitman inherits it. `gitman doctor` asserts `pyjutsu.JJ_VERSION == pyjutsu.JJ_LIB_TARGET`, so a
   jj-lib drift fails loudly. Reads go through `Session.view()` / `fresh_view()`; mutations through
   `ws.transaction(...)`. The raw-git subprocess surface is **zero**: pyjutsu project 14 (0.12.x)
-  bound `try_merge`/`git_refs`/`tracked_ignored_paths`/`write_git_ref`/`delete_git_ref` (tags.py,
-  merge-tree, for-each-ref, ls-files, update-ref all retired), 0.13.0 added
-  `git_default_branch` + trunk-aware init, and 0.15.0 adds the per-repo hook surface
-  (`.pyjutsu-hooks.toml`, `ws.hooks`) — gitman maps the new `HookAbort`/`PostHookError` to clean
-  exit-1 reports in `map_pyjutsu_error`. The only remaining `subprocess` uses are **user-configured
-  hooks** (`run_verify`, the version read/write hooks).
+  bound the last of it (merge-tree, for-each-ref, ls-files, update-ref and the annotated-tag
+  helper all retired), 0.13.0 added `git_default_branch` + trunk-aware init, and 0.15.0 added the
+  per-repo hook surface (`.pyjutsu-hooks.toml`, `ws.hooks`) — gitman maps `HookAbort`/
+  `PostHookError` to clean exit-1 reports in `map_pyjutsu_error`. The only remaining `subprocess`
+  uses are **user-configured hooks** (`run_verify`, the version read/write hooks).
+- **What pyjutsu 0.16–0.20 changed** (project 34; see `.scratch/projects/34-pyjutsu-0-19-adoption/`):
+  - **Revsets read configuration.** `trunk()`, `immutable_heads()`, `mutable()`, and `visible()`
+    evaluate. String patterns inside revset functions glob by default; gitman's one pattern
+    (`release._tag_exists`) pins `exact:`, and the lane-name allowlist blocks every metacharacter.
+  - **Immutability is enforced** before every rewrite verb, over
+    `::(trunk() | tags() | untracked_remote_bookmarks())`. Gitman **refuses** and names the
+    protection (`core.explain_immutable`); it never passes `ignore_immutable=True`, and a test
+    enforces that. Bookmark and tag writes are not rewrites and stay allowed.
+  - **`ws.git` is the git namespace** — `ws.git.remotes/refs/write_ref/delete_ref/create_tag`. The
+    old spellings are deprecating aliases. Gate remote-dependent work on `core.has_remote(ws)`.
+  - **`ws.gc()` replaced adopt-time keep-ref pruning.** `gitman init --colocate` (adopt path) and
+    `gitman reconcile` call it, always with the default two-week cutoff.
+  - `add_workspace` bases the new `@` on the source `@`'s parents; gitman asks for `root()`
+    explicitly, and creates the parent directory itself. A failure after registration raises
+    `PartialWorkspaceError`, mapped to exit 2 with its recovery action.
 - **Dogfood:** route version control through `gitman` (never raw `jj`/`git` — that breaks
   canonicity). `gitman doctor` checks the toolchain; `gitman status` reports canonicity.
 - **Dev verification** (lint + tests) is `devenv shell -- bash -c 'gitman:lint && gitman:test'`
@@ -67,7 +81,7 @@ nix/gitman.nix  reusable devenv module (tasks + enterTest)
   reads, `fresh_view()` to snapshot-then-read, `ws.transaction(...)` for mutations). The raw-git
   subprocess surface is zero (pyjutsu project 14 retired it; see the pyjutsu bullet above). The
   only `subprocess` uses left are user-configured hooks (`run_verify`, version read/write).
-  pyjutsu >= 0.15 hook errors (`HookAbort` vetoes, `PostHookError` post-failures) are mapped to
+  pyjutsu hook errors (`HookAbort` vetoes, `PostHookError` post-failures) are mapped to
   clean exit-1 reports at the CLI boundary.
 - Exit codes: `0` ok · `1` VC decision needed · `2` infra/config · `3` invalid usage.
 - Every mutating report ends with an inline **Undo** line. Reports are compact and honest.

@@ -3,7 +3,7 @@ inputs:
   nixpkgs:
     url: github:cachix/devenv-nixpkgs/rolling
   # No jj CLI pin: gitman embeds jj-lib in-process via pyjutsu (built from ../Pyjutsu).
-  # The jj 0.38 pin lives solely in pyjutsu (Cargo.toml + its devenv); gitman inherits it.
+  # The jj-lib 0.44.0 pin lives solely in pyjutsu (Cargo.toml + its devenv); gitman inherits it.
   nixpkgs-python:
     url: github:cachix/nixpkgs-python
   nix2container:

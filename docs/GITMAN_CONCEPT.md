@@ -149,7 +149,8 @@ Agent → devenv shell → gitman CLI → Intent planner → Executor (jj / git)
 - **State adapter** (`session.py` + `state.py`) — `Session` is the boundary onto pyjutsu
   (jj-lib in-process via PyO3): `view()` for frozen reads, `fresh_view()` to snapshot-then-read.
   `state.py` projects one pyjutsu view into a typed `RepoState`. Typed pyjutsu errors replace
-  porcelain parsing; `tags.py` is the lone retained git subprocess (annotated tags).
+  porcelain parsing. No git subprocess remains: the git side of the repo is read and written
+  through pyjutsu's `ws.git` namespace, annotated release tags included.
 - **Renderer** — compact agent report; `--json` emits the `RepoState`/result model.
 - **Forge bridge** (optional extra) — `publish`→PR and the forge backend of `land`.
 
@@ -161,7 +162,6 @@ src/gitman/
   session.py    the per-invocation Session — boundary onto pyjutsu (view/fresh_view)
   core.py       orchestration per intent, devenv guard, repo lock, typed-error mapper
   lanes.py      lane registry + workspace lifecycle (create/forget/cleanup)
-  tags.py       colocated-git annotated tags — the one retained git-subprocess surface
   state.py      RepoState capture (composes one pyjutsu view + lanes.py)
   models.py     Pydantic: RepoState, Lane, Change, Conflict, Op, TrunkRef, ...
   config.py     [tool.gitman] policy (Pydantic-validated)
@@ -381,14 +381,15 @@ Op         { op_id, description, timestamp, undoable }   # description from op-l
 > (PyO3) and hands gitman **typed models** directly: `Session.view()` / `fresh_view()` →
 > `RepoView`, whose `log()` / `bookmarks()` / `diff_stat()` / `conflicts()` / `operations()`
 > return the structured data the strategies below reconstructed by hand. `state.py` projects
-> those into `RepoState`. The only retained subprocess is `tags.py` (annotated git tags). The
-> strategy analysis below is preserved as design rationale and as the **contract pyjutsu must
-> satisfy** (the field → source map in §10.7 still holds, now sourced from pyjutsu); the jj
-> 0.38 pin lives in pyjutsu and `doctor` asserts `pyjutsu.JJ_VERSION == pyjutsu.JJ_LIB_TARGET`.
+> those into `RepoState`. No raw-git subprocess is retained: annotated tags now go through
+> `ws.git.create_tag`. The strategy analysis below is preserved as design rationale and as the
+> **contract pyjutsu must satisfy** (the field → source map in §10.7 still holds, now sourced from
+> pyjutsu); the jj-lib 0.44.0 pin lives in pyjutsu and `doctor` asserts
+> `pyjutsu.JJ_VERSION == pyjutsu.JJ_LIB_TARGET`.
 
 Capturing state is the central engineering question. Five strategies; Gitman layers
-several. **All validated against jj 0.38 by a 2026-06-15 spike** (the version nixpkgs
-provides) — now provided in-process by pyjutsu rather than templated CLI output.
+several. **All validated against jj 0.38 by a 2026-06-15 spike**, and carried forward in-process
+by pyjutsu (jj-lib 0.44.0) rather than templated CLI output.
 
 ### 10.1 Strategy B — a custom `json()` template (PRIMARY)
 
@@ -470,9 +471,9 @@ A control-char-delimited (`\x1f`/`\x1e`) `jj log` template, equivalent to 10.1 w
 **Gotcha:** jj conflict markers differ from git's (`<<<<<<< conflict 1 of 1` / `%%%%%%%` /
 `+++++++` / `>>>>>>>` — not git's `=======`); marker-aware logic must expect the jj form.
 
-All jj reads/mutations now go through a `Session` over pyjutsu (typed models, typed errors);
-the only raw subprocess that remains is `tags.py` (annotated git tags). The conflict-marker
-gotcha above still applies — pyjutsu surfaces jj-form markers verbatim.
+All jj reads/mutations now go through a `Session` over pyjutsu (typed models, typed errors), and
+the git side through `ws.git`. No raw git subprocess remains. The conflict-marker gotcha above
+still applies — pyjutsu surfaces jj-form markers verbatim.
 
 ### 10.8 The trunk↔origin content relation (drives `status`/`push`/`pull`)
 
@@ -653,7 +654,8 @@ The four prior open questions are now resolved by the lane model + the spike:
    creation, stable via the bookmark following the change. No generation/collision/freeze
    logic.
 3. **`RepoState` capture** → §10: custom `json()` template (Strategy B), spike-validated on
-   jj 0.38; git numstat for numbers; `jj resolve --list` for conflicts.
+   jj 0.38; git numstat for numbers; `jj resolve --list` for conflicts. All three are now
+   pyjutsu reads against jj-lib 0.44.0.
 4. **Multiple local changes** → I2 + lanes: not hidden and not a soup — every change is a
    named, listable lane; `status` is a uniform enumeration; parallelism via workspaces.
 

@@ -48,7 +48,7 @@ def map_pyjutsu_error(exc: PyjutsuError) -> GitmanError:
     )
 
     if isinstance(exc, HookAbort):
-        # A registered pre-hook vetoed the operation (pyjutsu >= 0.15 hook surface). For a
+        # A registered pre-hook vetoed the operation (the pyjutsu hook surface). For a
         # transaction nothing was published; for a git verb nothing ran. Repo policy refused —
         # the agent fixes the cause (content, config) and retries.
         return GitmanError(f"a pyjutsu pre-hook vetoed the operation: {exc}.", exit_code=1)
