@@ -9,6 +9,7 @@ import fnmatch
 import os
 import shutil
 import subprocess
+import uuid
 from contextlib import suppress
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -1065,12 +1066,92 @@ def do_publish(session: Session):
     )
 
 
+def _land_hook_event(
+    session: Session,
+    *,
+    phase: str,
+    mode: str,
+    requested_lanes: list[str],
+    planned_folds,
+    completed_folds=None,
+    invocation_id: str | None = None,
+):
+    from gitman.lanes import current_lane
+    from gitman.models import LandHookEvent
+
+    workspace_path = Path(session.ws.root).resolve()
+    return LandHookEvent(
+        event=phase,
+        invocation_id=invocation_id or str(uuid.uuid4()),
+        mode=mode,
+        repository_root=session.repo_root.resolve(),
+        workspace_path=workspace_path,
+        current_lane=current_lane(session, session.config.trunk),
+        requested_lanes=requested_lanes,
+        planned_folds=planned_folds,
+        completed_folds=completed_folds or [],
+        trunk_advances=any(f.advances_trunk for f in planned_folds),
+        land_all=mode == "all",
+    )
+
+
+def _land_hook_blocked(session: Session, phase: str, message: str, exit_code: int):
+    from gitman.models import IntentResult
+
+    return IntentResult(
+        intent="land",
+        outcome="BLOCKED",
+        messages=[message],
+        exit_code=exit_code,
+        operation_succeeded=False,
+        hook_phase=phase,
+    )
+
+
 def do_land(session: Session, lane_args: list[str] | None, all_: bool = False):
+    """Land one complete invocation under one repository lock, then run post-land outside it."""
+    from gitman.hooks import describe_changes, filesystem_snapshot, run_hook, validate_allowed_paths
+    from gitman.invariants import repo_lock
+
+    pre_config = session.config.land.pre_hook
+    post_event = None
+    with repo_lock(session.repo_root):
+        result, post_event = _do_land_locked(session, lane_args, all_, pre_config)
+
+    if post_event is not None and session.config.land.post_hook.command:
+        post_config = session.config.land.post_hook
+        validate_allowed_paths(post_config.allowed_paths)
+        post_root = Path(post_event.workspace_path)
+        try:
+            before = filesystem_snapshot(post_root)
+            hook_result = run_hook(post_config, post_event, post_root)
+            after = filesystem_snapshot(post_root)
+        except GitmanError as exc:
+            hook_result = None
+            result.exit_code = exc.exit_code
+            result.operation_succeeded = True
+            result.hook_phase = "post_land"
+            result.notes.extend([str(exc), "land succeeded; no rollback was attempted."])
+        else:
+            changes = describe_changes(post_root, before, after, post_config.allowed_paths)
+            if not hook_result.succeeded or changes:
+                result.exit_code = hook_result.exit_code if not hook_result.succeeded else 1
+                result.operation_succeeded = True
+                result.hook_phase = "post_land"
+                if not hook_result.succeeded:
+                    result.notes.append(f"post-land hook failed: {hook_result.output}")
+                if changes:
+                    result.notes.append(f"post-land hook changed files: {changes}")
+                result.notes.append("land succeeded; no rollback was attempted.")
+    return result
+
+
+def _do_land_locked(session: Session, lane_args: list[str] | None, all_: bool, pre_config):
     from pyjutsu import PyjutsuError
 
     from gitman.invariants import canonical_guard
     from gitman.lanes import children, lane_base, lane_depth, lane_names, require_current_lane
-    from gitman.models import IntentResult
+    from gitman.models import IntentResult, LandFold
     from gitman.state import _lane_index, _merge_tree_conflicts, capture_state
 
     trunk = require_trunk(session.config)
@@ -1092,7 +1173,7 @@ def do_land(session: Session, lane_args: list[str] | None, all_: bool = False):
                 outcome="NOOP",
                 messages=["no lanes to land."],
                 state=capture_state(session),
-            )
+            ), None
     else:
         targets = list(lane_args) if lane_args else [require_current_lane(session, trunk)]
     # Fractal lanes: `land` folds a node into its base (its parent lane, or trunk). Multi-arg sorts
@@ -1100,6 +1181,47 @@ def do_land(session: Session, lane_args: list[str] | None, all_: bool = False):
     # else the parent would refuse while its child is still live. Single-arg keeps caller order.
     if len(targets) > 1:
         targets = sorted(targets, key=lambda lane: lane_depth(session, trunk, lane), reverse=True)
+
+    planned_folds = [
+        LandFold(
+            lane=lane,
+            destination=(lane_base(session, trunk, lane) or trunk),
+            advances_trunk=lane_base(session, trunk, lane) is None,
+        )
+        for lane in targets
+    ]
+    mode = "all" if all_ else ("named" if lane_args else "current")
+    requested_lanes = list(lane_args) if lane_args else list(targets)
+    invocation_id = str(uuid.uuid4())
+    if pre_config.command:
+        from gitman.hooks import describe_changes, filesystem_snapshot, run_hook, validate_allowed_paths
+
+        validate_allowed_paths(pre_config.allowed_paths)
+        hook_event = _land_hook_event(
+            session,
+            phase="pre_land",
+            mode=mode,
+            requested_lanes=requested_lanes,
+            planned_folds=planned_folds,
+            invocation_id=invocation_id,
+        )
+        hook_root = Path(hook_event.workspace_path)
+        before = filesystem_snapshot(hook_root)
+        hook_result = run_hook(pre_config, hook_event, hook_root)
+        after = filesystem_snapshot(hook_root)
+        changes = describe_changes(hook_root, before, after, pre_config.allowed_paths)
+        if not hook_result.succeeded or changes:
+            messages = []
+            if not hook_result.succeeded:
+                messages.append(hook_result.output)
+            if changes:
+                messages.append(changes)
+            return _land_hook_blocked(
+                session,
+                "pre_land",
+                "\n".join(messages),
+                hook_result.exit_code if not hook_result.succeeded else 1,
+            ), None
 
     # S9a TODO: capture op_before once so a multi-lane undo rewinds the whole command in one shot,
     # replacing the per-lane undo checkpoints. Deferred until colocated-ref desync postcondition
@@ -1114,7 +1236,7 @@ def do_land(session: Session, lane_args: list[str] | None, all_: bool = False):
         try:
             _, published = _lane_index(session.view())
             was_published = lane in published
-            with canonical_guard(session, "land") as canon:
+            with canonical_guard(session, "land", acquire_lock=False) as canon:
                 if lane not in lane_names(session, trunk):
                     raise GitmanError(f"no such lane '{lane}'.", exit_code=3)
                 # A node can't fold up while a dependent still stacks on it (Model P fan-in: fold the
@@ -1220,11 +1342,12 @@ def do_land(session: Session, lane_args: list[str] | None, all_: bool = False):
             exit_code=blocked.exit_code,
             undo_command="gitman undo",
             state=last_state,
-        )
+            operation_succeeded=bool(landed),
+        ), None
     landed_desc = [
         lane if targets_map.get(lane, trunk) == trunk else f"{lane}→{targets_map[lane]}" for lane in landed
     ]
-    return IntentResult(
+    result = IntentResult(
         intent="land",
         outcome="LANDED",
         messages=[f"landed {', '.join(landed_desc)} into {trunk}."]
@@ -1237,7 +1360,19 @@ def do_land(session: Session, lane_args: list[str] | None, all_: bool = False):
         ),
         undo_command="gitman undo",
         state=last_state,
+        operation_succeeded=True,
     )
+    completed_folds = [fold for fold in planned_folds if fold.lane in landed]
+    post_event = _land_hook_event(
+        session,
+        phase="post_land",
+        mode=mode,
+        requested_lanes=requested_lanes,
+        planned_folds=planned_folds,
+        completed_folds=completed_folds,
+        invocation_id=invocation_id,
+    )
+    return result, post_event
 
 
 def _abandon_range(session: Session, trunk: str, target: str) -> None:
