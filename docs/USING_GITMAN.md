@@ -173,7 +173,20 @@ generated frontmatter.
 | `[publish].on_fail` | `block` (default) or `warn`. |
 | `[publish].branch_prefix` | Optional prefix on the lane→branch name. |
 | `[release]` | `tag_format` (default `v{version}`), `verify`, `push_tag`. |
+| `[land.pre_hook]` | Optional command, timeout, and allowed paths for the pre-land gate. |
+| `[land.post_hook]` | Optional command, timeout, and allowed paths for the post-land action. |
 | `[policy].protected` | Refs that must never be rewritten/force-pushed. |
+
+Land hooks run once around the complete `gitman land` invocation, including
+`land --all`. Commands use an argument array and receive a versioned JSON event
+on standard input. The shared repository lock stays held during planning, the
+pre-hook, and land mutations. Gitman releases it before the post-hook.
+
+A pre-hook may start a synchronous generator, but Gitman does not include its
+file changes in the current land. Gitman refuses when the hook changes files.
+`allowed_paths` classifies permitted generated paths; save or reconcile those
+changes, then retry land. A post-hook failure reports that land succeeded and
+returns exit 1. Missing commands and timeouts return exit 2.
 
 ## 7. Versioning & release
 

@@ -163,6 +163,31 @@ def status() -> None:
     raise typer.Exit(code=0 if state.canonical else 1)
 
 
+@app.command("log")
+def log_(
+    revset: Annotated[str, typer.Option("--revset", help="jj revset to read (e.g. `main~5..main`).")],
+) -> None:
+    """List the changes in a revset, oldest first, for a reader that wants ids + descriptions.
+
+    The only read verb that takes a raw revset. It exists so a consumer never has to import
+    pyjutsu itself: a shared venv lends the `gitman` console script through PATH, and PATH
+    cannot lend a library through `sys.path`.
+
+    With `--json` the whole of stdout is one JSON array, one object per change. Without it,
+    one `<change id> <subject>` line per change. Diagnostics go to stderr either way.
+    """
+    from gitman.state import log_range
+
+    changes = log_range(_session(), revset)
+    if _ctx["json"]:
+        typer.echo(json.dumps([c.model_dump(mode="json") for c in changes], indent=2, default=str))
+    else:
+        for change in changes:
+            subject = change.description.splitlines()[0] if change.description else ""
+            typer.echo(f"{change.change_id} {subject}".rstrip())
+    raise typer.Exit(code=0)
+
+
 # --- lane lifecycle (M2) -------------------------------------------------------------
 
 

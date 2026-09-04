@@ -35,6 +35,19 @@ tag_format = "v{version}"
 # Push the tag after creating it. Default: true.
 push_tag = true
 
+[land.pre_hook]
+# Optional synchronous command before the complete land invocation. [] disables it.
+# The command receives a versioned JSON event on stdin and runs without a shell.
+# command = ["artifact-tool", "check"]
+# timeout_seconds = 120
+# allowed_paths = ["generated/**"]
+
+[land.post_hook]
+# Optional command after every requested fold succeeds. It runs after the repo lock is released.
+# command = ["artifact-tool", "publish"]
+# timeout_seconds = 120
+# allowed_paths = []
+
 [policy]
 # Refs that must never be rewritten or force-pushed (trunk is always protected).
 protected = ["main"]

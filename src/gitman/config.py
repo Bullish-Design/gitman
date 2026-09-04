@@ -35,6 +35,21 @@ class ReleaseConfig(BaseModel):
     push_tag: bool = True
 
 
+class LandHookConfig(BaseModel):
+    """One synchronous command around a complete ``land`` invocation."""
+
+    command: list[str] = Field(default_factory=list)
+    timeout_seconds: float = Field(default=120.0, gt=0)
+    allowed_paths: list[str] = Field(default_factory=list)
+
+
+class LandConfig(BaseModel):
+    """Invocation-level land hooks; empty commands disable each phase."""
+
+    pre_hook: LandHookConfig = Field(default_factory=LandHookConfig)
+    post_hook: LandHookConfig = Field(default_factory=LandHookConfig)
+
+
 class PolicyConfig(BaseModel):
     protected: list[str] = Field(default_factory=list)
 
@@ -45,6 +60,7 @@ class GitmanConfig(BaseModel):
     lanes: LanesConfig = Field(default_factory=LanesConfig)
     publish: PublishConfig = Field(default_factory=PublishConfig)
     release: ReleaseConfig = Field(default_factory=ReleaseConfig)
+    land: LandConfig = Field(default_factory=LandConfig)
     policy: PolicyConfig = Field(default_factory=PolicyConfig)
 
     # Where this config was loaded from (None if defaults). Not part of the schema input.

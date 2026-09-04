@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -46,6 +47,34 @@ class ConflictFile(BaseModel):
 class Conflict(BaseModel):
     lane: str
     files: list[ConflictFile] = Field(default_factory=list)
+
+
+class LandFold(BaseModel):
+    """One planned lane-to-base fold in a land invocation."""
+
+    lane: str
+    destination: str
+    advances_trunk: bool = False
+
+
+class LandHookEvent(BaseModel):
+    """Stable JSON payload passed to a semantic land hook."""
+
+    schema_version: int = 1
+    event: Literal["pre_land", "post_land"]
+    invocation_id: str
+    command: Literal["land"] = "land"
+    mode: Literal["current", "named", "all"]
+    repository_root: Path
+    workspace_path: Path
+    current_lane: str | None = None
+    requested_lanes: list[str] = Field(default_factory=list)
+    planned_folds: list[LandFold] = Field(default_factory=list)
+    completed_folds: list[LandFold] = Field(default_factory=list)
+    trunk_advances: bool = False
+    land_all: bool = False
+    dry_run: bool = False
+    allowed_paths: list[str] = Field(default_factory=list)
 
 
 class TrunkRef(BaseModel):
@@ -131,6 +160,8 @@ class IntentResult(BaseModel):
     intent: str
     outcome: str  # short uppercase status, e.g. "OK", "BLOCKED", "CONFLICT"
     exit_code: int = 0
+    operation_succeeded: bool | None = None
+    hook_phase: str | None = None
     lane: str | None = None
     messages: list[str] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)

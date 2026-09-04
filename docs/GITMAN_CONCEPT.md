@@ -599,6 +599,7 @@ Pydantic-validated.
 | `[publish] on_fail` | `block` (default) or `warn`. |
 | `[publish] branch_prefix` | Optional prefix on the lane→branch name (default none). |
 | `[release] …` | Tag format, verify, push behavior (see §13). |
+| `[land.pre_hook]` / `[land.post_hook]` | Optional invocation-level land commands with timeout and generated-path policy. |
 | `[policy] protected` | Refs that must never be rewritten/force-pushed. |
 
 ### Retiring a config table

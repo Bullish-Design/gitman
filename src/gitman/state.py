@@ -732,3 +732,17 @@ def capture_state(session: Session) -> RepoState:
         recent_ops=recent_ops,
         notes=notes,
     )
+
+
+def log_range(session: Session, revset: str) -> list[Change]:
+    """Read `revset` as a flat list of changes, oldest first (newest last).
+
+    The one read verb that takes a raw revset. pyjutsu returns newest-first, which is the
+    reverse of what a changelog reader wants, so the order is flipped here — a caller never
+    re-sorts. A revset that does not parse raises `GitmanError` (exit 3) naming the revset.
+    """
+    try:
+        commits = session.view().log(revset)
+    except RevsetError as exc:
+        raise GitmanError(f"bad revset {revset!r}: {exc}", exit_code=3) from exc
+    return [_change(c) for c in reversed(commits)]

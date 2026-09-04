@@ -24,7 +24,7 @@ import json
 import os
 import time
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -620,7 +620,7 @@ def canonical_tx(session: Session, intent: str) -> Iterator[Transaction]:
 
 
 @contextmanager
-def canonical_guard(session: Session, intent: str) -> Iterator[Canon]:
+def canonical_guard(session: Session, intent: str, *, acquire_lock: bool = True) -> Iterator[Canon]:
     """Run a multi-op intent under the shared-root lock, unwinding partials to `op_before`.
 
     The caller runs its own `ws.transaction(..., auto_snapshot=False)` block(s) interleaved with
@@ -628,7 +628,8 @@ def canonical_guard(session: Session, intent: str) -> Iterator[Canon]:
     `op_before` (an earlier non-tx op may have already published) and re-raises. On clean exit, the
     postcondition runs and the undo checkpoint is recorded; `canon.state` carries the post-state.
     """
-    with repo_lock(session.repo_root):
+    lock = repo_lock(session.repo_root) if acquire_lock else nullcontext()
+    with lock:
         _assert_fresh(session)
         before = precheck_canonical(session, intent)
         trunk_before = before.trunk.commit_id
