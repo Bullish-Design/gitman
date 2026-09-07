@@ -1,6 +1,6 @@
 [project]
 name = "gitman"
-version = "0.6.0"
+version = "0.6.1"
 description = "Agent-first version-control interface: a safe lane workflow over jujutsu + colocated git."
 readme = "README.md"
 requires-python = ">=3.13"
@@ -11,12 +11,12 @@ authors = [
 ]
 
 # Lean base: pydantic + typer + pyjutsu (the in-process jj-lib engine). git comes from
-# devenv (doctor's escape-hatch check); there is no `jj` CLI dependency. pyjutsu >= 0.20
+# devenv (doctor's escape-hatch check); there is no `jj` CLI dependency. pyjutsu >= 0.21.1
 # binds the complete in-process surface (project 14 + hooks); gitman maps its hook errors.
 dependencies = [
   "pydantic>=2.12",
   "typer>=0.12",
-  "pyjutsu>=0.20.0",
+  "pyjutsu>=0.21.1",
 ]
 
 [project.optional-dependencies]
@@ -64,7 +64,7 @@ include = [
 # dependency on gitman), so a consumer declares gitman and nothing else. See README
 # "Installing gitman in another repo".
 [tool.uv.sources]
-pyjutsu = { url = "https://github.com/Bullish-Design/Pyjutsu/releases/download/v0.20.0/pyjutsu-0.20.0-cp313-abi3-manylinux_2_39_x86_64.whl" }
+pyjutsu = { url = "https://github.com/Bullish-Design/Pyjutsu/releases/download/v0.21.1/pyjutsu-0.21.1-cp313-abi3-manylinux_2_39_x86_64.whl" }
 
 # Seed policy; `gitman init` writes the frozen trunk here (or to gitman.toml). See concept §15.
 [tool.gitman]
