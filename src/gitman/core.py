@@ -292,8 +292,7 @@ def _cleanup_workspace(session: Session, lane: str, keep_foreign: bool = False) 
         # is left as a clean, reusable checkout on the base — `cd` out and delete it, or start the
         # next subtask in it. Leaving it is correct: you never yank the dir you're standing in.
         return [
-            f"workspace kept (you landed '{lane}' from inside it; `cd {session.repo_root}` and "
-            f"delete it, or reuse it)."
+            f"workspace kept (you landed '{lane}' from inside it; `cd {session.repo_root}` and delete it, or reuse it)."
         ]
 
     rec = next((w for w in session.ws.workspaces() if w.name == lane), None)
@@ -362,9 +361,7 @@ def _resolve_base(session: Session, trunk: str, name: str, onto: str | None) -> 
                 )
             resolved = cur
         if resolved == trunk:
-            raise GitmanError(
-                f"`--onto {trunk}` is just `gitman start` — a lane on trunk; omit `--onto`.", exit_code=3
-            )
+            raise GitmanError(f"`--onto {trunk}` is just `gitman start` — a lane on trunk; omit `--onto`.", exit_code=3)
         if resolved == name:
             raise GitmanError("a lane can't stack on itself.", exit_code=3)
         # D2: `--onto` must agree with the name-parent — the NAME is the base. A bare child + `--onto`
@@ -531,9 +528,7 @@ def _start_workspace(
                 if any(w.name == name for w in session.ws.workspaces()):
                     session.ws.forget_workspace(name)
             raise
-    messages.append(
-        f"lane '{name}' stacked on '{base_name}'." if stacked else f"lane '{name}' created on {trunk}."
-    )
+    messages.append(f"lane '{name}' stacked on '{base_name}'." if stacked else f"lane '{name}' created on {trunk}.")
     notes.append(f"workspace at {wpath} — `cd {wpath}` to work in it.")
     notes.extend(canon.notes)
 
@@ -585,9 +580,7 @@ def do_switch(session: Session, name: str):
 
     trunk = require_trunk(session.config)
     if name == trunk:
-        raise GitmanError(
-            f"'{trunk}' is the frozen trunk — switch onto a lane, not trunk.", exit_code=3
-        )
+        raise GitmanError(f"'{trunk}' is the frozen trunk — switch onto a lane, not trunk.", exit_code=3)
     if name not in lane_names(session, trunk):
         raise GitmanError(f"no such lane '{name}'.", exit_code=3)
     cur = current_lane(session, trunk)
@@ -616,8 +609,7 @@ def do_switch(session: Session, name: str):
     other_workspaces = {w.name for w in session.ws.workspaces()} - {session.ws.name}
     if name in other_workspaces:
         raise GitmanError(
-            f"lane '{name}' is checked out in another workspace — "
-            f"`cd` to its workspace dir to resume it.",
+            f"lane '{name}' is checked out in another workspace — `cd` to its workspace dir to resume it.",
             exit_code=1,
         )
     with canonical_tx(session, "switch") as tx:
@@ -679,19 +671,13 @@ def _parse_hunk_selection(spec: str) -> dict[str, list[int] | None]:
             try:
                 n = int(tok)
             except ValueError:
-                raise GitmanError(
-                    f"`--hunks`: '{tok}' is not a hunk index (path '{path}').", exit_code=3
-                ) from None
+                raise GitmanError(f"`--hunks`: '{tok}' is not a hunk index (path '{path}').", exit_code=3) from None
             if n < 0:
-                raise GitmanError(
-                    f"`--hunks`: negative hunk index {n} (path '{path}').", exit_code=3
-                )
+                raise GitmanError(f"`--hunks`: negative hunk index {n} (path '{path}').", exit_code=3)
             idxs.append(n)
         if not idxs:
             # `path:` with no indices — ambiguous; treat as an error, not silent whole-file.
-            raise GitmanError(
-                f"`--hunks`: '{path}:' has no indices (drop the ':' for whole file).", exit_code=3
-            )
+            raise GitmanError(f"`--hunks`: '{path}:' has no indices (drop the ':' for whole file).", exit_code=3)
         selection[path] = sorted(set(idxs))
     if not selection:
         raise GitmanError("`--hunks` selected nothing.", exit_code=3)
@@ -705,8 +691,7 @@ def _validate_hunk_selection(selection: dict[str, list[int] | None], diff) -> No
         fc = by_path.get(path)
         if fc is None:
             raise GitmanError(
-                f"`--hunks`: '{path}' is not changed in this lane "
-                f"(changed: {', '.join(sorted(by_path)) or '<none>'}).",
+                f"`--hunks`: '{path}' is not changed in this lane (changed: {', '.join(sorted(by_path)) or '<none>'}).",
                 exit_code=3,
             )
         if idxs is None:
@@ -759,9 +744,7 @@ def do_split(
 
     trunk = require_trunk(session.config)
     if bool(paths) == bool(hunks):
-        raise GitmanError(
-            "`gitman split` needs exactly one of `--paths` or `--hunks`.", exit_code=3
-        )
+        raise GitmanError("`gitman split` needs exactly one of `--paths` or `--hunks`.", exit_code=3)
 
     with canonical_tx(session, "split") as tx:
         # Pre-tx facts: while the tx is open, `session.view()` is still the post-snapshot, pre-tx
@@ -815,8 +798,7 @@ def do_split(
             if message:
                 tx.describe(into, message)
             summary = (
-                f"carved hunk selection ({len(selection)} path(s)) onto new lane '{into}'; "
-                f"remainder stays on '{lane}'."
+                f"carved hunk selection ({len(selection)} path(s)) onto new lane '{into}'; remainder stays on '{lane}'."
             )
         else:
             # ── WHOLE-FILE PATH: unchanged path-scoped carve ──
@@ -843,8 +825,7 @@ def do_split(
             tx.restore(c_change, from_=trunk_id, paths=carved)  # C := remainder-only
             tx.edit(c_change)  # @ back onto the remainder/original lane
             summary = (
-                f"carved {len(carved)} path(s) onto new lane '{into}'; "
-                f"{len(remainder)} path(s) remain on '{lane}'."
+                f"carved {len(carved)} path(s) onto new lane '{into}'; {len(remainder)} path(s) remain on '{lane}'."
             )
 
     return IntentResult(
@@ -880,9 +861,7 @@ def do_shape(
 
     trunk = require_trunk(session.config)
     if bool(squash) == bool(reorder):
-        raise GitmanError(
-            "`gitman shape` needs exactly one of `--squash` or `--reorder`.", exit_code=3
-        )
+        raise GitmanError("`gitman shape` needs exactly one of `--squash` or `--reorder`.", exit_code=3)
 
     with canonical_tx(session, "shape") as tx:
         view = session.view()
@@ -891,9 +870,7 @@ def do_shape(
         # The lane's own range, base-exclusive → head-inclusive: the ONLY commits shape may touch.
         in_range = {c.change_id for c in view.log(f"{base}..{lane}")}
         if not in_range:
-            raise GitmanError(
-                f"lane '{lane}' has no changes above its base '{base}'.", exit_code=3
-            )
+            raise GitmanError(f"lane '{lane}' has no changes above its base '{base}'.", exit_code=3)
 
         def _require_in_range(rev: str) -> str:
             ch = view.resolve(rev).change_id
@@ -914,9 +891,7 @@ def do_shape(
                 parent_id = view.resolve(src).parent_ids[0]
                 dst = _require_in_range(parent_id)
             if src == dst:
-                raise GitmanError(
-                    "`gitman shape --squash`: source and target are the same change.", exit_code=3
-                )
+                raise GitmanError("`gitman shape --squash`: source and target are the same change.", exit_code=3)
             tx.squash(src, dst, message=message)  # whole-commit squash; descendants rebase
             summary = f"squashed change into its target on lane '{lane}'."
         else:
@@ -1023,7 +998,7 @@ def do_seed(session: Session, message: str):
     return IntentResult(
         intent="seed",
         outcome="SEEDED",
-        messages=[f'seeded trunk \'{trunk}\' with the initial commit: "{message}".'],
+        messages=[f"seeded trunk '{trunk}' with the initial commit: \"{message}\"."],
         notes=notes,
         undo_command="gitman undo",
         state=capture_state(session),
@@ -1351,9 +1326,7 @@ def _do_land_locked(session: Session, lane_args: list[str] | None, all_: bool, p
             state=last_state,
             operation_succeeded=bool(landed),
         ), None
-    landed_desc = [
-        lane if targets_map.get(lane, trunk) == trunk else f"{lane}→{targets_map[lane]}" for lane in landed
-    ]
+    landed_desc = [lane if targets_map.get(lane, trunk) == trunk else f"{lane}→{targets_map[lane]}" for lane in landed]
     result = IntentResult(
         intent="land",
         outcome="LANDED",
@@ -1619,9 +1592,7 @@ def do_sync(session: Session, all_: bool):
                 except Exception:
                     pass
             if stale_workspaces:
-                notes.append(
-                    f"stale workspace(s): {', '.join(stale_workspaces)} — run `gitman catchup`."
-                )
+                notes.append(f"stale workspace(s): {', '.join(stale_workspaces)} — run `gitman catchup`.")
     if synced:
         messages.append(f"rebased {', '.join(synced)}.")
     if conflicted:
@@ -1731,9 +1702,7 @@ def _resolve_conflicted_lane(
         notes += _cleanup_workspace(session, lane)
         notes.append(f"retired conflicted lane '{lane}'.")
     else:
-        notes.append(
-            f"resolved conflicted lane '{lane}' to its local tip — `gitman sync` to rebase onto {trunk}."
-        )
+        notes.append(f"resolved conflicted lane '{lane}' to its local tip — `gitman sync` to rebase onto {trunk}.")
     return action
 
 
@@ -1808,9 +1777,7 @@ def _reconcile_lane_against_adopted_trunk(
         notes.append(f"rebased onto trunk: {lane}")
 
 
-def _integrate_trunk(
-    session: Session, trunk: str, local_tip: str, origin_tip: str, notes: list[str]
-) -> str:
+def _integrate_trunk(session: Session, trunk: str, local_tip: str, origin_tip: str, notes: list[str]) -> str:
     """Move local trunk to integrate `origin_tip` (the fetched `<trunk>@<remote>`), preserving local
     work. Handles both a *resolvable* and a *conflicted* trunk bookmark (jj marks the local trunk
     bookmark conflicted whenever the fetch finds it genuinely diverged — both sides carry real
@@ -1899,10 +1866,7 @@ def _pull_dry_run(session: Session, trunk: str, remote: str):
             # divergence) doesn't crash the preview with a RevsetError.
             trunk_conflicted = _trunk_conflicted(view, trunk)
             if trunk_conflicted:
-                targets = [
-                    t for b in view.bookmarks()
-                    if b.name == trunk and b.remote is None for t in b.target_ids
-                ]
+                targets = [t for b in view.bookmarks() if b.name == trunk and b.remote is None for t in b.target_ids]
                 local_tip = next((t for t in targets if t != origin_tip), targets[0] if targets else origin_tip)
             else:
                 local_tip = view.resolve(trunk).commit_id
@@ -1983,18 +1947,13 @@ def do_pull(session: Session, *, dry_run: bool = False):
             try:
                 origin_tip = view.resolve(f"{trunk}@{remote}").commit_id
             except RevsetError as exc:
-                raise GitmanError(
-                    f"no {trunk}@{remote} — nothing to pull; is the trunk pushed?", exit_code=1
-                ) from exc
+                raise GitmanError(f"no {trunk}@{remote} — nothing to pull; is the trunk pushed?", exit_code=1) from exc
 
             # Read the local trunk tip structurally: jj marks the local bookmark *conflicted* on a
             # genuine divergence, so `resolve(trunk)` would raise. `_integrate_trunk` acts by
             # commit-id, resolving the conflict either way.
             if _trunk_conflicted(view, trunk):
-                targets = [
-                    t for b in view.bookmarks()
-                    if b.name == trunk and b.remote is None for t in b.target_ids
-                ]
+                targets = [t for b in view.bookmarks() if b.name == trunk and b.remote is None for t in b.target_ids]
                 local_tip = next((t for t in targets if t != origin_tip), targets[0] if targets else origin_tip)
             else:
                 local_tip = view.resolve(trunk).commit_id
@@ -2015,8 +1974,14 @@ def do_pull(session: Session, *, dry_run: bool = False):
                 retired.append(lane)
             for lane in sorted(surviving):
                 _reconcile_lane_against_adopted_trunk(
-                    session, trunk, lane, published_before,
-                    retired=retired, rebased=rebased, conflicts=conflicts, notes=notes,
+                    session,
+                    trunk,
+                    lane,
+                    published_before,
+                    retired=retired,
+                    rebased=rebased,
+                    conflicts=conflicts,
+                    notes=notes,
                 )
 
             if session.ws.is_stale():  # the fetch/abandons orphaned @ off a pruned/retired lane
@@ -2305,8 +2270,7 @@ def do_untrack(session: Session, paths: list[str]):
         raise GitmanError("`gitman untrack` needs at least one path.", exit_code=3)
     if current_lane(session, trunk) is None:
         raise GitmanError(
-            "not on a lane — untracking edits the tree, which must land via a lane. "
-            "`gitman start <name>` first.",
+            "not on a lane — untracking edits the tree, which must land via a lane. `gitman start <name>` first.",
             exit_code=1,
         )
 

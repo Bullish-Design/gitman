@@ -152,9 +152,7 @@ def _raw_git_commit(work: Path, msg: str, fn: str = "raw.txt") -> str:
     env = {**os.environ, "GIT_INDEX_FILE": str(work / ".git" / "gitman-test-index")}
 
     def run(*args: str, inp: str | None = None) -> str:
-        p = subprocess.run(
-            ["git", *args], cwd=work, env=env, input=inp, check=True, capture_output=True, text=True
-        )
+        p = subprocess.run(["git", *args], cwd=work, env=env, input=inp, check=True, capture_output=True, text=True)
         return p.stdout.strip()
 
     blob = run("hash-object", "-w", "--stdin", inp=msg + "\n")
@@ -312,9 +310,7 @@ def test_reconcile_keeps_both_sides_when_jj_and_git_both_moved(tmp_path: Path):
     assert f"adopted-{git_sha[:8]}" in {lane.name for lane in state.lanes}  # git's side kept
 
     # Neither side was discarded — both commits are still reachable in the repo.
-    log = subprocess.run(
-        ["git", "log", "--all", "--format=%H"], cwd=work, capture_output=True, text=True
-    ).stdout
+    log = subprocess.run(["git", "log", "--all", "--format=%H"], cwd=work, capture_output=True, text=True).stdout
     assert git_sha in log and jj_sha in log
 
 
@@ -327,9 +323,7 @@ def test_reconcile_refreshes_the_colocated_checkout(tmp_path: Path):
 
     do_reconcile(_sess(work), abandon_=False)
 
-    staged = subprocess.run(
-        ["git", "status", "--porcelain"], cwd=work, capture_output=True, text=True
-    ).stdout
+    staged = subprocess.run(["git", "status", "--porcelain"], cwd=work, capture_output=True, text=True).stdout
     assert "raw.txt" not in staged, f"stale colocated checkout after reconcile: {staged!r}"
 
 

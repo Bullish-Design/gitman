@@ -58,9 +58,7 @@ def run_doctor(repo_root: Path, config: GitmanConfig | None = None) -> DoctorRep
         import pyjutsu
 
         if pyjutsu.JJ_VERSION == pyjutsu.JJ_LIB_TARGET:
-            checks.append(
-                Check(OK, "pyjutsu", f"pyjutsu {pyjutsu.__version__} (jj-lib {pyjutsu.JJ_VERSION})")
-            )
+            checks.append(Check(OK, "pyjutsu", f"pyjutsu {pyjutsu.__version__} (jj-lib {pyjutsu.JJ_VERSION})"))
         else:
             checks.append(
                 Check(

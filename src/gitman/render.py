@@ -103,9 +103,7 @@ def render_status(state: RepoState) -> str:
             # drift runs, adopting git-only history instead of discarding it (issue 31).
             recover = "Recover: `gitman reconcile`  — reconcile jj and colocated git; no commits are discarded."
         elif diverged:
-            recover = (
-                "Recover: `gitman pull`  — rebase your local lands onto origin/<trunk>."
-            )
+            recover = "Recover: `gitman pull`  — rebase your local lands onto origin/<trunk>."
         else:
             recover = "Recover: `gitman reconcile`  — adopt it into a lane, or abandon it."
         if desynced:

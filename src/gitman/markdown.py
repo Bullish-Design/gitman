@@ -43,9 +43,7 @@ def projection_root(repo_root: Path, environ: dict[str, str] | None = None) -> P
     configured = Path(raw)
     target = (configured if configured.is_absolute() else repo / configured).resolve()
     if target == repo or repo not in target.parents:
-        raise MarkdownProjectionError(
-            f"{MARKDOWN_DIR_ENV} must resolve to a subdirectory of the repository: {target}"
-        )
+        raise MarkdownProjectionError(f"{MARKDOWN_DIR_ENV} must resolve to a subdirectory of the repository: {target}")
     return target
 
 

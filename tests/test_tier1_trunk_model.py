@@ -164,17 +164,13 @@ def test_colocated_git_clean_after_land(tmp_path: Path):
     do_save(_sess(tmp_path), "remove gone.txt")
     do_land(_sess(tmp_path), ["rm-gone"])
 
-    status = subprocess.run(
-        ["git", "status", "--porcelain"], cwd=tmp_path, capture_output=True, text=True
-    )
+    status = subprocess.run(["git", "status", "--porcelain"], cwd=tmp_path, capture_output=True, text=True)
     assert status.returncode == 0
     # Ignore jj's own `.jj/` (this bare test repo has no root .gitignore for it); the point is that
     # no *tracked* path is left dirty — a stale index would surface `gone.txt` here.
     dirty = [ln for ln in status.stdout.splitlines() if ".jj" not in ln]
     assert dirty == [], f"colocated git not clean: {dirty}"
-    tracked = subprocess.run(
-        ["git", "ls-files"], cwd=tmp_path, capture_output=True, text=True
-    )
+    tracked = subprocess.run(["git", "ls-files"], cwd=tmp_path, capture_output=True, text=True)
     assert tracked.returncode == 0
     assert "gone.txt" not in tracked.stdout.splitlines()
 

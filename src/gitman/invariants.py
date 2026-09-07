@@ -435,11 +435,7 @@ def _keep_jj_side_adopt_the_rest(session: Session) -> list[str]:
         return []
     try:
         row = next(
-            (
-                b
-                for b in session.view().bookmarks()
-                if b.remote is None and b.name == trunk and b.conflicted
-            ),
+            (b for b in session.view().bookmarks() if b.remote is None and b.name == trunk and b.conflicted),
             None,
         )
         git_refs = session.ws.git.refs()
@@ -461,9 +457,7 @@ def _keep_jj_side_adopt_the_rest(session: Session) -> list[str]:
         for cid in (s for s in sides if s != keep):
             lane = f"adopted-{cid[:8]}"
             tx.set_bookmark(lane, cid)
-            notes.append(
-                f"jj and git had both moved {trunk} — kept jj's side, adopted git's into lane '{lane}'"
-            )
+            notes.append(f"jj and git had both moved {trunk} — kept jj's side, adopted git's into lane '{lane}'")
         tx.set_bookmark(trunk, keep)
     return notes
 

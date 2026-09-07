@@ -46,9 +46,7 @@ def _with_remote(tmp_path: Path) -> tuple[Path, Path]:
 def _clone_from_remote(tmp_path: Path, remote: Path) -> Path:
     """Clone the bare remote into a second colocated repo (machine B). Returns the work dir."""
     work2 = tmp_path / "work2"
-    subprocess.run(
-        ["git", "clone", str(remote), str(work2)], check=True, capture_output=True
-    )
+    subprocess.run(["git", "clone", str(remote), str(work2)], check=True, capture_output=True)
     # Colocate jj on the cloned git repo.
     ws2 = Workspace.init(work2, colocate=True)
     # Import git refs so jj can see the main branch.

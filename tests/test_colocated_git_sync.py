@@ -35,9 +35,7 @@ def _sess(d: Path) -> Session:
 
 
 def _git_ref(d: Path, ref: str) -> str:
-    return subprocess.run(
-        ["git", "rev-parse", ref], cwd=d, check=True, capture_output=True, text=True
-    ).stdout.strip()
+    return subprocess.run(["git", "rev-parse", ref], cwd=d, check=True, capture_output=True, text=True).stdout.strip()
 
 
 def test_land_exports_trunk_to_colocated_git(tmp_path: Path) -> None:

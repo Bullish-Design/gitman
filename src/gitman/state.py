@@ -105,9 +105,7 @@ def _conflicted_lanes(view: RepoView, trunk: str) -> dict[str, list[str]]:
     intent (issue 11). Read it the same structural way `_trunk_conflicted` reads trunk: off
     `view.bookmarks()`, never `resolve()`. The two `target_ids` are the lane's two sides."""
     return {
-        b.name: list(b.target_ids)
-        for b in view.bookmarks()
-        if b.remote is None and b.name != trunk and b.conflicted
+        b.name: list(b.target_ids) for b in view.bookmarks() if b.remote is None and b.name != trunk and b.conflicted
     }
 
 
@@ -198,9 +196,7 @@ def _merge_tree_conflicts(view: RepoView, a: str, b: str) -> bool | None:
         return None
 
 
-def _trunk_content_relation(
-    session: Session, view: RepoView, trunk: str
-) -> tuple[str | None, int, int, str | None]:
+def _trunk_content_relation(session: Session, view: RepoView, trunk: str) -> tuple[str | None, int, int, str | None]:
     """`(relation, behind, ahead, remote)` of local trunk vs its `<trunk>@<remote>` row.
 
     `relation` is the honest, twin-proof signal — one of `in-sync` / `local-ahead` / `forge-ahead`
@@ -405,12 +401,12 @@ def classify_ref_desync(
 ) -> tuple[list[tuple[str, str, str | None]], list[tuple[str, str, str | None]]]:
     """Split `colocated_ref_desync`'s `mismatched` into `(adopt, rewrite)` — who is authoritative:
 
-      * `adopt`   — git's commit is unknown to jj: git holds history jj never imported. ONLY
-        `git_import` heals this. Force-writing the ref to jj here orphans commits jj cannot even
-        name — the issue-31 data-loss path.
-      * `rewrite` — git's commit is known to jj, so jj moved off it deliberately (an `undo`
-        rewind, a `git_export` that failed on a D/F conflict). jj is authoritative; the ref is
-        safe to force, and what it drops stays reachable in jj's op log.
+    * `adopt`   — git's commit is unknown to jj: git holds history jj never imported. ONLY
+      `git_import` heals this. Force-writing the ref to jj here orphans commits jj cannot even
+      name — the issue-31 data-loss path.
+    * `rewrite` — git's commit is known to jj, so jj moved off it deliberately (an `undo`
+      rewind, a `git_export` that failed on a D/F conflict). jj is authoritative; the ref is
+      safe to force, and what it drops stays reachable in jj's op log.
     """
     adopt: list[tuple[str, str, str | None]] = []
     rewrite: list[tuple[str, str, str | None]] = []
@@ -469,18 +465,13 @@ def capture_state(session: Session) -> RepoState:
     if _trunk_conflicted(view, trunk_name):
         from gitman.core import pick_remote
 
-        tracked_on_remote = any(
-            b.name == trunk_name and b.remote not in (None, "git") for b in view.bookmarks()
-        )
+        tracked_on_remote = any(b.name == trunk_name and b.remote not in (None, "git") for b in view.bookmarks())
         remote_name = pick_remote(session.ws) if has_remote(session.ws) else "origin"
         if tracked_on_remote:
             reason = f"trunk '{trunk_name}' diverged from {remote_name} (un-pushed local lands + origin moved)."
             note = f"run `gitman pull` to rebase your local lands onto {remote_name}/{trunk_name}."
         else:
-            reason = (
-                f"trunk '{trunk_name}' is conflicted — jj and colocated git each hold a different "
-                f"commit for it."
-            )
+            reason = f"trunk '{trunk_name}' is conflicted — jj and colocated git each hold a different commit for it."
             note = "run `gitman reconcile` — it keeps jj's side as trunk and adopts git's side into a lane."
         return RepoState(
             repo_root=repo_root,
@@ -498,9 +489,7 @@ def capture_state(session: Session) -> RepoState:
     try:
         trunk_commit = view.resolve(trunk_name)
     except RevsetError as exc:
-        raise GitmanError(
-            f"configured trunk '{trunk_name}' not found — run `gitman doctor`.", exit_code=2
-        ) from exc
+        raise GitmanError(f"configured trunk '{trunk_name}' not found — run `gitman doctor`.", exit_code=2) from exc
 
     # Trunk vs its remote-tracking branch — a *content-aware* relation (twin-proof; no network,
     # reads the last fetch's `<trunk>@<remote>` row). `relation` is the honest signal; the
@@ -572,9 +561,7 @@ def capture_state(session: Session) -> RepoState:
         # H1 (I5): a merge commit anywhere in the lane's range makes it non-linear; a divergent
         # change-id under the lane (head or range) makes it divergent. Both ride reads already done.
         non_linear = any(len(c.parent_ids) > 1 for c in range_changes)
-        divergent = head.change_id in divergent_cids or any(
-            c.change_id in divergent_cids for c in range_changes
-        )
+        divergent = head.change_id in divergent_cids or any(c.change_id in divergent_cids for c in range_changes)
         ahead = len(range_changes)
         behind = len(view.log(f"{name}..{base_ref}"))  # commits the base holds that the lane lacks
         files = ins = dels = 0
@@ -633,8 +620,7 @@ def capture_state(session: Session) -> RepoState:
     non_linear_lanes = sorted(lane.name for lane in lanes if lane.non_linear)
     if non_linear_lanes:
         reasons.append(
-            f"lane(s) {', '.join(non_linear_lanes)} contain a merge commit (non-linear) — "
-            f"run `gitman reconcile`."
+            f"lane(s) {', '.join(non_linear_lanes)} contain a merge commit (non-linear) — run `gitman reconcile`."
         )
     divergent_lanes = sorted(lane.name for lane in lanes if lane.divergent)
     if divergent_lanes:
@@ -684,32 +670,24 @@ def capture_state(session: Session) -> RepoState:
     # never fires). `forge-ahead` → `pull` (safe FF; local has nothing to lose). `diverged` → `pull`
     # (it rebases local lands onto origin, preserving local work). `local-ahead` → `push` to publish.
     if relation == "forge-ahead":
-        notes.append(
-            f"{remote_name}/{trunk_name} has new commits local lacks — `gitman pull` to integrate them."
-        )
+        notes.append(f"{remote_name}/{trunk_name} has new commits local lacks — `gitman pull` to integrate them.")
     elif relation == "diverged":
         notes.append(
             f"local {trunk_name} and {remote_name}/{trunk_name} have diverged (each holds content the "
             f"other lacks) — `gitman pull` to rebase your lands onto origin."
         )
     elif relation == "local-ahead":
-        notes.append(
-            f"local {trunk_name} is ahead of {remote_name} — `gitman push` to publish it."
-        )
+        notes.append(f"local {trunk_name} is ahead of {remote_name} — `gitman push` to publish it.")
     tracked_ignored = _tracked_but_ignored(session.ws)
     if tracked_ignored:
         shown = ", ".join(tracked_ignored[:5]) + (" …" if len(tracked_ignored) > 5 else "")
-        notes.append(
-            f"tracked but gitignored: {shown} — `gitman untrack <path>` to stop tracking (kills the churn)."
-        )
+        notes.append(f"tracked but gitignored: {shown} — `gitman untrack <path>` to stop tracking (kills the churn).")
     if current_lane is None and _orphan_working_copy(view, wc, trunk_name):
         notes.append("working copy @ has unbookmarked work — `gitman start <name>` to adopt it into a lane.")
     # Nudge: a clean bare-@ on trunk (no unbookmarked edits) is still a lane-less workspace.
     # Encourage the user to start a lane — the happy path never sits directly on trunk.
     elif current_lane is None and trunk_name in (wc.bookmarks or []):
-        notes.append(
-            "you are on trunk with no active lane — `gitman start <name> --workspace` to begin working."
-        )
+        notes.append("you are on trunk with no active lane — `gitman start <name> --workspace` to begin working.")
     # Fractal-lanes I3′: an orphaned node (its `/`-path name-parent was deleted out-of-band) is still a
     # valid, resolvable lane — surface it as a note pointing at `reconcile`, never a crash. The tree
     # render marks the node itself; this names the recovery verb.

@@ -260,19 +260,13 @@ def split(
 
 @app.command()
 def shape(
-    squash: Annotated[
-        str | None, typer.Option("--squash", help="Change (revset) to fold into a neighbor.")
-    ] = None,
-    into: Annotated[
-        str | None, typer.Option("--into", help="Squash target (default: the source's parent).")
-    ] = None,
+    squash: Annotated[str | None, typer.Option("--squash", help="Change (revset) to fold into a neighbor.")] = None,
+    into: Annotated[str | None, typer.Option("--into", help="Squash target (default: the source's parent).")] = None,
     reorder: Annotated[
         list[str] | None,
         typer.Option("--reorder", help="New bottom-up order of lane changes (repeatable)."),
     ] = None,
-    message: Annotated[
-        str | None, typer.Option("-m", "--message", help="Description for the squashed commit.")
-    ] = None,
+    message: Annotated[str | None, typer.Option("-m", "--message", help="Description for the squashed commit.")] = None,
 ) -> None:
     """Tidy the current lane's own base..head range: --squash a change, or --reorder changes."""
     from gitman.core import do_shape

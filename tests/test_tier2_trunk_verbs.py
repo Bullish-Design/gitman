@@ -61,9 +61,7 @@ def _with_remote(tmp_path: Path) -> tuple[Path, Path, Workspace]:
 
 
 def _origin_ref(remote: Path, ref: str = "refs/heads/main") -> str:
-    out = subprocess.run(
-        ["git", "-C", str(remote), "show-ref", "--verify", ref], capture_output=True, text=True
-    )
+    out = subprocess.run(["git", "-C", str(remote), "show-ref", "--verify", ref], capture_output=True, text=True)
     return out.stdout.split()[0] if out.returncode == 0 else ""
 
 
@@ -182,10 +180,10 @@ def test_push_reset_origin_stale_lease_rejected(tmp_path: Path):
     _land_new_commit(work, "c1", "a.txt", "aaa\n")
     do_push(_sess(work))  # origin == local, lease current
     # move origin out-of-band (to an object it already holds — the base) so the lease is now stale
-    base = subprocess.run(["git", "-C", str(remote), "rev-parse", "main~1"],
-                          capture_output=True, text=True).stdout.strip()
-    subprocess.run(["git", "-C", str(remote), "update-ref", "refs/heads/main", base],
-                   check=True, capture_output=True)
+    base = subprocess.run(
+        ["git", "-C", str(remote), "rev-parse", "main~1"], capture_output=True, text=True
+    ).stdout.strip()
+    subprocess.run(["git", "-C", str(remote), "update-ref", "refs/heads/main", base], check=True, capture_output=True)
     # re-hash local so there is something to push
     ws2 = Workspace.load(work)
     with ws2.transaction("rehash", ignore_immutable=True) as tx:  # rewrites a pushed commit
@@ -238,9 +236,9 @@ def test_untrack_removes_from_tree_keeps_file(tmp_path: Path):
     work, remote, ws = _with_remote(tmp_path)
     # land a machine-local file onto trunk so it's tracked
     _land_new_commit(work, "add-local", ".settings.local.json", '{"x":1}\n')
-    assert ".settings.local.json" in subprocess.run(
-        ["git", "ls-files"], cwd=work, capture_output=True, text=True
-    ).stdout
+    assert (
+        ".settings.local.json" in subprocess.run(["git", "ls-files"], cwd=work, capture_output=True, text=True).stdout
+    )
 
     do_start(_sess(work), "untrack-lane", workspace=False)
     res = do_untrack(_sess(work), [".settings.local.json"])
@@ -313,13 +311,22 @@ def test_pull_reparks_at_off_trunk(tmp_path: Path):
     # origin advances; local is a strict ancestor → pull fast-forwards trunk
     other = tmp_path / "other"
     subprocess.run(["git", "clone", str(remote), str(other)], check=True, capture_output=True)
-    subprocess.run(["git", "-c", "user.email=f@x", "-c", "user.name=f", "checkout", "main"],
-                   cwd=other, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-c", "user.email=f@x", "-c", "user.name=f", "checkout", "main"],
+        cwd=other,
+        check=True,
+        capture_output=True,
+    )
     (other / "forge.txt").write_text("forge\n")
-    subprocess.run(["git", "-c", "user.email=f@x", "-c", "user.name=f", "add", "."],
-                   cwd=other, check=True, capture_output=True)
-    subprocess.run(["git", "-c", "user.email=f@x", "-c", "user.name=f", "commit", "-m", "forge"],
-                   cwd=other, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-c", "user.email=f@x", "-c", "user.name=f", "add", "."], cwd=other, check=True, capture_output=True
+    )
+    subprocess.run(
+        ["git", "-c", "user.email=f@x", "-c", "user.name=f", "commit", "-m", "forge"],
+        cwd=other,
+        check=True,
+        capture_output=True,
+    )
     subprocess.run(["git", "push", "origin", "main"], cwd=other, check=True, capture_output=True)
 
     res = do_pull(_sess(work), dry_run=False)
@@ -345,7 +352,7 @@ def test_push_reports_a_hook_veto_as_a_hook_veto(tmp_path: Path):
 
     (work / ".pyjutsu-hooks.toml").write_text(
         "[hooks.pre-push]\n"
-        'commands = [{ command = "python3 -c \'import sys; sys.exit(1)\'", pass_filenames = false }]\n'
+        "commands = [{ command = \"python3 -c 'import sys; sys.exit(1)'\", pass_filenames = false }]\n"
     )
 
     res = do_push(_sess(work))
