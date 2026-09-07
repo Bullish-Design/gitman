@@ -1056,8 +1056,11 @@ def do_publish(session: Session):
             # Named for what it is, so the lane's own verify gate and a pre-push hook
             # are distinguishable in the report.
             raise GitmanError(f"publish blocked by a pre-push hook (.pyjutsu-hooks.toml):\n{exc}", exit_code=1) from exc
-        except PyjutsuError as exc:  # rejected push, missing-new gate, etc.
-            raise GitmanError(f"push rejected:\n{exc}", exit_code=1) from exc
+        except PyjutsuError as exc:
+            # Same rule as `push`: name the failure, do not diagnose it. "rejected" said
+            # the remote refused the push, which is wrong for a missing remote or a
+            # network drop.
+            raise GitmanError(f"publish failed:\n{exc}", exit_code=1) from exc
     notes.append("push is one-way: `gitman undo` reverts local state only, not the remote branch.")
     return IntentResult(
         intent="publish",
@@ -2214,9 +2217,15 @@ def do_push(session: Session, *, reset_origin: bool = False):
                     exit_code=1,
                 ) from exc
             except PyjutsuError as exc:
+                # Do NOT assert a cause. This used to claim every failure was a stale
+                # lease and prescribe `gitman pull` — which is a dead end for a missing
+                # remote, a refused credential or a dropped network, and those are
+                # indistinguishable here: pyjutsu raises a bare PyjutsuError for all of
+                # them, with no typed "push rejected". Report what the engine said and
+                # offer the lease case as a possibility the reader can check.
                 raise GitmanError(
-                    f"push rejected — {remote} moved since your last fetch (the lease failed); "
-                    f"run `gitman pull`, then `gitman push`.\n{exc}",
+                    f"push failed:\n{exc}\n"
+                    f"If {remote} has moved since your last fetch, run `gitman pull`, then `gitman push`.",
                     exit_code=1,
                 ) from exc
     except GitmanError as exc:

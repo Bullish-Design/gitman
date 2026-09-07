@@ -360,10 +360,38 @@ def test_push_reports_a_hook_veto_as_a_hook_veto(tmp_path: Path):
     assert _origin_ref(remote) == origin_before
 
 
-def test_push_still_reports_a_real_lease_failure(tmp_path: Path):
-    """The hook branch must not swallow the case it was carved out of."""
+def test_push_still_pushes_when_no_hook_vetoes(tmp_path: Path):
+    """The hook branch must not swallow the ordinary path it was carved out of."""
     work, remote, _ws = _with_remote(tmp_path)
     _land_new_commit(work, "feat", "a.txt", "aaa\n")
     res = do_push(_sess(work))
     assert res.outcome == "PUSHED", res.messages
     assert _origin_ref(remote)
+
+
+def test_push_does_not_diagnose_an_unknown_failure_as_a_stale_lease(tmp_path: Path):
+    """A push can fail for reasons that are not a lease and not a hook.
+
+    pyjutsu raises a bare PyjutsuError for a missing remote, a refused credential and a
+    dropped network alike — there is no typed "push rejected" to discriminate on. Gitman
+    used to answer all of them with "origin moved since your last fetch (the lease
+    failed); run `gitman pull`". For a remote that is simply gone, that names the wrong
+    cause and sends the reader somewhere that cannot help. Report the engine's own words
+    and offer the lease case as a possibility instead.
+    """
+    import shutil
+
+    work, remote, _ws = _with_remote(tmp_path)
+    _land_new_commit(work, "feat", "a.txt", "aaa\n")
+    shutil.rmtree(remote)  # nothing moved; the remote is not there any more
+
+    res = do_push(_sess(work))
+
+    assert res.outcome == "BLOCKED", res.messages
+    message = "\n".join(res.messages)
+    # The engine's actual reason must survive.
+    assert "Could not find repository" in message
+    # The asserted cause must not.
+    assert "the lease failed" not in message
+    # The hint may still be offered, but only as a conditional.
+    assert "If origin has moved" in message
