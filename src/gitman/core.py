@@ -1031,7 +1031,7 @@ def do_seed(session: Session, message: str):
 
 
 def do_publish(session: Session):
-    from pyjutsu import PyjutsuError
+    from pyjutsu import HookAbort, PyjutsuError
 
     from gitman.invariants import canonical_guard
     from gitman.lanes import require_current_lane
@@ -1052,6 +1052,10 @@ def do_publish(session: Session):
             notes.append("verify failed (on_fail=warn) — publishing anyway.")
         try:
             session.ws.git_push(pick_remote(session.ws), lane, allow_new=True)
+        except HookAbort as exc:
+            # Named for what it is, so the lane's own verify gate and a pre-push hook
+            # are distinguishable in the report.
+            raise GitmanError(f"publish blocked by a pre-push hook (.pyjutsu-hooks.toml):\n{exc}", exit_code=1) from exc
         except PyjutsuError as exc:  # rejected push, missing-new gate, etc.
             raise GitmanError(f"push rejected:\n{exc}", exit_code=1) from exc
     notes.append("push is one-way: `gitman undo` reverts local state only, not the remote branch.")
@@ -2154,7 +2158,7 @@ def do_push(session: Session, *, reset_origin: bool = False):
     one-shot overwrite of divergent origin residue — the engine's lease still blocks an out-of-band
     clobber. The first push of a never-pushed trunk creates `origin/<trunk>` (bootstrap, project 18).
     See PLAN §3. `@`-dirty-trunk is guarded in the precheck (extended to `push`)."""
-    from pyjutsu import PyjutsuError
+    from pyjutsu import HookAbort, PyjutsuError
     from pyjutsu.errors import RevsetError
 
     from gitman.invariants import canonical_guard
@@ -2199,6 +2203,16 @@ def do_push(session: Session, *, reset_origin: bool = False):
         with canonical_guard(session, "push") as canon:
             try:
                 session.ws.git_push(remote, trunk, allow_new=True)
+            except HookAbort as exc:
+                # A pre-push hook vetoed, before any network I/O. This is NOT a lease
+                # failure: origin has not moved, and `gitman pull` would be useless
+                # advice for a hook that is doing its job. HookAbort subclasses
+                # PyjutsuError, so it MUST be caught first or the branch below claims
+                # the wrong cause — which is exactly the bug this ordering fixes.
+                raise GitmanError(
+                    f"push blocked by a pre-push hook (.pyjutsu-hooks.toml):\n{exc}",
+                    exit_code=1,
+                ) from exc
             except PyjutsuError as exc:
                 raise GitmanError(
                     f"push rejected — {remote} moved since your last fetch (the lease failed); "

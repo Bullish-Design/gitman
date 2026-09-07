@@ -329,3 +329,41 @@ def test_pull_reparks_at_off_trunk(tmp_path: Path):
     state = capture_state(sess)
     assert state.canonical
     assert sess.view().working_copy().commit_id != state.trunk.commit_id  # @ never on trunk
+
+
+def test_push_reports_a_hook_veto_as_a_hook_veto(tmp_path: Path):
+    """A pre-push hook that vetoes must not be reported as a stale lease.
+
+    HookAbort subclasses PyjutsuError, so a blanket `except PyjutsuError` claimed the
+    push had been rejected because "origin moved since your last fetch" and told the
+    user to run `gitman pull`. Origin had not moved and `pull` would have done nothing:
+    the diagnosis named the wrong cause and the advice was a dead end.
+    """
+    work, remote, _ws = _with_remote(tmp_path)
+    _land_new_commit(work, "feat", "a.txt", "aaa\n")
+    origin_before = _origin_ref(remote)
+
+    (work / ".pyjutsu-hooks.toml").write_text(
+        "[hooks.pre-push]\n"
+        'commands = [{ command = "python3 -c \'import sys; sys.exit(1)\'", pass_filenames = false }]\n'
+    )
+
+    res = do_push(_sess(work))
+
+    assert res.outcome == "BLOCKED", res.messages
+    message = "\n".join(res.messages)
+    assert "pre-push hook" in message
+    # The wrong diagnosis, and the dead-end advice it carried.
+    assert "the lease failed" not in message
+    assert "gitman pull" not in message
+    # pre-push aborts before any network I/O.
+    assert _origin_ref(remote) == origin_before
+
+
+def test_push_still_reports_a_real_lease_failure(tmp_path: Path):
+    """The hook branch must not swallow the case it was carved out of."""
+    work, remote, _ws = _with_remote(tmp_path)
+    _land_new_commit(work, "feat", "a.txt", "aaa\n")
+    res = do_push(_sess(work))
+    assert res.outcome == "PUSHED", res.messages
+    assert _origin_ref(remote)
