@@ -98,6 +98,39 @@ class Session:
             self.ws.snapshot()
         return self.ws.head()
 
+    def mirror_snapshot_refs(self) -> None:
+        """Export jj's refs into the colocated git after a read that snapshotted. Best-effort.
+
+        **Why a read must do this.** `fresh_view()` snapshots a dirty `@`, which rewrites `@` —
+        and any bookmark sitting on `@` follows it. The lane's jj position therefore advances
+        while `refs/heads/<lane>` stays put. `invariants._export_colocated_git` repairs that
+        after every *mutating* intent, but `status` is not one, so nothing repaired it and the
+        drift was permanent rather than transient:
+
+            gitman start work     # bookmark at @
+            echo x >> a.txt
+            gitman status         # CANONICAL — and the ref now lags
+            gitman status         # DESYNCHRONIZED, and `land` then refuses
+
+        Four commands, and every editing session reaches them.
+
+        **Why the caller opts in.** Only `status` calls this, at the very end, after its report
+        is rendered. Doing it inside `fresh_view()` instead puts a git write in the middle of
+        every mutating intent's precheck, which changed `land --all`'s behaviour on a fractal
+        forest (`test_land_all_multiple_roots`). Mutating intents keep their own loud export,
+        which classifies failures and returns surfacing notes; do not route those through here.
+
+        **Why swallowing is safe here.** The export is best-effort by design — with fractal lane
+        names, `refs/heads/A` blocks `refs/heads/A/x` and the whole call raises. The report has
+        already been emitted from jj, which is authoritative, and the next `status` reports
+        whatever this left behind, naming `gitman reconcile`. Nothing is silenced except the
+        write attempt.
+        """
+        try:
+            self.ws.git_export()
+        except Exception:  # noqa: BLE001 - best-effort by design; see the docstring
+            pass
+
     def is_stale(self) -> bool:
         """Whether this workspace's on-disk `@` lags the repo's current `@` (plan §8 / decision #8)."""
         return self.ws.is_stale()

@@ -154,12 +154,18 @@ def status() -> None:
     from gitman.session import Session
     from gitman.state import capture_state
 
-    state = capture_state(Session.load(_repo_root()))
+    session = Session.load(_repo_root())
+    state = capture_state(session)
     try:
         sync_markdown(state)
     except MarkdownProjectionError as exc:
         typer.echo(f"Markdown projection not updated: {exc}", err=True)
     _emit(render_status(state), state.model_dump(mode="json"))
+    # Last, after the report: `capture_state` snapshotted a dirty `@`, which moved any bookmark
+    # sitting on it and left `refs/heads/<lane>` behind. `status` is not a mutating intent, so
+    # nothing else mirrors that — and the NEXT `status` reported DESYNCHRONIZED for a drift this
+    # one caused. See `Session.mirror_snapshot_refs`.
+    session.mirror_snapshot_refs()
     raise typer.Exit(code=0 if state.canonical else 1)
 
 
