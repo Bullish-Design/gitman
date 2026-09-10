@@ -85,7 +85,7 @@ def _isess(d: Path) -> Session:
     return Session.load(d)
 
 
-def test_init_freezes_trunk_and_scaffolds(tmp_path: Path):
+def test_init_freezes_trunk_without_scaffolding_skill(tmp_path: Path):
     from gitman.config import load_config
     from gitman.init import do_init
 
@@ -95,7 +95,7 @@ def test_init_freezes_trunk_and_scaffolds(tmp_path: Path):
     cfg = load_config(tmp_path)
     assert cfg.trunk == "main"
     assert (tmp_path / "gitman.toml").is_file()
-    assert (tmp_path / ".agents" / "skills" / "gitman" / "SKILL.md").is_file()
+    assert not (tmp_path / ".agents" / "skills" / "gitman" / "SKILL.md").exists()
 
     # Re-init is refused (trunk frozen, I1) — a fresh Session now carries the frozen config.
     with pytest.raises(GitmanError):
