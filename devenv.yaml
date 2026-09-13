@@ -13,8 +13,4 @@ inputs:
   # devman: the automation plane's repo interface (CONCEPT.md §3.2). A devenv
   # import is a PATH inside an input, never a flake output attribute, and the
   # file it resolves to must be named devenv.nix.
-  devman:
-    url: "git+https://github.com/Bullish-Design/devman?ref=refs/tags/v0.5.1"
-
 imports:
-  - devman/modules
