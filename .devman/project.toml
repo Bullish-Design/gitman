@@ -1,0 +1,4 @@
+schema = 1
+project = "gitman"
+groups = ["base"]
+policy = "stable"
