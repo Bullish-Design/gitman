@@ -5,12 +5,13 @@
 **Versions:** gitman `0.6.2` · pyjutsu `0.21.1` (jj-lib `0.44.0`) · colocated repo
 **Trigger:** lane `021-changelog` was published, then amended locally; a later fetch imported
 origin's commit under the same change-id.
-**Outcome:** `status` OFF-CANONICAL; `reconcile` returns `PARTIAL` and repeats *"run `gitman
-reconcile`"*; `start`, `sync`, `publish`, `land`, `push` all refuse. The repository could not take a
-commit. The only verb that still runs is `abandon` — terminal.
+**Outcome:** `status` OFF-CANONICAL; `reconcile` returns `PARTIAL`/`CLEAN` and never fixes it;
+`start`, `sync`, `publish`, `land`, `push` **and `abandon`** all refuse. The repository could not
+take a commit, and **no gitman verb could recover it.** Recovery required plain `jj`.
 
-**Severity: HIGH (availability).** No content was lost, but the repository was unusable through
-gitman's front door, and the only documented exit from a recoverable state is a destructive one.
+**Severity: HIGH (availability + correctness of the recovery contract).** No content was lost, but
+the repository was completely unusable through gitman's front door, and the `Recover:` line named
+a verb that also refuses.
 
 ---
 
@@ -140,6 +141,48 @@ the number the operator sees next to the word *divergent*.
 
 ---
 
+## 3a. `abandon` also refuses — the livelock is total (D0, HIGHEST)
+
+Measured after this issue was first written, which is why §1 originally said `abandon` was the way
+out. It is not:
+
+```
+$ gitman abandon 021-changelog
+refusing: repo is off-canonical (lane(s) 021-changelog have a divergent change-id
+(one change → multiple commits) — run `gitman reconcile`.) — run `gitman reconcile`.
+```
+
+`abandon` gates on canonical like every other verb. So the `Recover:` line —
+*"`gitman reconcile` — adopt it into a lane, or abandon it"* — names **two** remedies, and neither
+is reachable: `reconcile` does not fix this shape, and `abandon` refuses while it is unfixed.
+
+**There is no gitman verb that recovers this state.** The repository is sealed until the operator
+drops to raw `jj`, which is precisely what gitman exists to avoid, and what issue 31 already
+recorded having to do.
+
+## 3b. `reconcile` and `status` disagree about what canonical means (D0b, HIGH)
+
+Back to back, same repository, seconds apart:
+
+```
+$ gitman reconcile
+Gitman reconcile — CLEAN
+already canonical — no strays, refs in sync.
+
+$ gitman status
+Gitman status — OFF-CANONICAL
+Reason: lane(s) 021-changelog have a divergent change-id — run `gitman reconcile`.
+Exit: 1
+```
+
+This is the livelock's root cause in two commands. `reconcile`'s completion test is *no strays +
+refs in sync* (`reconcile.py:105-115`). `status`'s gate additionally includes the divergence scan
+(`state.py:529-535`). **`reconcile` does not evaluate the condition it is told to fix**, so it can
+sincerely report success while the repository stays gated.
+
+Any fix to D1 must unify these two definitions, or the next shape that lands in the gap reproduces
+this exactly.
+
 ## 4a. The in-flight fix does not cover this shape
 
 There is an unlanded lane in this repository, `fix-reconcile-divergent-lane` (published, `+99 −3`,
@@ -187,8 +230,13 @@ twice in one session. This is its third and most expensive occurrence.
 | G5 | Report divergence in `doctor` | `doctor.py` | medium |
 | G6 | Stop printing `run gitman reconcile` as the remedy for a condition `reconcile` cannot fix | `state.py` / status rendering | medium |
 | G7 | Have `start` summarise what it adopted and confirm when the change set exceeds expectation | `start.py` | medium |
+| **G0** | **Unify the canonical predicate.** `reconcile`'s completion test and `status`'s gate must be the same function. Today `reconcile` can report CLEAN while `status` reports OFF-CANONICAL (§3b) | `reconcile.py:105-115` + `state.py:529-535` | **highest** |
+| **G0b** | **Let `abandon` run while off-canonical**, or stop naming it in the `Recover:` line. It is currently advertised as a remedy and refuses (§3a) | `cli.py` / gate | **highest** |
+| G8 | Exclude commits made immutable *only* by a gitman- or operator-placed recovery tag from the rewrite guard, or tell the operator to drop the tag (§7 trap) | immutable-set config | medium |
 
-G6 is the cheapest and removes the livelock as *experienced*, even before G1 lands.
+G0 is the root: while the two definitions differ, every other fix is a patch over a verb that does
+not evaluate the condition it is told to fix. G6 is the cheapest and removes the livelock as
+*experienced*, even before G1 lands.
 
 ---
 
@@ -202,8 +250,9 @@ G6 is the cheapest and removes the livelock as *experienced*, even before G1 lan
    `git log --all --oneline -- <path>` to see whether any other ref holds it.
 3. **Rescue anything reachable from one tip only**, and verify by blob:
    `git hash-object <path>` against `git rev-parse <tip>:<path>`.
-4. **Tag the tip before any recovery** — `reconcile` deletes branch refs it does not recognise.
-   A tag survived where a branch did not, twice, in this incident.
+4. **Tag the tip before any recovery** — `reconcile` deletes branch refs it does not recognise; a
+   tag survived where a branch did not, twice in this incident. **But delete the tag again before
+   step 6** — see the trap below.
 5. Do **not** attempt a git-level ref fix. `reconcile` treats jj as authoritative and undoes it:
    ```
    $ git update-ref refs/heads/021-changelog origin/021-changelog
@@ -211,7 +260,32 @@ G6 is the cheapest and removes the livelock as *experienced*, even before G1 lan
    re-pointed colocated git ref(s) to jj: 021-changelog 7ed3045a -> 1a55a680
    ```
    The divergence lives in the jj op log; nothing reachable through git resolves it.
-6. Only then `gitman abandon <lane>`, and re-adopt from `origin/<lane>`.
+6. **Recover with plain `jj`.** No gitman verb works (§3a). Point the lane bookmark at the side you
+   are keeping, then abandon the other commit:
+   ```
+   $ jj log --no-graph -r 'change_id(<cid>)' \
+        -T 'commit_id.short(12) ++ "  [" ++ bookmarks ++ "]\n'     # see both sides
+   $ jj bookmark set <lane> -r <keep-commit> --allow-backwards
+   $ jj abandon <other-commit>
+   ```
+   `jj` must match the `jj-lib` pyjutsu is built against (here both 0.44.0).
+
+### The trap in step 4: the safety tag blocks the recovery
+
+jj's immutable set includes `tags()`. The tag placed in step 4 therefore makes the commit
+**immutable**, and step 6 fails on the tool's own safety rule:
+
+```
+$ jj abandon 1a55a680cbcd
+Hint: This operation would rewrite 1 immutable commits.
+```
+
+So the protective step defeats the repair. Delete the tag once the unique content is rescued and
+verified by blob (step 3), then abandon. `--ignore-immutable` also works but overrides a real
+guard; prefer removing the tag you added.
+
+This is issue 06 §G1 in a new place — *"a release tag is not work edited outside Gitman"* — here
+it is *a recovery tag is not a commit worth protecting from the recovery*.
 
 ---
 
