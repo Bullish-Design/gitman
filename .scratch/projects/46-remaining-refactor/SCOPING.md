@@ -24,6 +24,7 @@ worth doing, and they change what the guides tell you to build.
 | S6 | Verb consolidation | G5 / stage 6 | medium | **outstanding** | medium / medium |
 | S7 | `Plan` as a value | G6 / stage 7 | large | **outstanding**, no `plan.py` | large / high |
 | S8 | Concept doc + drift test | G8 / stage 8 | medium | **outstanding**, 6 verbs undocumented | medium / low |
+| S9 | `doctor`/`reconcile` blind to a stale colocated HEAD | new | — | **found during this pass**, live in this repo | small / low |
 
 **Already done, contrary to the inherited plan.** `NEXT_STAGES_PLAN.md` §0 puts issue 43 D2
 ("`start --workspace` deletes a directory it did not create") ahead of every stage as the one
@@ -219,11 +220,44 @@ shipped verb appears in the Deferred list.
 
 ---
 
+## 4a. Found during this pass — a `doctor`/`reconcile` blind spot (S9)
+
+Pushing project 46 surfaced a live misreport in this repo, at trunk `3b4321b`:
+
+```
+actual .git/HEAD oid: d7484e7c79f3      <- two commits behind
+jj @ parent         : 3b4321bd757c      <- correct
+refs/heads/main     : 3b4321bd757c      <- correct
+main@git            : 2c0758a603eb      <- jj's record of the git ref, three commits behind
+view.git_head       : None              <- jj has NO recorded git head
+```
+
+`gitman doctor` reports HEALTHY, `gitman reconcile` reports `CLEAN — already canonical`, and raw
+`git status` reports **seven** changes that are all committed and pushed. `push`'s own note
+prescribes `gitman reconcile`, which is a no-op for this state.
+
+`probe_head_sync.py` builds the same shape in a clean repo and `sync_colocated()` succeeds there,
+so this is **repo state, not a defect in gitman or pyjutsu**. The state traces to the issue-45
+incident: `restore_operation` rewound jj's records of git-side writes that had really happened.
+Issue 45 §D3 named one victim (`main@origin`). There are three — `main@origin` (cured by the
+`gitman pull` during the issue-45 fix), `main@git` (force-repaired at each push, but only the ref,
+not jj's record), and `view.git_head` (**nothing repairs it**, and with no CAS base jj-lib's
+`reset_head` fails).
+
+Both gates miss it because both ask the wrong question: `colocated_ref_desync` compares jj
+bookmarks to git refs, which agree, so `reconcile` never reaches its `git_import` step; and
+`doctor`'s `colocated-head` row asks only whether HEAD is *reachable from* a bookmark, which an
+ancestor is. Neither asks whether **git HEAD equals `@`'s parent**.
+
+Scoped in `GUIDE_S9_colocated_head_blindspot.md`. Pair it with S2 — same file, same class of
+check. The repair for this repo was deliberately **not** applied by hand; §5 of that guide says why.
+
 ## 5. Dependency graph, revised
 
 ```
 S1 (retire-lane)    ─── independent, no dependencies
 S2 (doctor 4e)      ─── independent
+S9 (HEAD blind spot) ─── independent; pair with S2
 S5 (lane facts)     ─── independent
 S3 (ref encoding)   ─── needs DECISION D-A signed off
 S4 (provenance)     ─── independent of all the above; do not run beside S3
@@ -245,16 +279,17 @@ Two constraints worth stating because they are not obvious:
 ```
 1. S1  _retire_lane                 small · closes issue 45 completely
 2. S2  doctor intent-to-add         small · closes issue 41, blocker just cleared
-3. S5  lane facts                   small · unblocks devman's janitor; deletes a lying type
-4. S3  fractal ref encoding         medium · NEEDS D-A SIGN-OFF · fixes a broken publish path
-5. S4  working-copy provenance      large · closes 38, 42-G7, 43-D4
-6. S6  verb consolidation           medium
-7. S7  Plan as a value              large
-8. S8  concept doc + drift test     medium · last, by construction
+3. S9  HEAD blind spot              small · pair with S2; fixes a live misreport
+4. S5  lane facts                   small · unblocks devman's janitor; deletes a lying type
+5. S3  fractal ref encoding         medium · NEEDS D-A SIGN-OFF · fixes a broken publish path
+6. S4  working-copy provenance      large · closes 38, 42-G7, 43-D4
+7. S6  verb consolidation           medium
+8. S7  Plan as a value              large
+9. S8  concept doc + drift test     medium · last, by construction
 ```
 
-Steps 1–3 are three small lanes that can land in an afternoon and close two open issues between
-them. Start there regardless of when D-A is signed off.
+Steps 1–4 are four small lanes that can land in an afternoon, close two open issues between them
+and fix a live misreport. Start there regardless of when D-A is signed off.
 
 ## 7. What this pass deliberately did not scope
 

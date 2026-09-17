@@ -19,22 +19,24 @@ disagree, the guide wins and says so.
 | `GUIDE_S6_verb_consolidation.md` | G5 / stage 6 | medium | medium | issue 44 §7 |
 | `GUIDE_S7_plan_value.md` | G6 / stage 7 | large | high | issue 44 §8 |
 | `GUIDE_S8_concept_doc_drift.md` | G8 / stage 8 | medium | low | issue 44 §7 drift |
+| `GUIDE_S9_colocated_head_blindspot.md` | new, found 2026-09-17 | small | low | a `doctor`/`reconcile` blind spot |
 
 ## Order, and why
 
 ```
 1. S1   independent
-2. S2   independent
-3. S5   independent
-4. S3   ⚠ BLOCKED on DECISION D-A (SCOPING.md §2.2) — user sign-off required
-5. S4   independent, but must NOT run concurrently with S3
-6. S6   after S3
-7. S7   after S6
-8. S8   last
+2. S2   independent  (do S9 with it — same file, same class)
+3. S9   independent
+4. S5   independent
+5. S3   ⚠ BLOCKED on DECISION D-A (SCOPING.md §2.2) — user sign-off required
+6. S4   independent, but must NOT run concurrently with S3
+7. S6   after S3
+8. S7   after S6
+9. S8   last
 ```
 
-S1, S2 and S5 are three small independent lanes that close two open issues between them. Do them
-first whatever happens with D-A.
+S1, S2, S9 and S5 are four small independent lanes that close two open issues between them and
+fix a live misreport. Do them first whatever happens with D-A.
 
 Two ordering constraints that are not obvious, both argued in `SCOPING.md` §5:
 
