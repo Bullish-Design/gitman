@@ -83,4 +83,34 @@ confirmed still present after S1 landed). Per GUIDE_S9 §5's preferred resolutio
 run `gitman reconcile`, which is the whole point of step 3"), ran `gitman reconcile` after landing
 and pushing this stage — see the session's own report for the outcome.
 
-**Next:** S5 (lane facts) — independent, small. Then S3 (fractal ref encoding, D-A2 signed off).
+## S5 — done (landed, pushed)
+
+`GUIDE_S5_lane_facts.md`, issue 39 / issue 44 G7 (reduced scope, D-B). No surprises this time — the
+guide's own §1 correction (G7's premise was wrong; `landed` is unobservable, not merely unassigned)
+had already been fully argued in `SCOPING.md`, so this stage was a straightforward build:
+
+- `LaneState` is now exactly `draft` / `published` / `merged`; `landed` removed, with a docstring
+  explaining why a terminal state here is structurally impossible.
+- `Lane.created_at`/`updated_at`: derived from the SAME commit-range walk `state.py` already does
+  for `change_count` (no second query) — `created_at` from the oldest commit's AUTHOR signature
+  (survives a `sync` rebase), `updated_at` from the head's COMMITTER signature (moves on rebase).
+  Both tz-aware, never normalized.
+- `merged`: a published, non-conflicted lane whose head is an ancestor of `<trunk>@<remote>`
+  (resolved once per `capture_state` call, not per lane). Conflicted lanes are skipped (they name
+  two commits, same reasoning as `find_divergent_lane_twins`).
+- `render.py`: `merged` prints for free via the existing state-value column; added the actionable
+  note ("merged on the forge — `gitman pull` retires it locally").
+- **Decision recorded**: no timestamps in the default report (guide's own recommendation) — they're
+  for `--json` consumers only (a devman janitor); an age is not a decision the reader needs, and
+  the report is compact by policy.
+- Tests: `tests/test_issue39_lane_facts.py` (7 new), reusing `test_pull_integration.py`'s and
+  `test_conflicted_lane.py`'s existing forge-side/conflict helpers rather than writing new ones
+  (per the guide's own instruction). Manually verified `gitman status --json` carries all three
+  new fields on this repo's own lanes.
+- Marked shipped: `.scratch/projects/39-lane-lifecycle-facts/ISSUE.md` (status header + scope), and
+  G7 in `.scratch/projects/44-report-integrity-and-intent-architecture/ISSUE.md` §10.
+
+Suite: 401 passed (394 after S2+S9 + 7 new). `ruff check` clean.
+
+**Next:** S3 (fractal ref encoding, D-A2 signed off) — medium, unblocked. Do not run S4 (working
+copy provenance) concurrently with it.

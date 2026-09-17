@@ -494,7 +494,7 @@ timestamps and an auditable lifecycle history for free.
 | G4 | Git refs become a publication artifact: export on demand, never gate on them, total ref encoding | `session.py`, `invariants.py`, `state.py` | high — stages 4a-4d, 4e **SHIPPED** (4e: 2026-09-17, project 46 S2 — `doctor`'s `colocated-index` row, `state.intent_to_add_entries`); 4f (total ref encoding for fractal lanes) still open, see project 46 |
 | G5 | Verb consolidation behind deprecating aliases (25 → 18); `workspace` promoted to a noun | `cli.py` | medium |
 | G6 | `Plan` as a value; generic gate, wrapper, undo line, `--dry-run`, partial-progress | new `plan.py`, `core.py` | medium |
-| G7 | Assign `LaneState.landed`; add a lane timestamp; make transitions the spine | `models.py`, `core.py` | low |
+| G7 | ~~Assign `LaneState.landed`; add a lane timestamp; make transitions the spine~~ **SHIPPED (2026-09-17, project 46 S5), reduced scope.** The premise was wrong: `land`/`abandon`/`pull` all delete the lane bookmark, so `landed` is unobservable by construction — nothing to assign. Shipped instead: `Lane.created_at`/`updated_at` (derived, no new source of truth) and a new observable `LaneState.merged`; `landed` removed from the enum. See `SCOPING.md` §3 and issue 39. | `models.py`, `state.py`, `render.py` | low |
 | G8 | Rewrite `GITMAN_CONCEPT.md` from the code; add a test asserting the CLI verb list matches the doc's intent table | `docs/`, `tests/` | medium |
 
 ---

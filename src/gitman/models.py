@@ -7,6 +7,7 @@ a snapshot. Mirrors Testee's `VerificationReport` discipline. See concept §9.
 
 from __future__ import annotations
 
+from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
 from typing import Literal
@@ -29,11 +30,20 @@ KeepSide = Literal["local", "origin"]
 
 
 class LaneState(StrEnum):
-    """The three states a lane is ever in (concept §5 lifecycle)."""
+    """The states a lane is ever OBSERVED in (concept §5 lifecycle).
+
+    There is deliberately no `landed` or `abandoned`. `land`, `abandon` and `pull`'s lane
+    retirement all **delete the lane bookmark**, and `capture_state` enumerates lanes from live
+    bookmarks — so a finished lane does not change state, it stops being a lane. A terminal state
+    here would be a field no code path could ever set (`landed` was exactly that from the day this
+    enum was written until issue 44 S5 removed it — `grep -rn 'LaneState\\.landed'` found only the
+    declaration itself, never an assignment). Every lane a report names is, by construction,
+    unfinished. A durable record of finished lanes is issue 33's history ledger, not a field here.
+    """
 
     draft = "draft"  # being edited
     published = "published"  # pushed / PR open
-    landed = "landed"  # terminal (folded into trunk)
+    merged = "merged"  # the forge merged it; `gitman pull` retires it locally
 
 
 class Change(BaseModel):
@@ -138,6 +148,12 @@ class Lane(BaseModel):
     deletions: int = 0
     files_changed: int = 0
     pr: PRRef | None = None  # github extra only
+    # Derived, tz-aware (issue 39 / 44 G7, reduced scope — SCOPING.md §3). Two distinct signatures
+    # on purpose: author time survives a rebase, so `created_at` still answers "when was this work
+    # started" after a `sync`; committer time is rewritten by a rebase, so `updated_at` answers
+    # "when was this lane last touched" — what an age query (a janitor) actually needs.
+    created_at: datetime | None = None  # author time of the oldest commit in base..lane
+    updated_at: datetime | None = None  # committer time of the lane head
 
 
 class LaneTwin(BaseModel, frozen=True):

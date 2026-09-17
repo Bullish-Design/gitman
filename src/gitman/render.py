@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from gitman.anomalies import ANOMALY_ORDER, REGISTRY
 from gitman.doctor import FAIL, OK, WARN, DoctorReport
-from gitman.models import IntentResult, Lane, RepoState
+from gitman.models import IntentResult, Lane, LaneState, RepoState
 
 _GLYPH = {OK: "ok ", WARN: "!! ", FAIL: "XX "}
 
@@ -112,6 +112,8 @@ def _lane_line(lane: Lane, current: str | None) -> str:
         extra.append("NON-LINEAR (merge commit — `gitman reconcile`)")
     if lane.divergent:
         extra.append("DIVERGENT (change-id → multiple commits — `gitman reconcile`)")
+    if lane.state == LaneState.merged:
+        extra.append("merged on the forge — `gitman pull` retires it locally")
     if lane.pr:
         extra.append(f"PR #{lane.pr.number}")
     if lane.behind:

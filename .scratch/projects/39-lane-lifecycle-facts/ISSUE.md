@@ -1,7 +1,19 @@
 # 39 — A lane cannot say how old it is, or whether it is finished
 
-**Status:** proposed
-**Scope:** assign `LaneState.landed`, and give `Lane` a timestamp
+**Status:** SHIPPED (2026-09-17, project 46 S5 —
+`.scratch/projects/46-remaining-refactor/GUIDE_S5_lane_facts.md`), in **reduced scope**. This
+issue's own premise ("assign `LaneState.landed`, add `abandoned`, because the janitor's query
+returns the merged ones too") was **wrong, not merely unimplemented** — `land`/`abandon`/`pull`'s
+lane retirement all delete the lane bookmark, and `capture_state` enumerates lanes from live
+bookmarks, so a finished lane does not acquire a terminal state, it stops being a lane. The set
+`capture_state` returns already **is** "lanes not yet landed" — the janitor's exclusion needed no
+new state at all. What shipped instead: `Lane.created_at`/`updated_at` (derived from the existing
+commit-signature reads, no new source of truth) and a new, genuinely OBSERVABLE `LaneState.merged`
+(the forge merged the lane's PR; `gitman pull` retires it locally) — see `SCOPING.md` §3 for the
+full correction and `GUIDE_S5_lane_facts.md` for the implementation. `LaneState.landed` is
+**removed**, not assigned.
+**Scope (as shipped):** `created_at`/`updated_at` on `Lane`, a new `merged` state,
+`LaneState.landed` removed.
 
 ## Problem
 

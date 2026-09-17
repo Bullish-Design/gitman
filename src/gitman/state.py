@@ -819,6 +819,18 @@ def capture_state(session: Session) -> RepoState:
     visible = view.log(f"{trunk_name}..")
     divergent_cids = {cid for cid, n in Counter(c.change_id for c in visible).items() if n > 1}
 
+    # `merged` (issue 39 / 44 G7 reduced scope — SCOPING.md §3): a published lane whose head is
+    # already an ancestor of the forge's trunk. Resolved once, not per lane — a network-free read
+    # of the last fetch's tracking ref, same as `_trunk_content_relation`.
+    remote_trunk_commit_id: str | None = None
+    if has_remote(session.ws):
+        from gitman.core import pick_remote
+
+        try:
+            remote_trunk_commit_id = view.resolve(f"{trunk_name}@{pick_remote(session.ws)}").commit_id
+        except RevsetError:
+            remote_trunk_commit_id = None
+
     lanes: list[Lane] = []
     for name in sorted(local_names - {trunk_name}):
         if name in conflicted:
@@ -856,13 +868,26 @@ def capture_state(session: Session) -> RepoState:
             ins += st.total_insertions
             dels += st.total_deletions
         change_count = ahead or (0 if head.is_empty else 1)
+        # `created_at` = author time of the OLDEST commit in the lane's own range (survives a
+        # rebase — `sync` rewrites commit ids but not who authored the original work); `updated_at`
+        # = committer time of the head (rewritten by a rebase — answers "touched most recently").
+        # `view.log` is newest-first, so the oldest commit is the range's LAST element; an empty
+        # range (a lane whose only change is an empty `@`) falls back to the head commit for both.
+        created_at = (range_changes[-1] if range_changes else head).author.timestamp
+        updated_at = head.committer.timestamp
+        merged = (
+            name in published
+            and remote_trunk_commit_id is not None
+            and view.is_ancestor(head.commit_id, remote_trunk_commit_id)
+        )
+        state = LaneState.merged if merged else (LaneState.published if name in published else LaneState.draft)
         lanes.append(
             Lane(
                 name=name,
                 base=base,
                 depth=depth,
                 orphaned=orphaned,
-                state=LaneState.published if name in published else LaneState.draft,
+                state=state,
                 head=change,
                 workspace=name if name in workspace_names else None,
                 conflict=head.has_conflict,
@@ -874,6 +899,8 @@ def capture_state(session: Session) -> RepoState:
                 insertions=ins,
                 deletions=dels,
                 files_changed=files,
+                created_at=created_at,
+                updated_at=updated_at,
             )
         )
 
