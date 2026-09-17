@@ -168,6 +168,6 @@ def describe_changes(root: Path, before: dict[str, str], after: dict[str, str], 
     if disallowed:
         return (
             "pre-land hook changed paths outside allowed_paths: "
-            f"{', '.join(disallowed)}; save/reconcile the changes, then retry."
+            f"{', '.join(disallowed)}; describe or repair the changes, then retry."
         )
-    return f"pre-land hook changed allowed paths: {', '.join(allowed)}; save the changes, then retry land."
+    return f"pre-land hook changed allowed paths: {', '.join(allowed)}; describe the changes, then retry land."

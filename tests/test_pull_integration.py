@@ -1,4 +1,4 @@
-"""`gitman pull` — integrate a moved origin/<trunk>: fetch, advance/rebase local trunk (never
+"""`gitman sync --trunk` — integrate a moved origin/<trunk>: fetch, advance/rebase local trunk (never
 dropping local work), retire forge-merged lanes (content-based), rebase survivors. The single-model
 successor to `adopt` (project 21 Tier 2); the diverged case now REBASES un-pushed local lands onto
 origin instead of the deleted `adopt --force` drop.

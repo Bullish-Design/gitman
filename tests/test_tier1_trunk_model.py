@@ -132,7 +132,7 @@ def test_genuine_forge_ahead_hints_pull(tmp_path: Path):
     state = capture_state(_sess(work))
     assert state.canonical
     assert state.trunk.relation == "forge-ahead"
-    assert any("pull" in n for n in state.notes), state.notes
+    assert any("sync --trunk" in n for n in state.notes), state.notes
 
 
 def test_no_remote_relation_is_none(tmp_path: Path):

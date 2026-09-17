@@ -2,7 +2,7 @@
 
 Read-only additions to `state.capture_state`: a lane with a merge commit in its `base..head` range
 is `non_linear`; a lane whose change-id resolves to >1 visible commit is `divergent`. Either flips
-`canonical` to False and adds an `off_canonical` reason pointing at `gitman reconcile`. No auto-heal
+`canonical` to False and adds an `off_canonical` reason pointing at `gitman repair`. No auto-heal
 (that is the deferred D3/D4 reconcile-repair work).
 
 Built in-process over pyjutsu (no `jj` CLI), reusing the fixtures from `test_m3_integration.py`

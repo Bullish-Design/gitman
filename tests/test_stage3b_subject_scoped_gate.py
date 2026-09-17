@@ -24,11 +24,11 @@ from gitman.invariants import _postcondition
 from gitman.state import capture_state
 
 # The verbs actually routed through the subject-scoped gate, PLUS the recovery/bootstrap verbs
-# that bypass it entirely (`abandon`, `reconcile`, `undo`, `resolve`, `seed`, `remote_add`) — the
+# that bypass it entirely (`abandon`, `repair`, `undo`, `resolve`, `seed`, `remote_add`) — the
 # full "this repo can still do something" vocabulary the no-seal property is checked against.
 MUTATING_INTENTS = {
     "start",
-    "save",
+    "describe",
     "switch",
     "split",
     "shape",
@@ -39,14 +39,14 @@ MUTATING_INTENTS = {
     "pull",
     "untrack",
     "abandon",
-    "reconcile",
+    "repair",
     "undo",
     "resolve",
     "seed",
     "remote_add",
-    "catchup",
+    "workspace",
 }
-PROGRESS_VERBS = {"abandon", "reconcile", "undo", "split", "shape", "resolve"}
+PROGRESS_VERBS = {"abandon", "repair", "undo", "split", "shape", "resolve"}
 
 
 def test_no_anomaly_seals_the_repo():
@@ -141,7 +141,7 @@ def test_postcondition_reverts_a_newly_introduced_anomaly(tmp_path: Path):
     rogue.snapshot()
 
     with pytest.raises(GitmanError, match="reverted:"):
-        _postcondition(h1._sess(tmp_path), "save", before.trunk.commit_id, op_before, before)
+        _postcondition(h1._sess(tmp_path), "describe", before.trunk.commit_id, op_before, before)
 
     # The revert actually happened: back to op_before, canonical again.
     after = capture_state(h1._sess(tmp_path))
@@ -171,7 +171,7 @@ def test_postcondition_does_not_revert_a_note_only_ref_lagging(tmp_path: Path):
         tx.describe("@", "advance")
         tx.set_bookmark("feat", "@")
 
-    after = _postcondition(session, "save", before.trunk.commit_id, op_before, before)
+    after = _postcondition(session, "describe", before.trunk.commit_id, op_before, before)
     assert after.canonical, after.off_canonical
     assert {a.kind for a in after.anomalies} == {"ref-lagging"}
     # No rollback happened — the head operation still reflects the raw transaction above.

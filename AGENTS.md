@@ -33,7 +33,7 @@ and mirrors its shape. The authority is `docs/GITMAN_CONCEPT.md`.
   - **`ws.git` is the git namespace** — `ws.git.remotes/refs/write_ref/delete_ref/create_tag`. The
     old spellings are deprecating aliases. Gate remote-dependent work on `core.has_remote(ws)`.
   - **`ws.gc()` replaced adopt-time keep-ref pruning.** `gitman init --colocate` (adopt path) and
-    `gitman reconcile` call it, always with the default two-week cutoff.
+    `gitman repair` call it, always with the default two-week cutoff.
   - `add_workspace` bases the new `@` on the source `@`'s parents; gitman asks for `root()`
     explicitly, and creates the parent directory itself. A failure after registration raises
     `PartialWorkspaceError`, mapped to exit 2 with its recovery action.
@@ -53,7 +53,7 @@ Invariants: trunk frozen at init (I1); every change in exactly one named lane (I
 trunk advances only via `land` (I5). Enforcement is **by construction**: each mutating
 intent does an invariant precheck, then runs transactionally (capture op-id → act → assert
 "still canonical" → auto `restore_operation` on violation). External edits are handled in one
-place: `status` reports canonical/off-canonical and `gitman reconcile` is the recovery.
+place: `status` reports canonical/off-canonical and `gitman repair` is the recovery.
 
 ## Layout
 
@@ -67,7 +67,7 @@ src/gitman/
   models.py     Pydantic v2 models (RepoState, Lane, Change, Conflict, TrunkRef, Op, ...)
   config.py     [tool.gitman] / gitman.toml policy (Pydantic-validated)
   invariants.py canonical checks + transactional rollback (canonical_tx/guard) + lock
-  version.py release.py render.py init.py doctor.py reconcile.py
+  version.py release.py render.py init.py doctor.py repair.py
   advanced/     optional forge extra (github) — DEFERRED, base never imports it
 tests/          in-process integration tests over pyjutsu (no jj CLI) + pure version tests
 nix/gitman.nix  reusable devenv module (tasks + enterTest)

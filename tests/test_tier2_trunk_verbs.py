@@ -133,7 +133,7 @@ def test_push_local_ahead_fast_forwards(tmp_path: Path):
 
 
 def test_push_refuses_forge_ahead(tmp_path: Path):
-    """origin has content local lacks (forge-ahead) → push refuses → `gitman pull`.
+    """origin has content local lacks (forge-ahead) → push refuses → `gitman sync --trunk`.
 
     Construct forge-ahead directly: push C1, then reset local trunk back to base so the tracking ref
     (`main@origin` = C1) is strictly ahead of local trunk (a real forge-ahead the content gate reads
@@ -154,7 +154,7 @@ def test_push_refuses_forge_ahead(tmp_path: Path):
 
     assert res.outcome == "BLOCKED", res.messages
     assert res.exit_code == 1
-    assert any("pull" in m for m in res.messages)
+    assert any("sync --trunk" in m for m in res.messages)
     assert _origin_ref(remote) == before  # origin untouched
 
 
@@ -355,7 +355,7 @@ def test_push_reports_a_hook_veto_as_a_hook_veto(tmp_path: Path):
 
     HookAbort subclasses PyjutsuError, so a blanket `except PyjutsuError` claimed the
     push had been rejected because "origin moved since your last fetch" and told the
-    user to run `gitman pull`. Origin had not moved and `pull` would have done nothing:
+    user to run `gitman sync --trunk`. Origin had not moved and `pull` would have done nothing:
     the diagnosis named the wrong cause and the advice was a dead end.
     """
     work, remote, _ws = _with_remote(tmp_path)
@@ -374,7 +374,7 @@ def test_push_reports_a_hook_veto_as_a_hook_veto(tmp_path: Path):
     assert "pre-push hook" in message
     # The wrong diagnosis, and the dead-end advice it carried.
     assert "the lease failed" not in message
-    assert "gitman pull" not in message
+    assert "gitman sync --trunk" not in message
     # pre-push aborts before any network I/O.
     assert _origin_ref(remote) == origin_before
 
@@ -394,7 +394,7 @@ def test_push_does_not_diagnose_an_unknown_failure_as_a_stale_lease(tmp_path: Pa
     pyjutsu raises a bare PyjutsuError for a missing remote, a refused credential and a
     dropped network alike — there is no typed "push rejected" to discriminate on. Gitman
     used to answer all of them with "origin moved since your last fetch (the lease
-    failed); run `gitman pull`". For a remote that is simply gone, that names the wrong
+    failed); run `gitman sync --trunk`". For a remote that is simply gone, that names the wrong
     cause and sends the reader somewhere that cannot help. Report the engine's own words
     and offer the lease case as a possibility instead.
     """

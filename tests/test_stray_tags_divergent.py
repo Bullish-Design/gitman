@@ -24,7 +24,7 @@ from pyjutsu import Workspace
 from gitman.config import GitmanConfig
 from gitman.core import do_abandon
 from gitman.init import do_init
-from gitman.reconcile import do_reconcile
+from gitman.repair import do_reconcile
 from gitman.session import Session
 from gitman.state import capture_state, find_strays
 
@@ -199,7 +199,7 @@ def test_reconcile_abandon_clears_both_divergent_sides(tmp_path: Path):
     _divergent_strays(tmp_path)
 
     res = do_reconcile(Session.load(tmp_path, GitmanConfig(trunk="main")), abandon_=True)
-    assert res.outcome == "RECONCILED"
+    assert res.outcome == "REPAIRED"
     state = capture_state(Session.load(tmp_path, GitmanConfig(trunk="main")))
     assert state.canonical, state.off_canonical
     assert not any(lane.name.startswith("adopted-") for lane in state.lanes)
@@ -227,7 +227,7 @@ def test_reconcile_collects_garbage_with_the_default_cutoff(tmp_path: Path, monk
     calls.clear()  # ignore the `do_init` call inside the fixture
     res = do_reconcile(Session.load(tmp_path, GitmanConfig(trunk="main")), abandon_=True)
 
-    assert res.outcome == "RECONCILED"
+    assert res.outcome == "REPAIRED"
     assert calls == [((), {})], calls  # called exactly once, no cutoff argument
     assert capture_state(Session.load(tmp_path, GitmanConfig(trunk="main"))).canonical
 
@@ -244,7 +244,7 @@ def test_reconcile_survives_a_failing_gc(tmp_path: Path, monkeypatch):
 
     res = do_reconcile(Session.load(tmp_path, GitmanConfig(trunk="main")), abandon_=True)
 
-    assert res.outcome == "RECONCILED"
+    assert res.outcome == "REPAIRED"
     assert any("garbage collection skipped" in m for m in res.messages), res.messages
     assert capture_state(Session.load(tmp_path, GitmanConfig(trunk="main"))).canonical
 
@@ -276,7 +276,7 @@ def test_reconcile_nondivergent_stray_unchanged(tmp_path: Path):
     _child_offmain(ws, tmp_path, "s.txt", "stray\n", "lone stray")
 
     res = do_reconcile(Session.load(tmp_path, GitmanConfig(trunk="main")), abandon_=False)
-    assert res.outcome == "RECONCILED"
+    assert res.outcome == "REPAIRED"
     state = capture_state(Session.load(tmp_path, GitmanConfig(trunk="main")))
     assert state.canonical, state.off_canonical
     assert len([lane for lane in state.lanes if lane.name.startswith("adopted-")]) == 1

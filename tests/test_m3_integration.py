@@ -294,7 +294,7 @@ def _make_stray(d: Path) -> None:
 
 def test_reconcile_adopts_stray(tmp_path: Path):
     from gitman.init import do_init
-    from gitman.reconcile import do_reconcile
+    from gitman.repair import do_reconcile
 
     _fresh(tmp_path)
     do_init(_uninit_sess(tmp_path), trunk_opt=None)
@@ -302,7 +302,7 @@ def test_reconcile_adopts_stray(tmp_path: Path):
     assert capture_state(_isess(tmp_path)).canonical is False
 
     res = do_reconcile(_isess(tmp_path), abandon_=False)
-    assert res.outcome == "RECONCILED"
+    assert res.outcome == "REPAIRED"
     state = capture_state(_isess(tmp_path))
     assert state.canonical
     assert any(lane.name.startswith("adopted-") for lane in state.lanes)
@@ -310,14 +310,14 @@ def test_reconcile_adopts_stray(tmp_path: Path):
 
 def test_reconcile_abandon_discards_stray(tmp_path: Path):
     from gitman.init import do_init
-    from gitman.reconcile import do_reconcile
+    from gitman.repair import do_reconcile
 
     _fresh(tmp_path)
     do_init(_uninit_sess(tmp_path), trunk_opt=None)
     _make_stray(tmp_path)
 
     res = do_reconcile(_isess(tmp_path), abandon_=True)
-    assert res.outcome == "RECONCILED"
+    assert res.outcome == "REPAIRED"
     state = capture_state(_isess(tmp_path))
     assert state.canonical
     assert not any(lane.name.startswith("adopted-") for lane in state.lanes)
@@ -325,13 +325,13 @@ def test_reconcile_abandon_discards_stray(tmp_path: Path):
 
 def test_reconcile_undo_restores_off_canonical(tmp_path: Path):
     from gitman.init import do_init
-    from gitman.reconcile import do_reconcile
+    from gitman.repair import do_reconcile
 
     _fresh(tmp_path)
     do_init(_uninit_sess(tmp_path), trunk_opt=None)
     _make_stray(tmp_path)
     res = do_reconcile(_isess(tmp_path), abandon_=False)
-    assert res.outcome == "RECONCILED"
+    assert res.outcome == "REPAIRED"
 
     do_undo(_isess(tmp_path), op=None, list_=False)
     assert capture_state(_isess(tmp_path)).canonical is False  # back off-canonical

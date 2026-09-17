@@ -162,7 +162,7 @@ Each jj idea from Part 1 becomes a concrete Gitman affordance:
 
 | jj idea (Part 1) | How it shows up in Gitman |
 |---|---|
-| Working copy is a commit (§1) | You never "save to avoid losing work" — edits are already in `@`. `gitman save -m …` just *describes* the lane's change (`jj describe`). No staging, no stash. |
+| Working copy is a commit (§1) | You never "save to avoid losing work" — edits are already in `@`. `gitman describe -m …` just *describes* the lane's change (`jj describe`). No staging, no stash. |
 | Stable change ID (§2) | A lane's **identity**. `gitman sync` rebases the lane onto fresh trunk and it's still "the same lane" — the change ID didn't move, only the git hash did. |
 | Operation log + undo (§3) | `gitman undo` reverts the **whole last intent** atomically; `gitman undo --list` shows recent undoable intents; `--op <id>` restores to any point. Also the engine of transactional rollback (below). |
 | Conflicts are data (§4) | `gitman sync`/`land` never wedge you. Conflicts land *in the commit*; `gitman resolve [--list]` surfaces them; you clear them when convenient. Exit code `1` means "a decision is needed", not "the repo is stuck". |
@@ -180,7 +180,7 @@ you name an *intent*, it picks and safely runs the *jj operations*.
 | `gitman start <name>` | Begin a lane | `jj new <trunk>` + `jj bookmark create <name>` (+ `jj workspace add` with `--workspace`) |
 | `gitman switch <lane>` | Resume an existing lane | `jj edit <lane>` (moves `@`; never touches trunk) |
 | `gitman split …` | Carve one lane's change into two sibling lanes | `jj new <trunk>` + `jj restore` ×2 + bookmark |
-| `gitman save -m …` | Name/redescribe the current change | `jj describe` |
+| `gitman describe -m …` | Name/redescribe the current change | `jj describe` |
 | `gitman sync [--all]` | Get on top of latest trunk | `jj git fetch` + `jj rebase` |
 | `gitman publish` | Share this lane | `jj git push` (branch = lane name) |
 | `gitman land [<lane>…]` | Fold lane(s) into trunk, advance trunk, retire | rebase + fast-forward trunk + bookmark/workspace cleanup |
@@ -210,7 +210,7 @@ half-synced repo. That's operation-log undo (§3) doing structural work, not jus
 Route **all** version control through `gitman`. Raw `jj`/`git` edits create exactly the
 anonymous heads, strays, and divergence the lane model exists to prevent — they break
 *canonicity*. If it happens anyway (a stray edit, an external tool), `gitman status` reports
-**off-canonical** and `gitman reconcile` is the single recovery path (adopt strays into lanes,
+**off-canonical** and `gitman repair` is the single recovery path (adopt strays into lanes,
 or `--abandon` them). You get jj's whole safety net; Gitman just makes sure you never leave the
 part of it that's safe.
 

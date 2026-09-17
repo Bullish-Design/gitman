@@ -74,7 +74,7 @@ def map_pyjutsu_error(exc: PyjutsuError) -> GitmanError:
         op = f" (operation {exc.operation_id[:12]})" if exc.operation_id else ""
         return GitmanError(f"operation landed{op} but a pyjutsu post-hook failed: {exc}.", exit_code=1)
     if isinstance(exc, StaleWorkingCopyError):
-        return GitmanError("working copy is stale — run `gitman reconcile`.", exit_code=1)
+        return GitmanError("working copy is stale — run `gitman repair`.", exit_code=1)
     if isinstance(exc, ImmutableCommitError):
         # pyjutsu 0.16 checks `immutable_heads().ancestors()` before every rewrite verb. The default
         # alias is `trunk() | tags() | untracked_remote_bookmarks()`, so three different protections
@@ -98,7 +98,7 @@ def map_pyjutsu_error(exc: PyjutsuError) -> GitmanError:
         # structural reads in capture_state mean the common paths no longer reach here).
         if "is conflicted" in str(exc):
             return GitmanError(
-                f"a bookmark diverged from its pushed branch ({exc}) — run `gitman reconcile`.",
+                f"a bookmark diverged from its pushed branch ({exc}) — run `gitman repair`.",
                 exit_code=1,
             )
         return GitmanError(f"bad revision/revset: {exc}", exit_code=3)
@@ -162,7 +162,7 @@ def _target(change) -> str:
 
     A divergent change-id (one change_id → ≥2 commits — manufactured on a fresh `git_import` of a
     forge repo with orphaned `refs/jj/keep/*`; pyjutsu 0.17 moved that pruning out of
-    `Workspace.init` into `ws.gc()`, which `gitman init --colocate` and `gitman reconcile` now call)
+    `Workspace.init` into `ws.gc()`, which `gitman init --colocate` and `gitman repair` now call)
     resolves to >1 revision, so `tx.abandon(change_id)`
     / `tx.create_bookmark(name, change_id)` raise `Change ID … is divergent` and dead-end the
     intent. A full commit hex always resolves to exactly one commit, so mutating by commit_id is
@@ -273,7 +273,7 @@ def _retire_git_ref(session: Session, lane: str) -> list[str]:
             return []
         session.ws.git.delete_ref(lane)
     except Exception:
-        return [f"colocated git ref '{lane}' not removed — run `gitman reconcile` to re-sync."]
+        return [f"colocated git ref '{lane}' not removed — run `gitman repair` to re-sync."]
     return []
 
 
@@ -401,12 +401,12 @@ def _resolve_base(session: Session, trunk: str, name: str, onto: str | None) -> 
     if parent not in lane_names(session, trunk):
         raise GitmanError(
             f"parent lane '{parent}' of '{name}' does not exist — `gitman start {parent}` first "
-            f"(or `gitman subtask <leaf>` while on '{parent}').",
+            f"(then `gitman start {parent}+<leaf>`).",
             exit_code=3,
         )
     if parent in _conflicted_lanes(view, trunk):
         raise GitmanError(
-            f"parent lane '{parent}' is conflicted (diverged from origin) — `gitman reconcile` it "
+            f"parent lane '{parent}' is conflicted (diverged from origin) — `gitman repair` it "
             f"before stacking under it.",
             exit_code=3,
         )
@@ -487,17 +487,16 @@ def do_start(
                 # a named lane that holds saved, un-landed work, that lane's tree is NOT in the new base,
                 # so the working copy reverts to trunk (silently, pre-guardrail). State the base
                 # explicitly and point at the two fixes — land the lane first (sibling on trunk), or
-                # stack on it by naming the new lane `<cur>/<name>` (or `gitman subtask <name>` while on
-                # it). Non-blocking (a trunk-based sibling is a legitimate choice), so it's a note, not a
-                # refusal. Computed before `tx.new` moves `@` off the current lane.
+                # stack on it by naming the new lane `<cur>+<name>`. Non-blocking (a trunk-based
+                # sibling is a legitimate choice), so it's a note, not a refusal. Computed before
+                # `tx.new` moves `@` off the current lane.
                 cur = current_lane(session, trunk)
                 if cur is not None and lane_has_content(session, trunk, cur):
                     base_sha = session.view().resolve(trunk).commit_id[:12]
                     notes.append(
                         f"'{name}' is based on trunk {base_sha}; the un-landed lane '{cur}' is NOT in "
                         f"that base — `gitman land {cur}` first (a sibling on trunk), or name it "
-                        f"'{cur}/{name}' (a.k.a. `gitman subtask {name}` while on '{cur}') to stack on "
-                        f"it. Its saved changes live on '{cur}', not on disk."
+                        f"'{cur}+{name}' to stack on it. Its saved changes live on '{cur}', not on disk."
                     )
                 tx.new(trunk)
                 tx.create_bookmark(name, "@")
@@ -517,8 +516,7 @@ def do_start(
                         f"`gitman split --paths <theirs> --into parked/other` carves them out."
                     )
                     messages.append(
-                        f"{len(dirty) - len(foreign)} path(s) this session, "
-                        f"{len(foreign)} not written by it."
+                        f"{len(dirty) - len(foreign)} path(s) this session, {len(foreign)} not written by it."
                     )
     return IntentResult(
         intent="start",
@@ -647,14 +645,17 @@ def _adoptable_work(session: Session, base_ref: str) -> bool:
 
 
 def do_subtask(session: Session, name: str, workspace: bool = False):
-    """Fan out a child lane under the current lane (D4): `subtask api` on `T` ≡ `start T+api`.
+    """The deprecated `subtask` alias: `subtask api` on `T` ≡ `start T+api`.
 
-    The ergonomic decomposition verb. Requires being on a lane `cur` (refuse on trunk, exit 1); `name`
-    is a **single segment** — a `+` or `/` refuses (exit 3: you decompose the lane you're on, not name
-    a path elsewhere). Delegates to the name-derived `do_start` path with the qualified name
-    `<cur>+<name>`, so validation, the D1 base derivation, and I3′ all apply uniformly. `--workspace`
-    (P3 fan-out) is wired through to the isolated-workspace path; own-work-on-the-parent stays allowed
-    (model §1.6)."""
+    The ergonomic decomposition form of `start`, kept only for the hidden `subtask` alias (project
+    46 S6). Requires being on a lane `cur` (refuse on trunk, exit 1); `name` is a **single segment**
+    — a `+` or `/` refuses (exit 3: you decompose the lane you're on, not name a path elsewhere).
+    The guard is the one thing `subtask` uniquely added, so it lives on this alias path only; a
+    plain `start` with a path argument keeps working. Delegates to the name-derived `do_start` path
+    with the qualified name `<cur>+<name>`, so validation, the D1 base derivation, and I3′ all apply
+    uniformly. `--workspace` (P3 fan-out) is wired through to the isolated-workspace path;
+    own-work-on-the-parent stays allowed (model §1.6). The report's intent is `start`, the verb the
+    operator should use."""
     from gitman.lanes import _INPUT_SEP, _SEP, normalise_lane_name, require_current_lane
 
     trunk = require_trunk(session.config)
@@ -666,7 +667,7 @@ def do_subtask(session: Session, name: str, workspace: bool = False):
             exit_code=3,
         )
     result = do_start(session, f"{cur}{_SEP}{name}", workspace, onto=None)
-    return result.model_copy(update={"intent": "subtask"})
+    return result.model_copy(update={"intent": "start"})
 
 
 def do_switch(session: Session, name: str):
@@ -703,7 +704,7 @@ def do_switch(session: Session, name: str):
     if cur is None and not session.fresh_view().working_copy().is_empty:
         raise GitmanError(
             "uncommitted work on an unnamed change would be stranded — "
-            "`gitman save -m …` (if it's a lane), `gitman start <name>` (to name it), "
+            "`gitman describe -m …` (if it's a lane), `gitman start <name>` (to name it), "
             "or `gitman abandon` first.",
             exit_code=1,
         )
@@ -1021,7 +1022,7 @@ def do_shape(
     )
 
 
-def do_save(session: Session, message: str | None):
+def do_describe(session: Session, message: str | None):
     from gitman.invariants import canonical_tx
     from gitman.lanes import require_current_lane
     from gitman.models import IntentResult
@@ -1035,15 +1036,15 @@ def do_save(session: Session, message: str | None):
         wc = session.view().working_copy()
         desc = wc.description.rstrip("\n") or "(no description)"
         return IntentResult(
-            intent="save",
+            intent="describe",
             outcome="NOOP",
             lane=lane,
             messages=[f'current change: "{desc}"  (pass -m to set it)'],
         )
-    with canonical_tx(session, "save") as tx:
+    with canonical_tx(session, "describe") as tx:
         tx.describe("@", message)
-        # Issue 38 W2 / S4 step 6: `save` cannot narrow what jj already snapshotted, so it reports
-        # rather than restricts. A co-tenant's paths in the same change get named here.
+        # Issue 38 W2 / S4 step 6: `describe` cannot narrow what jj already snapshotted, so it
+        # reports rather than restricts. A co-tenant's paths in the same change get named here.
         _dirty, foreign = session.path_provenance(session.view())
     notes: list[str] = []
     if foreign:
@@ -1051,11 +1052,11 @@ def do_save(session: Session, message: str | None):
         notes.append(
             f"this change also holds {len(foreign)} path(s) not written by this session "
             f"({session.identity}): {shown} — `gitman split --paths <theirs> --into parked/other` "
-            f"carves them out; `save` cannot (jj already snapshotted @)."
+            f"carves them out; `describe` cannot (jj already snapshotted @)."
         )
     return IntentResult(
-        intent="save",
-        outcome="SAVED",
+        intent="describe",
+        outcome="DESCRIBED",
         lane=lane,
         messages=[f'described: "{message}"'],
         notes=notes,
@@ -1562,12 +1563,12 @@ def do_abandon(session: Session, lane: str | None, recursive: bool = False):
         raise GitmanError(f"no such lane '{target}'.", exit_code=3)
     # Not an anomaly-blocks-abandon refusal (that row is deliberately empty, see the docstring) —
     # a mechanical one. A CONFLICTED bookmark can't resolve as a revset at all, so abandoning it
-    # would crash inside `_abandon_range`'s own `base..target` read, not refuse cleanly. `reconcile`
+    # would crash inside `_abandon_range`'s own `base..target` read, not refuse cleanly. `repair`
     # (`_resolve_conflicted_lane`) is the only thing that can give the name a single commit again.
     if target in _conflicted_lanes(session.view(), trunk):
         raise GitmanError(
             f"lane '{target}' is conflicted (local vs. its pushed branch) — its name doesn't resolve "
-            f"to one commit, so abandon can't target it; run `gitman reconcile` first.",
+            f"to one commit, so abandon can't target it; run `gitman repair` first.",
             exit_code=1,
         )
 
@@ -1620,7 +1621,7 @@ def do_abandon(session: Session, lane: str | None, recursive: bool = False):
                 if node in _conflicted_lanes(session.view(), trunk):
                     raise GitmanError(
                         f"lane '{node}' is conflicted (local vs. its pushed branch) — its name doesn't "
-                        f"resolve to one commit, so abandon can't target it; run `gitman reconcile` first.",
+                        f"resolve to one commit, so abandon can't target it; run `gitman repair` first.",
                         exit_code=1,
                     )
                 op_before = session.ws.head_operation()
@@ -1667,7 +1668,23 @@ def do_abandon(session: Session, lane: str | None, recursive: bool = False):
 # --- sync / resolve / undo (M3) ------------------------------------------------------
 
 
-def do_sync(session: Session, all_: bool):
+def do_sync(session: Session, all_: bool, *, trunk_: bool = False, dry_run: bool = False):
+    """Fetch and rebase lanes onto their base; `--trunk` integrates `origin/<trunk>` instead.
+
+    The one catch-up verb (project 46 S6). Three targets, one entry point:
+
+    - plain `sync` — the current lane rebased onto its base (parent lane or local trunk);
+    - `sync --all` — every lane rebased, parent→child;
+    - `sync --trunk` — trunk vs `origin/<trunk>` (the old `pull`); add `--all` to also refresh
+      every stale workspace (the old `catchup`).
+
+    `--trunk` never advances local trunk from the fetch alone: `do_pull`'s content gate decides
+    fast-forward vs rebase, and `push` stays the only way out. `--dry-run` reports the plan for
+    either shape without mutating.
+    """
+    if trunk_:
+        return _do_sync_trunk(session, refresh_all=all_, dry_run=dry_run)
+
     from gitman.invariants import canonical_guard
     from gitman.lanes import current_lane, lane_base, lane_depth, lane_names
     from gitman.models import IntentResult
@@ -1700,7 +1717,7 @@ def do_sync(session: Session, all_: bool):
             # Fetch the lane branches ONLY — never trunk. A full `git_fetch` auto-fast-forwards the
             # local trunk bookmark to a moved `origin/<trunk>`, which the canonical_guard
             # postcondition then reverts as "trunk moved outside a land" (the real wedge). Trunk
-            # advancement is `gitman pull`'s job, by design. Bookmark-scoped fetch keeps sync's
+            # advancement is `gitman sync --trunk`'s job, by design. Bookmark-scoped fetch keeps sync's
             # narrow contract ("rebase lanes onto *local* trunk") and still prunes a server-deleted
             # in-filter lane (validated). (verb: adopt)
             session.ws.git_fetch(pick_remote(session.ws), bookmarks=sorted(targets))  # own op
@@ -1712,7 +1729,7 @@ def do_sync(session: Session, all_: bool):
         # `tx.rebase(lane, …)` would raise "Revision <lane> doesn't exist". Re-read the survivors
         # AFTER the fetch. For vanished lanes, content-check against trunk: if the lane's content
         # is a subset of trunk (the merge of lane + trunk equals trunk's tree), auto-retire it.
-        # If not (real divergence), keep the note pointing at `gitman pull`.
+        # If not (real divergence), keep the note pointing at `gitman sync --trunk`.
         surviving = lane_names(session, trunk)
         trunk_tip = session.view().resolve(trunk).commit_id
         from gitman.state import _merge_tree_relation
@@ -1729,7 +1746,7 @@ def do_sync(session: Session, all_: bool):
                         continue
                 notes.append(
                     f"lane '{lane}' no longer exists (remote branch deleted) — nothing to sync; "
-                    f"`gitman pull` to retire it."
+                    f"`gitman sync --trunk` to retire it."
                 )
         # Fractal lanes: each lane rebases onto its OWN base (parent lane head, or trunk), in a
         # separate tx so a rebased parent is current before its child rebases onto it. Order
@@ -1764,7 +1781,7 @@ def do_sync(session: Session, all_: bool):
                 synced.append(lane)
         # After rebasing lanes, check for stale secondary workspaces (L2): a rebased lane may
         # have a live `--workspace` checkout elsewhere whose @ is now stale. Append a note
-        # naming each so the agent knows to `gitman catchup` in that workspace.
+        # naming each so the agent knows to `gitman sync --trunk --all` in that workspace.
         if synced and all_:
             stale_workspaces: list[str] = []
             for wi in session.ws.workspaces():
@@ -1781,7 +1798,7 @@ def do_sync(session: Session, all_: bool):
                 except Exception:
                     pass
             if stale_workspaces:
-                notes.append(f"stale workspace(s): {', '.join(stale_workspaces)} — run `gitman catchup`.")
+                notes.append(f"stale workspace(s): {', '.join(stale_workspaces)} — run `gitman sync --trunk --all`.")
     if synced:
         messages.append(f"rebased {', '.join(synced)}.")
     if conflicted:
@@ -1814,9 +1831,7 @@ def _trunk_diverged_no_ff(view, trunk: str, origin_trunk, remote: str) -> bool:
     return behind > 0 and ahead > 0
 
 
-def _retire_lane(
-    session: Session, trunk: str, lane: str, published_before: set[str], notes: list[str]
-) -> str | None:
+def _retire_lane(session: Session, trunk: str, lane: str, published_before: set[str], notes: list[str]) -> str | None:
     """Retire a forge-merged surviving lane: abandon its (now-empty) trunk..lane changes, delete the
     bookmark, forget its workspace. Runs its own tx inside an already-open `canonical_guard`. For the
     merge-commit case (`trunk..lane` already empty) the abandon loop is a no-op and only the bookmark
@@ -1851,7 +1866,7 @@ def _resolve_conflicted_lane(
 
     A conflicted lane names two commits (its local side + its diverged pushed side), so its name
     can't be resolved as a revset — `set_bookmark`/`delete_bookmark` act on it structurally, the way
-    a conflicted *trunk* bookmark must be cleared by commit-id rather than name. This is `reconcile`'s
+    a conflicted *trunk* bookmark must be cleared by commit-id rather than name. This is `repair`'s
     helper (the sole verb that clears conflicted lanes); the policy is work-preserving and undoable:
 
       * `abandon`, or the lane is fully forge-merged (pushed side ∈ trunk AND no extra local
@@ -1863,7 +1878,7 @@ def _resolve_conflicted_lane(
 
     The pushed (remote-tracking) side is left on `<lane>@<remote>`: with the local bookmark resolved
     there's nothing left to conflict against, and a still-live remote branch is harmless (a later
-    `git fetch --prune` or forge delete clears it). reconcile stays a *local* recovery — it never
+    `git fetch --prune` or forge delete clears it). repair stays a *local* recovery — it never
     pushes a branch deletion (that's `pull`/`land`'s forge job).
     """
     from gitman.state import _conflicted_lanes, _remote_target
@@ -1877,7 +1892,7 @@ def _resolve_conflicted_lane(
     local_ahead = view.log(f"{trunk}..{local_tip}")
     fully_merged = remote_tip is not None and not view.log(f"{trunk}..{remote_tip}") and not local_ahead
 
-    with session.ws.transaction("gitman:reconcile-conflicted-lane", auto_snapshot=False) as tx:
+    with session.ws.transaction("gitman:repair-conflicted-lane", auto_snapshot=False) as tx:
         if abandon or fully_merged:
             for c in local_ahead:  # empty in the common forge-merge shape (local side ∈ trunk)
                 tx.abandon(c.commit_id)
@@ -1899,7 +1914,7 @@ class _SurvivorConflict(Exception):
     """Internal sentinel: roll back a conflicting survivor rebase tx without committing it."""
 
 
-def _reconcile_lane_against_adopted_trunk(
+def _repair_lane_against_adopted_trunk(
     session: Session,
     trunk: str,
     lane: str,
@@ -1911,7 +1926,7 @@ def _reconcile_lane_against_adopted_trunk(
     notes: list[str],
     pending_remote_deletes: list[str],
 ) -> None:
-    """Reconcile one surviving lane against the freshly-pulled trunk (content-based, not SHA).
+    """Rebase one surviving lane against the freshly-pulled trunk (content-based, not SHA).
 
     Cases, on one emptiness-after-rebase test (works across squash N→1, rebase-merge N→N re-hashed,
     and merge-commit ancestry — independent of SHA/change-id):
@@ -1928,7 +1943,7 @@ def _reconcile_lane_against_adopted_trunk(
     A lane the fetch left *conflicted* (its pushed side diverged — the report's scenario) is NOT
     rebased here: rebasing a lane that shares an un-merged ancestor with its diverged pushed side
     drags that side along and orphans it as a stray (which the postcondition then reverts). Clearing
-    a conflicted bookmark is `reconcile`'s job (it can retire it or preserve un-pushed work without
+    a conflicted bookmark is `repair`'s job (it can retire it or preserve un-pushed work without
     orphaning a side), so refuse with a clean pointer and let the guard roll the pull back (issue 11).
     """
     from gitman.state import _conflicted_lanes
@@ -1936,7 +1951,7 @@ def _reconcile_lane_against_adopted_trunk(
     if lane in _conflicted_lanes(session.view(), trunk):
         raise GitmanError(
             f"lane '{lane}' diverged from its pushed branch (conflicted bookmark) — run "
-            f"`gitman reconcile` to retire/resolve it, then re-run `gitman pull`.",
+            f"`gitman repair` to retire/resolve it, then re-run `gitman sync --trunk`.",
             exit_code=1,
         )
 
@@ -2070,9 +2085,7 @@ def _pull_dry_run(session: Session, trunk: str, remote: str):
                 content = _merge_tree_relation(session.view(), local_tip, origin_tip)
                 forge_has_new, local_has_new = content if content is not None else (True, True)
                 if not forge_has_new:
-                    messages.append(
-                        f"{trunk} already holds origin's content (twin/local-ahead) — reconcile lanes only."
-                    )
+                    messages.append(f"{trunk} already holds origin's content (twin/local-ahead) — repair lanes only.")
                 elif not local_has_new:
                     messages.append(f"would fast-forward {trunk} → {origin_tip[:12]}.")
                 else:
@@ -2087,7 +2100,7 @@ def _pull_dry_run(session: Session, trunk: str, remote: str):
                 conflicted_lanes = _conflicted_lanes(view, trunk)
                 for lane in sorted(surviving):
                     if lane in conflicted_lanes:  # name unresolvable — don't `view.log` it (issue 11)
-                        messages.append(f"conflicted lane — run `gitman reconcile` first: {lane}")
+                        messages.append(f"conflicted lane — run `gitman repair` first: {lane}")
                     elif not view.log(f"{trunk}..{lane}"):
                         messages.append(f"would retire (already an ancestor of trunk): {lane}")
                     else:
@@ -2167,7 +2180,7 @@ def do_pull(session: Session, *, dry_run: bool = False):
                 except _SurvivorConflict as exc:
                     raise GitmanError(
                         f"local {trunk} lands conflict with {remote}/{trunk} — resolve origin's changes by "
-                        f"hand, or `gitman reconcile`, then re-run `gitman pull`.",
+                        f"hand, or `gitman repair`, then re-run `gitman sync --trunk`.",
                         exit_code=1,
                     ) from exc
 
@@ -2177,7 +2190,7 @@ def do_pull(session: Session, *, dry_run: bool = False):
                     notes.append(f"retired (forge-merged): {lane}")
                     retired.append(lane)
                 for lane in sorted(surviving):
-                    _reconcile_lane_against_adopted_trunk(
+                    _repair_lane_against_adopted_trunk(
                         session,
                         trunk,
                         lane,
@@ -2256,14 +2269,13 @@ def do_pull(session: Session, *, dry_run: bool = False):
     )
 
 
-def do_catchup(session: Session, *, dry_run: bool = False):
-    """Catch up to origin: pull + refresh every stale workspace. The everyday two-machine verb.
+def _do_sync_trunk(session: Session, *, refresh_all: bool, dry_run: bool):
+    """`sync --trunk`: integrate a moved `origin/<trunk>` (the old `pull`).
 
-    Thin wrapper over `do_pull` that additionally refreshes every stale workspace — not just the
-    current one. Positioned as the universal "get me current" intent: fetch origin trunk, advance
-    local trunk (FF or rebase-lands), rebase-or-retire surviving lanes, repark `@`, then refresh
-    every workspace that was left stale by the trunk move. Safe to run from any workspace; safe
-    when nothing needs doing (no-op)."""
+    With `refresh_all` (`--all`), additionally refresh every *other* stale workspace — the one
+    behaviour the old `catchup` added over `pull`, and the reason `catchup` folded into
+    `sync --trunk --all` (project 46 S6). `dry_run` reports the plan and mutates nothing.
+    """
     from gitman.invariants import _refresh_stale_working_copy
     from gitman.models import IntentResult
     from gitman.session import Session
@@ -2271,15 +2283,15 @@ def do_catchup(session: Session, *, dry_run: bool = False):
 
     trunk = require_trunk(session.config)
 
-    if dry_run:
-        return do_pull(session, dry_run=True)  # pull's --dry-run already reports the plan
+    # `do_pull` handles trunk integration, lane rebase/retire, and current-@ repark, and its
+    # `--dry-run` already reports the plan. The body is deliberately unchanged by this stage —
+    # only the entry point moved.
+    pull_result = do_pull(session, dry_run=dry_run)
 
-    # Run the full pull — it handles trunk integration, lane rebase/retire, and current-@ repark.
-    # It's already transactional (canonical_guard) and records its own undo checkpoint.
-    pull_result = do_pull(session)
-
-    if pull_result.outcome == "BLOCKED":
-        return pull_result  # pass through the block message + exit code
+    if dry_run or pull_result.outcome == "BLOCKED":
+        return pull_result.model_copy(update={"intent": "sync"})
+    if not refresh_all:
+        return pull_result.model_copy(update={"intent": "sync"})
 
     # After a successful pull, every OTHER workspace whose @ was on a retired/rebased lane is
     # stale. Refresh them all — each gets `update_stale()` + repark if needed.
@@ -2291,7 +2303,7 @@ def do_catchup(session: Session, *, dry_run: bool = False):
         wpath = Path(ws_info.path) if ws_info.path is not None else None
         if wpath is None or not wpath.exists():
             continue
-        # Load a separate Session for each workspace so we can query/reconcile its @ without
+        # Load a separate Session for each workspace so we can query/repair its @ without
         # disturbing the caller's. The shared root lock is NOT held here (pull already released it),
         # but _refresh_stale_working_copy takes a session and only acts if stale — concurrent
         # agents are paused by their own lock.
@@ -2319,7 +2331,7 @@ def do_catchup(session: Session, *, dry_run: bool = False):
     else:
         outcome = "CAUGHT-UP"
     return IntentResult(
-        intent="catchup",
+        intent="sync",
         outcome=outcome,
         messages=messages,
         notes=notes,
@@ -2327,6 +2339,15 @@ def do_catchup(session: Session, *, dry_run: bool = False):
         undo_command="gitman undo",
         state=final_state,
     )
+
+
+def do_catchup(session: Session, *, dry_run: bool = False):
+    """Deprecated wrapper (project 46 S6) — `catchup` is now `sync --trunk --all`.
+
+    Kept so existing in-process callers keep working while the CLI verb is a hidden alias. New
+    code calls `do_sync(session, all_=True, trunk_=True, dry_run=dry_run)`.
+    """
+    return do_sync(session, all_=True, trunk_=True, dry_run=dry_run)
 
 
 # --- push / remote add / untrack (Tier 2, project 21) ---------------------------------
@@ -2375,7 +2396,7 @@ def _push_gate(session: Session, view, trunk: str, remote: str):
             exit_code=1,
             messages=[
                 f"refusing to push: {remote}/{trunk} holds work local lacks ({relation or 'unknown'}) "
-                f"— run `gitman pull` first (or `gitman push --reset-origin` to deliberately overwrite it)."
+                f"— run `gitman sync --trunk` first (or `gitman push --reset-origin` to deliberately overwrite it)."
             ],
         )
     safety, dropped = trunk_push_safety(session, view, trunk)
@@ -2395,7 +2416,7 @@ def _push_gate(session: Session, view, trunk: str, remote: str):
                 *listed,
                 f"their content is already on local {trunk}, but gitman's push is a force-with-lease: "
                 f"it would drop the commit(s) themselves from {remote}/{trunk}'s history. Run "
-                f"`gitman pull` first, or `gitman push --reset-origin` to drop them deliberately.",
+                f"`gitman sync --trunk` first, or `gitman push --reset-origin` to drop them deliberately.",
             ],
         )
     return None
@@ -2467,7 +2488,7 @@ def do_push(session: Session, *, reset_origin: bool = False):
             session.ws.git_push(remote, trunk, allow_new=True)
         except HookAbort as exc:
             # A pre-push hook vetoed, before any network I/O. This is NOT a lease failure: origin
-            # has not moved, and `gitman pull` would be useless advice for a hook that is doing its
+            # has not moved, and `gitman sync --trunk` would be useless advice for a hook that is doing its
             # job. HookAbort subclasses PyjutsuError, so it MUST be caught first or the branch below
             # claims the wrong cause — which is exactly the bug this ordering fixes.
             return IntentResult(
@@ -2493,7 +2514,7 @@ def do_push(session: Session, *, reset_origin: bool = False):
             )
         except PyjutsuError as exc:
             # Do NOT assert a cause. This used to claim every failure was a stale lease and
-            # prescribe `gitman pull` — which is a dead end for a missing remote, a refused
+            # prescribe `gitman sync --trunk` — which is a dead end for a missing remote, a refused
             # credential or a dropped network, and those are indistinguishable here: pyjutsu raises
             # a bare PyjutsuError for all of them, with no typed "push rejected". Report what the
             # engine said and offer the lease case as a possibility the reader can check. Say
@@ -2503,7 +2524,7 @@ def do_push(session: Session, *, reset_origin: bool = False):
                 outcome="BLOCKED",
                 messages=[
                     f"push failed:\n{exc}\n"
-                    f"If {remote} has moved since your last fetch, run `gitman pull`, then `gitman push`."
+                    f"If {remote} has moved since your last fetch, run `gitman sync --trunk`, then `gitman push`."
                 ],
                 notes=notes + [f"run `gitman status` to see whether {remote}/{trunk} moved."],
                 exit_code=1,
@@ -2542,7 +2563,7 @@ def do_remote_add(session: Session, url: str, name: str = "origin"):
         intent="remote-add",
         outcome="REMOTE-ADDED",
         messages=[f"added remote '{name}' → {url}."],
-        notes=["next: `gitman push` to publish trunk (creates the branch), or `gitman pull` to fetch."],
+        notes=["next: `gitman push` to publish trunk (creates the branch), or `gitman sync --trunk` to fetch."],
         undo_command="gitman undo",
         state=capture_state(session) if session.config.trunk else None,
     )
@@ -2653,12 +2674,12 @@ def do_undo(session: Session, op: str | None, list_: bool):
         return IntentResult(intent="undo", outcome="LIST", messages=rows or ["no gitman operations."])
 
     with repo_lock(session.repo_root):
-        undoing_reconcile = False
+        undoing_repair = False
         if op:
             target, what = op, f"op {op[:12]}"
         else:
             rec = read_undo_checkpoint(session.repo_root)
-            undoing_reconcile = bool(rec) and rec.get("intent") == "reconcile"
+            undoing_repair = bool(rec) and rec.get("intent") in ("repair", "reconcile")
             if not rec:
                 session.ws.undo()  # fallback: revert the head op
                 return IntentResult(
@@ -2671,16 +2692,16 @@ def do_undo(session: Session, op: str | None, list_: bool):
         session.ws.restore_operation(target)
         # `restore_operation` rewinds jj only — `refs/heads/*` keep pointing at the undone commits,
         # and jj's own export *refuses* to rewind a ref, so without this the repo is left
-        # DESYNCHRONIZED and the operator is sent to `reconcile` after every undo (31-RC3). Every
+        # DESYNCHRONIZED and the operator is sent to `repair` after every undo (31-RC3). Every
         # ref rewound here is jj-authoritative by construction (jj holds the commit the ref names —
         # it is in the op log we just restored past), so the shared classifier takes the safe branch
         # and a git-only commit still cannot be discarded.
         #
-        # Undoing a `reconcile` is the exception: it rewinds past history that arrived from GIT, so
+        # Undoing a `repair` is the exception: it rewinds past history that arrived from GIT, so
         # the colocated ref is the only thing naming it and forcing that ref to jj makes it
         # unreachable from either system — issue 31's loss, relocated into `undo`. Preserve it as a
         # lane there. Every other intent's commit is gitman's own and is meant to go (31-F2).
-        ref_notes = sync_colocated_refs(session, preserve_orphans=undoing_reconcile)
+        ref_notes = sync_colocated_refs(session, preserve_orphans=undoing_repair)
         clear_undo_checkpoint(session.repo_root)
     return IntentResult(
         intent="undo",
@@ -2688,3 +2709,116 @@ def do_undo(session: Session, op: str | None, list_: bool):
         messages=[f"reverted {what}."] + ref_notes,
         notes=["older intents: `gitman undo --list`, then `gitman undo --op <id>`."],
     )
+
+
+# --- workspace noun (project 46 S6, step 1; issue 43 D3) ------------------------------
+
+
+def do_workspace_list(session: Session):
+    """List the jj workspace registrations, marking the ones with no live lane.
+
+    A workspace is registered per lane by `start <name> --workspace`, and `status` shows a live
+    lane's workspace inline. A registration whose lane was retired — or that points at a bare
+    trunk `@` — had no row anywhere, so it stayed invisible until it refused the next `start`.
+    Read-only.
+    """
+    from gitman.lanes import lane_names
+    from gitman.models import IntentResult
+
+    trunk = require_trunk(session.config)
+    live = lane_names(session, trunk)
+    rows: list[str] = []
+    for w in sorted(session.ws.workspaces(), key=lambda wi: wi.name):
+        tag = "lane" if w.name in live else "no lane"
+        path = str(w.path) if w.path is not None else "(no path recorded)"
+        rows.append(f"{w.name}  [{tag}]  {path}")
+    return IntentResult(
+        intent="workspace list",
+        outcome="OK",
+        messages=rows or ["no workspace registrations."],
+    )
+
+
+def do_workspace_forget(session: Session, name: str):
+    """Drop one jj workspace registration. Never removes the on-disk directory.
+
+    The D2 rule, applied to the new verb: a registration alone does not prove gitman created the
+    directory, so `forget` keeps the checkout and only drops the jj row.
+    `_cleanup_workspace(..., keep_foreign=True)` is the established "forget the row, keep the dir,
+    say so" path — this verb routes through it rather than writing a second removal policy.
+    """
+    from gitman.invariants import canonical_guard
+    from gitman.models import IntentResult
+
+    require_trunk(session.config)
+    rec = next((w for w in session.ws.workspaces() if w.name == name), None)
+    if rec is None:
+        raise GitmanError(f"no workspace '{name}' is registered.", exit_code=3)
+    if name == session.ws.name:
+        raise GitmanError(
+            f"cannot forget workspace '{name}' — it is the workspace this command runs in.",
+            exit_code=1,
+        )
+    with canonical_guard(session, "workspace") as canon:
+        notes = _cleanup_workspace(session, name, keep_foreign=True)
+    return IntentResult(
+        intent="workspace forget",
+        outcome="FORGOTTEN",
+        messages=[f"forgot workspace registration '{name}'."],
+        notes=notes + canon.notes,
+        undo_command="gitman undo",
+        state=canon.state,
+    )
+
+
+def do_workspace_prune(session: Session):
+    """Retire the registrations that are provably unused: no live lane and an empty `@`.
+
+    A leftover registration blocks a later `start` of the same name and holds an unused checkout.
+    Only the safe ones are taken — a name that is still a live lane, or a workspace whose committed
+    `@` holds a non-empty change, is left alone. Like `forget`, prune routes through
+    `_cleanup_workspace(..., keep_foreign=True)`: it drops the jj row and keeps the directory. A
+    snapshot of a foreign workspace is deliberately NOT taken — that would publish an unbookmarked
+    commit the primary workspace reads as a stray — so a directory with uncommitted edits keeps its
+    files even when its registration is dropped.
+    """
+    from gitman.invariants import canonical_guard
+    from gitman.lanes import lane_names
+    from gitman.models import IntentResult
+
+    trunk = require_trunk(session.config)
+    with canonical_guard(session, "workspace") as canon:
+        live = lane_names(session, trunk)
+        view = session.view()
+        targets: list[str] = []
+        for w in session.ws.workspaces():
+            if w.name == session.ws.name or w.name in live:
+                continue
+            if not view.resolve(w.wc_commit_id).is_empty:
+                continue  # a committed, non-empty @ — real work
+            targets.append(w.name)
+        actions: list[str] = []
+        for name in sorted(targets):
+            actions.extend(_cleanup_workspace(session, name, keep_foreign=True))
+            actions.append(f"pruned workspace registration '{name}'.")
+    if not targets:
+        return IntentResult(
+            intent="workspace prune",
+            outcome="NOOP",
+            messages=["no empty, laneless workspace registrations."],
+            notes=canon.notes,
+        )
+    return IntentResult(
+        intent="workspace prune",
+        outcome="PRUNED",
+        messages=actions,
+        notes=canon.notes,
+        undo_command="gitman undo",
+        state=canon.state,
+    )
+
+
+# Deprecated function names (project 46 S6). The verbs are `describe` and `repair`; these keep
+# in-process callers and old test fixtures working while the CLI aliases warn. New code uses the
+# new names.
+do_save = do_describe

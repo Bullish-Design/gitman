@@ -99,7 +99,7 @@ class Session:
 
         The read reflects on-disk edits. A *stale* `@` cannot be snapshotted (pyjutsu would raise
         `StaleWorkingCopyError`); we skip the snapshot so the caller can report staleness instead
-        of crashing (`status`'s honesty note; recovery is `gitman reconcile`).
+        of crashing (`status`'s honesty note; recovery is `gitman repair`).
         """
         if not self.ws.is_stale():
             self.ws.snapshot()
@@ -135,7 +135,7 @@ class Session:
         **Why swallowing is safe here.** The export is best-effort by design — with fractal lane
         names, `refs/heads/A` blocks `refs/heads/A/x` and the whole call raises. The report has
         already been emitted from jj, which is authoritative, and the next `status` reports
-        whatever this left behind, naming `gitman reconcile`. Nothing is silenced except the
+        whatever this left behind, naming `gitman repair`. Nothing is silenced except the
         write attempt.
         """
         try:

@@ -185,7 +185,7 @@ def test_subtask_builds_nested_tree(tmp_path: Path):
 
     do_switch(_sess(work), "T")
     r = do_subtask(_sess(work), "api")
-    assert r.intent == "subtask"
+    assert r.intent == "start"  # the verb `subtask` aliases (project 46 S6)
     assert any("stacked on 'T'" in m for m in r.messages), r.messages
     assert (work / "t.txt").read_text() == "t\n"  # carries T's tree
     (work / "api.txt").write_text("api\n")
@@ -251,11 +251,11 @@ def test_orphan_reported_not_crash(tmp_path: Path):
     assert dep is not None
     assert dep.orphaned is True
     assert dep.base is None  # name-parent gone → trunk-based for range purposes
-    assert any("orphan" in n.lower() and "reconcile" in n for n in state.notes), state.notes
+    assert any("orphan" in n.lower() and "repair" in n for n in state.notes), state.notes
 
     text = render_status(state)
     assert "ORPHANED" in text
-    assert "reconcile" in text
+    assert "repair" in text
 
 
 # --- input sugar: `/` normalises to `+` at the CLI boundary ----------------------------

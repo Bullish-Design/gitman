@@ -20,30 +20,34 @@ _GLYPH = {OK: "ok ", WARN: "!! ", FAIL: "XX "}
 # order `state.py` composes `off_canonical` in.
 _STATUS_BY_KIND: dict[str, tuple[str, str]] = {
     # A locally-conflicted trunk (jj vs colocated git) is NOT the origin-divergence case — both
-    # read as trunk breakage, but `pull` cannot resolve a jj↔git conflict; only `reconcile` can.
+    # read as trunk breakage, but `sync --trunk` cannot resolve a jj↔git conflict; only `repair`
+    # can.
     "trunk-conflicted": (
         "DIVERGED",
-        "Recover: `gitman reconcile`  — keeps jj's side as trunk, adopts git's side into a lane.",
+        "Recover: `gitman repair`  — keeps jj's side as trunk, adopts git's side into a lane.",
     ),
-    "trunk-diverged": ("DIVERGED", "Recover: `gitman pull`  — rebase your local lands onto origin/<trunk>."),
-    "lane-conflicted": ("OFF-CANONICAL", "Recover: `gitman reconcile`  — resolve the conflicted lane bookmark."),
-    "stray-change": ("OFF-CANONICAL", "Recover: `gitman reconcile`  — adopt it into a lane, or abandon it."),
+    "trunk-diverged": (
+        "DIVERGED",
+        "Recover: `gitman sync --trunk`  — rebase your local lands onto origin/<trunk>.",
+    ),
+    "lane-conflicted": ("OFF-CANONICAL", "Recover: `gitman repair`  — resolve the conflicted lane bookmark."),
+    "stray-change": ("OFF-CANONICAL", "Recover: `gitman repair`  — adopt it into a lane, or abandon it."),
     "lane-non-linear": ("OFF-CANONICAL", f"Recover: {REGISTRY['lane-non-linear'].manual}."),
     # Stage 3d gave this kind a real repair, so the hint names the repair, not the manual fallback
-    # — `manual` is now the genuine-fork residue, which only `reconcile` itself can report on
+    # — `manual` is now the genuine-fork residue, which only `repair` itself can report on
     # (it is the verb that knows the content relation).
     "lane-divergent": (
         "OFF-CANONICAL",
-        "Recover: `gitman reconcile`  — classifies the lane against its forge twin by content.",
+        "Recover: `gitman repair`  — classifies the lane against its forge twin by content.",
     ),
-    # Not "re-sync refs to jj" any more — reconcile now heals in whichever direction the drift
+    # Not "re-sync refs to jj" any more — repair now heals in whichever direction the drift
     # runs, adopting git-only history instead of discarding it (issue 31).
     "ref-mismatched": (
         "DESYNCHRONIZED",
-        "Recover: `gitman reconcile`  — reconcile jj and colocated git; no commits are discarded.",
+        "Recover: `gitman repair`  — heal jj and colocated git; no commits are discarded.",
     ),
 }
-_DEFAULT_STATUS = ("OFF-CANONICAL", "Recover: `gitman reconcile`  — adopt it into a lane, or abandon it.")
+_DEFAULT_STATUS = ("OFF-CANONICAL", "Recover: `gitman repair`  — adopt it into a lane, or abandon it.")
 
 
 def render_doctor(report: DoctorReport) -> str:
@@ -94,7 +98,7 @@ def _lane_line(lane: Lane, current: str | None) -> str:
     # A conflicted lane bookmark (head is None) names no single commit — show the divergence, not a
     # diff summary, and point at the recovery verb.
     if lane.head is None:
-        counts = "CONFLICTED (diverged from origin — `gitman reconcile`)"
+        counts = "CONFLICTED (diverged from origin — `gitman repair`)"
     else:
         plural = "change" if lane.change_count == 1 else "changes"
         counts = f"{lane.change_count} {plural}, {_diff_str(lane.insertions, lane.deletions)}"
@@ -102,7 +106,7 @@ def _lane_line(lane: Lane, current: str | None) -> str:
     if lane.orphaned:
         # I3′: name-parent deleted out-of-band — the node is valid but its stack link is dangling.
         parent = name_parent(lane.name)
-        extra.append(f"ORPHANED (name-parent '{parent}' gone — `gitman reconcile`)")
+        extra.append(f"ORPHANED (name-parent '{parent}' gone — `gitman repair`)")
     elif lane.base:
         extra.append(f"↳ on {lane.base}")  # fractal lanes: this lane is stacked on <base>
     if lane.workspace:
@@ -110,11 +114,11 @@ def _lane_line(lane: Lane, current: str | None) -> str:
     if lane.conflict and lane.head is not None:
         extra.append("CONFLICT (not blocked — resolve later)")
     if lane.non_linear:
-        extra.append("NON-LINEAR (merge commit — `gitman reconcile`)")
+        extra.append("NON-LINEAR (merge commit — `gitman repair`)")
     if lane.divergent:
-        extra.append("DIVERGENT (change-id → multiple commits — `gitman reconcile`)")
+        extra.append("DIVERGENT (change-id → multiple commits — `gitman repair`)")
     if lane.state == LaneState.merged:
-        extra.append("merged on the forge — `gitman pull` retires it locally")
+        extra.append("merged on the forge — `gitman sync --trunk` retires it locally")
     if lane.pr:
         extra.append(f"PR #{lane.pr.number}")
     if lane.behind:
@@ -160,7 +164,7 @@ def render_status(state: RepoState) -> str:
         lines.extend(f"     {path}" for path in shown)
         if len(state.foreign_paths) > len(shown):
             lines.append(f"     … and {len(state.foreign_paths) - len(shown)} more")
-        lines.append("   Another session may be working here. `gitman save` describes ALL of it —")
+        lines.append("   Another session may be working here. `gitman describe` describes ALL of it —")
         lines.append("   carve theirs out first: `gitman split --paths <theirs> --into parked/other`.")
     if not state.lanes:
         lines.append("No lanes yet — `gitman start <name>` to begin.")
@@ -170,7 +174,7 @@ def render_status(state: RepoState) -> str:
     relation = state.trunk.relation
     if relation in ("forge-ahead", "diverged"):
         lines.append("")
-        lines.append(f"Recover: `gitman pull`  — your {state.trunk.name} is behind origin.")
+        lines.append(f"Recover: `gitman sync --trunk`  — your {state.trunk.name} is behind origin.")
     elif relation == "local-ahead" and state.trunk.ahead_remote:
         lines.append("")
         lines.append(f"Recover: `gitman push`  — publish your local {state.trunk.name} to origin.")

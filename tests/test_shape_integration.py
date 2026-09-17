@@ -15,7 +15,7 @@ from pyjutsu import Workspace
 
 from gitman.config import GitmanConfig
 from gitman.core import GitmanError, do_save, do_shape, do_start, do_undo
-from gitman.reconcile import do_reconcile
+from gitman.repair import do_reconcile
 from gitman.session import Session
 from gitman.state import capture_state
 

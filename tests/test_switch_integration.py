@@ -118,7 +118,7 @@ def test_switch_refuses_to_strand_unnamed_dirty_work(tmp_path: Path):
         do_switch(_sess(tmp_path), "lane-a")
     assert exc.value.exit_code == 1
     msg = str(exc.value)
-    assert "save" in msg and "start" in msg and "abandon" in msg
+    assert "describe" in msg and "start" in msg and "abandon" in msg
 
 
 # --- undo round-trip + R3 hint (slice 3) ---------------------------------------------

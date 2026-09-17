@@ -23,7 +23,7 @@ from gitman.config import GitmanConfig
 from gitman.core import do_abandon, do_save, do_start, do_undo
 from gitman.doctor import FAIL, OK, run_doctor
 from gitman.init import do_init
-from gitman.reconcile import do_reconcile
+from gitman.repair import do_reconcile
 from gitman.session import Session
 from gitman.state import orphaned_git_head
 from gitman.version import do_version
@@ -96,7 +96,7 @@ def test_doctor_fails_on_a_stranded_head(tmp_path: Path):
 
     check = _check(run_doctor(tmp_path), "colocated-head")
     assert check.level == FAIL
-    assert "gitman reconcile" in check.detail  # names the recovery
+    assert "gitman repair" in check.detail  # names the recovery
 
 
 def test_reconcile_repairs_a_stranded_head(tmp_path: Path):
@@ -105,7 +105,7 @@ def test_reconcile_repairs_a_stranded_head(tmp_path: Path):
 
     result = do_reconcile(Session.load(tmp_path), abandon_=False)
 
-    assert result.outcome == "RECONCILED"
+    assert result.outcome == "REPAIRED"
     assert any(stranded[:12] in m for m in result.messages)  # reports the id it moved off
     session = Session.load(tmp_path)
     assert orphaned_git_head(session.view(), session.ws) is None

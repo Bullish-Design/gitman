@@ -1,11 +1,11 @@
-"""The registry's other half: one callable per reconcile-repairable anomaly kind (issue 44 stage
+"""The registry's other half: one callable per repair-repairable anomaly kind (issue 44 stage
 3f, guide §3.13).
 
-`anomalies.REGISTRY` names which intent repairs each kind (`repair="reconcile"` for five of
+`anomalies.REGISTRY` names which intent repairs each kind (`repair="repair"` for five of
 them), but until this module nothing *read* that field — it was an assertion about the world,
-not a wiring into it. `REPAIRS` is the table `do_reconcile` actually dispatches through, and the
+not a wiring into it. `REPAIRS` is the table `do_repair` actually dispatches through, and the
 loop at the bottom is a two-way, import-time assertion that `REGISTRY` and `REPAIRS` agree:
-a kind whose registry row says `repair="reconcile"` with no entry here fails the *import*, not a
+a kind whose registry row says `repair="repair"` with no entry here fails the *import*, not a
 livelocked recovery verb — the same trick `anomalies.py:112` already plays for `repair or manual`.
 
 Each repair does its own precise survey (`find_strays`, `find_divergent_lane_twins`,
@@ -86,10 +86,10 @@ def _repair_colocated_record(
     `git_import` re-reads git's current `HEAD`/refs into jj's view, which re-establishes both;
     `sync_colocated` can then move the checkout. Runs after `_repair_refs` (Trap 2, guide §3.13.2 —
     its own possible import must land first) and is best-effort throughout: a repo that cannot
-    self-heal here must still let `reconcile` finish its other repairs.
+    self-heal here must still let `repair` finish its other repairs.
 
-    Every row in `REPAIRS_ORDER` runs unconditionally whenever `reconcile` has ANY work to do
-    (`do_reconcile`'s dispatch loop, not gated per-kind) — so, unlike `_repair_refs`, this one must
+    Every row in `REPAIRS_ORDER` runs unconditionally whenever `repair` has ANY work to do
+    (`do_repair`'s dispatch loop, not gated per-kind) — so, unlike `_repair_refs`, this one must
     survey its OWN condition before doing anything: `git_import` is not a no-op like
     `sync_colocated_refs` is when nothing is desynced, and running it unconditionally disturbed
     unrelated repairs (lane-divergent's careful duplicate-then-abandon sequencing) unless nothing
@@ -112,7 +112,7 @@ def _repair_colocated_record(
         session.sync_colocated()
         actions.append("re-synced jj's record of the colocated git HEAD/refs.")
     except PyjutsuError as exc:
-        actions.append(f"colocated git checkout not re-synced ({exc}) — run `gitman reconcile` again.")
+        actions.append(f"colocated git checkout not re-synced ({exc}) — run `gitman repair` again.")
 
 
 def _repair_legacy_lane_names(
@@ -125,7 +125,7 @@ def _repair_legacy_lane_names(
 
     A workspace registered under the OLD name is deliberately **not** moved: gitman never touches
     a `@` in a foreign workspace (the same rule `do_land`'s fold-refusal enforces), and this
-    reconcile call may be running from a completely different workspace. Reports it as an honest
+    repair call may be running from a completely different workspace. Reports it as an honest
     note instead of silently risking uncommitted on-disk edits there.
     """
     from gitman.lanes import normalise_lane_name
@@ -135,7 +135,7 @@ def _repair_legacy_lane_names(
     if not legacy:
         return
     workspace_names = {w.name for w in session.ws.workspaces()}
-    with session.ws.transaction("gitman:reconcile-rename-legacy-lane", auto_snapshot=False) as tx:
+    with session.ws.transaction("gitman:repair-rename-legacy-lane", auto_snapshot=False) as tx:
         for old in legacy:
             new = normalise_lane_name(old)
             commit_id = view.resolve(old).commit_id
@@ -146,7 +146,7 @@ def _repair_legacy_lane_names(
                 actions.append(
                     f"lane '{new}' has a workspace still registered as '{old}' — not moved "
                     f"automatically (its on-disk `@` may hold uncommitted edits); cd there, "
-                    f"`gitman save` any pending work, then re-run `gitman reconcile`."
+                    f"`gitman describe` any pending work, then re-run `gitman repair`."
                 )
 
 
@@ -197,7 +197,7 @@ def _repair_strays(
         # 06 §G2). A stray under a tag or an untracked remote bookmark is immutable since pyjutsu
         # 0.16, so `--abandon` can refuse; report which protection fired rather than override it
         # (project 34, lane 6c — `ignore_immutable=True` appears nowhere in gitman).
-        with session.ws.transaction("gitman:reconcile", auto_snapshot=False) as tx:
+        with session.ws.transaction("gitman:repair", auto_snapshot=False) as tx:
             for change in strays:
                 cid = _target(change)
                 if abandon_:
@@ -232,7 +232,7 @@ def _resolve_lane_twin(session: Session, twin, keep: KeepSide | None, abandon_: 
       * `forge-ahead` — the local side's content is wholly inside the forge side. Same argument,
         mirrored: move the lane onto the forge commit, then abandon the local one.
       * `diverged` / `None` (the content check could not run — treat it as `diverged`) — each side
-        may hold content the other lacks, so no automatic choice is safe. `reconcile` refuses and
+        may hold content the other lacks, so no automatic choice is safe. `repair` refuses and
         reports; `--keep local|origin` is the operator's explicit choice, and even then the losing
         side is DUPLICATED onto its own `adopted-<commit>` lane first (a duplicate carries a NEW
         change-id, so the divergence still clears) unless `--abandon` says to drop it — exactly
@@ -258,7 +258,7 @@ def _resolve_lane_twin(session: Session, twin, keep: KeepSide | None, abandon_: 
     # `duplicate` re-creates it with a fresh change-id, which is what lets it stay visible as its
     # own lane without re-tripping the divergence it is being pulled out of.
     rescue = twin.relation in ("diverged", None) and not abandon_
-    with session.ws.transaction("gitman:reconcile", auto_snapshot=False) as tx:
+    with session.ws.transaction("gitman:repair", auto_snapshot=False) as tx:
         rescued: str | None = None
         if rescue:
             from gitman.lanes import adopted_lane_name
@@ -338,16 +338,16 @@ REPAIRS_ORDER: tuple[str, ...] = (
 
 
 def assert_registry_agrees(registry: dict, repairs: dict) -> None:
-    """The two-way check: `registry` and `repairs` must name exactly the same `repair="reconcile"`
+    """The two-way check: `registry` and `repairs` must name exactly the same `repair="repair"`
     kinds. Factored out of the module-level call below so a test can prove it bites — pass it a
-    registry with a bogus `repair="reconcile"` row and no matching `repairs` entry and it raises,
+    registry with a bogus `repair="repair"` row and no matching `repairs` entry and it raises,
     the same way a real forgotten callable would fail *this module's import*, not a livelocked
     recovery verb (issue 44 stage 3f, guide §3.13.2)."""
     for slug, kind in registry.items():
-        if (kind.repair == "reconcile") != (slug in repairs):
+        if (kind.repair == "repair") != (slug in repairs):
             raise AssertionError(
                 f"{slug}: registry says repair={kind.repair!r} but repairs "
-                f"{'has' if slug in repairs else 'lacks'} it — a kind cannot claim `reconcile` as its "
+                f"{'has' if slug in repairs else 'lacks'} it — a kind cannot claim `repair` as its "
                 f"repair without a callable registered here, or vice versa."
             )
 

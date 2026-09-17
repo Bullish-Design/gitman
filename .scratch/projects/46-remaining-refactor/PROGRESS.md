@@ -232,3 +232,64 @@ refusal. Suite: 411 passed (401 after S3 + 10 new). `ruff check` clean.
 points at the existing `split`. W5 (verify scoped to the lane) stays testee's problem.
 
 **Next:** S6 (verb consolidation) — S3 has landed, so it is unblocked.
+
+## S6 — done (landed, pushed)
+
+`GUIDE_S6_verb_consolidation.md`, issue 44 G5 / §7. The widest stage so far, and the only one that
+changes the command surface a consumer sees. Suite: 422 passed (411 after S4 + 11 new). `ruff
+check` clean.
+
+**The alias channel, built once (`cli.py`).** `_VERB_ALIASES` is a table of `(old, (new,
+injected_flags))`; one loop registers each as a hidden Typer command. The alias re-enters the
+Typer app with the replacement plus the caller's own tokens, so every option and the exit code
+pass through unchanged, and appends a note naming the replacement. Notes go through `_ALIAS_NOTES`
+into `result.notes` — the report is the interface, and `--json` consumers see them. A refusal
+raised through an alias never reaches `_finish_intent`, so `_refusal_result` drains the note too.
+`add_help_option=False` makes `gitman <old> --help` forward and print the replacement's help.
+`subtask` is the one special forwarder: it must qualify its leaf with the current lane name, which
+argv alone cannot express, so it is a hidden command that calls `do_subtask` directly (its
+single-segment guard lives there, on the alias path only, exactly as the guide requires).
+
+**The renames, each behind its alias.**
+
+- `save` → `describe` (the report's intent follows: `do_describe`, outcome `DESCRIBED`).
+- `reconcile` → `repair` (module `reconcile.py` → `repair.py`; `do_repair`; outcome `REPAIRED`).
+  The registry's `repair="reconcile"` rows became `repair="repair"`, and every user-facing
+  `gitman reconcile` string became `gitman repair`. `do_reconcile`/`do_save` remain as module
+  aliases so existing in-process callers and fixtures keep working.
+- `subtask` → hidden alias of `start`; the report's intent is now `start`.
+- `pull` and `catchup` disappear into `sync`: `sync --trunk` is today's `pull`, and
+  `sync --trunk --all` is today's `catchup`. **This is the recorded answer to the guide's
+  question**: `catchup` folded into `sync --trunk --all`, because its only extra over `pull` is
+  refreshing every *other* stale workspace, which is what `--all` adds. `do_pull`'s body is
+  unchanged (S1's outer lock and post-guard delete-push preserved); `do_catchup` is a thin
+  deprecated wrapper. `push` stays.
+
+**One deliberate internal name kept.** `do_pull` still passes the gate intent `"pull"` to
+`canonical_guard`, and `anomalies.ALL_MUTATING` still lists it. The gate's intent strings are not
+the verb surface: `trunk-diverged` must let its own repair through (`blocks=ALL_MUTATING -
+{"pull"}`), and `pull` is that repair's internal spelling. Renaming it to `sync` would have let
+plain lane-`sync` escape the diverged-trunk block — a behaviour change this stage must not make.
+`describe` replaced `save` in `ALL_MUTATING`, and `workspace` was added.
+
+**The `workspace` noun (issue 43 D3).** A second subgroup: `workspace list` marks registrations
+with no live lane, `workspace forget <name>` drops the jj row, and `workspace prune` drops every
+empty, laneless registration. Both mutating verbs route through `_cleanup_workspace`'s
+`keep_foreign=True` path — they never `rmtree` a directory (`forget`/`prune` drop the row and keep
+the checkout; the note names it). `prune` reads emptiness from the **committed** `@`
+(`WorkspaceInfo.wc_commit_id` → `is_empty`), never by snapshotting a foreign workspace: a snapshot
+there publishes an unbookmarked commit the primary workspace reads as a stray, and the
+postcondition then rolls the whole prune back (measured; the first implementation did exactly
+that). The consequence is recorded honestly: a directory with unsnapshotted edits keeps its files,
+but its registration can still be pruned. `capture_state` gained a `status` note naming laneless
+registrations, so they are visible before they refuse the next `start`.
+
+**Doc updates.** `AGENTS.md`, `.agents/skills/gitman/SKILL.md`, `docs/JUJUTSU_PRIMER.md` and
+`docs/USING_GITMAN.md` use the new verbs. `GITMAN_CONCEPT.md` is deliberately untouched — S8 owns
+it, and the drift test will assert it against the shipped verb list.
+
+**Not done, deliberately:** no deprecation *deadline* is attached to the aliases (no version at
+which they are removed). The guide asks only that the old names warn and work; a removal schedule
+is a separate decision, and hard removal is the trap `[version]` sprang in 0.5.0.
+
+**Next:** S7 (`Plan` as a value) — now unblocked.

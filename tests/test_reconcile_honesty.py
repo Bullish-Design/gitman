@@ -17,7 +17,7 @@ from pyjutsu import Workspace
 
 from gitman.config import GitmanConfig
 from gitman.init import do_init
-from gitman.reconcile import do_reconcile
+from gitman.repair import do_reconcile
 from gitman.session import Session
 from gitman.state import capture_state
 

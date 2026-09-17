@@ -24,7 +24,7 @@ from gitman.core import (
     do_undo,
 )
 from gitman.lanes import current_lane
-from gitman.reconcile import do_reconcile
+from gitman.repair import do_reconcile
 from gitman.session import Session
 from gitman.state import capture_state
 

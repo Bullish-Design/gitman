@@ -5,7 +5,7 @@ whether the forge already merged it.
 bookmark, and `capture_state` enumerates lanes from live bookmarks — a finished lane stops being a
 lane, it does not change state). What was genuinely missing is a timestamp, and one state that IS
 observable: `merged` — the forge merged the lane's PR, and it is only sitting locally awaiting
-`gitman pull` to retire it.
+`gitman sync --trunk` to retire it.
 """
 
 from __future__ import annotations
@@ -82,7 +82,7 @@ def test_created_at_survives_a_rebase_and_updated_at_moves(tmp_path: Path):
 
 def test_forge_merged_lane_reports_merged(tmp_path: Path):
     """A published lane whose head is an ancestor of trunk@origin reports `merged`, and the
-    report names `gitman pull` as the next step."""
+    report names `gitman sync --trunk` as the next step."""
     work, remote, ws = _with_remote(tmp_path)
     _make_lane(ws, work, "m0", [("a.txt", "A\n")])  # publish=True by default
     _forge_merge_commit(remote, tmp_path, "m0")  # merge-commit: keeps the branch, folds into main
@@ -93,7 +93,7 @@ def test_forge_merged_lane_reports_merged(tmp_path: Path):
     assert lane.state == LaneState.merged
 
     report = render_status(state)
-    assert "gitman pull" in report
+    assert "gitman sync --trunk" in report
     assert "merged on the forge" in report
 
 

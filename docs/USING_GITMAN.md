@@ -107,30 +107,31 @@ existing trunk branch, and `gitman start` adopts any uncommitted work into a lan
 devenv shell -- gitman status                 # trunk + all lanes (canonical / off-canonical)
 devenv shell -- gitman start fix-thing        # new lane (add --workspace to isolate it)
 # ...edit files...
-devenv shell -- gitman save -m "fix the thing"
+devenv shell -- gitman describe -m "fix the thing"
 devenv shell -- gitman sync                    # fetch trunk + rebase this lane
 devenv shell -- gitman publish                 # push the lane (branch = lane name); verify hook runs first
 devenv shell -- gitman land fix-thing          # fold into trunk LOCALLY, advance trunk, retire the lane
 ```
 
 Safety net: `gitman undo` (revert the last intent), `gitman resolve` (surface conflicts —
-never blocking), `gitman reconcile` (recover from off-canonical).
+never blocking), `gitman repair` (recover from off-canonical).
 
 ### Trunk ↔ origin (the single local-authored model)
 
 Trunk is **local-authored**: gitman is the sole writer of trunk SHAs. `land` folds a lane into local
-trunk; origin is a mirror you reach by fast-forward `push`. `pull` integrates a genuinely-moved origin.
+trunk; origin is a mirror you reach by fast-forward `push`. `sync --trunk` integrates a
+ genuinely-moved origin.
 
 ```bash
 devenv shell -- gitman remote add <url>        # bootstrap a remote (in-process; never touches git HEAD)
-devenv shell -- gitman push                    # publish local trunk → origin (strict FF; refuses non-FF → pull)
-devenv shell -- gitman pull                    # integrate a moved origin/<trunk> (rebases un-pushed lands; never drops work)
+devenv shell -- gitman push                    # publish local trunk → origin (strict FF; refuses → sync --trunk)
+devenv shell -- gitman sync --trunk                    # integrate a moved origin/<trunk> (rebases un-pushed lands; never drops work)
 devenv shell -- gitman untrack <path>          # stop tracking a machine-local file (gitignore + drop from the tree)
 ```
 
 The review flow is `publish → (open a PR for CI/audit) → land → push`: the *merge* is the local `land`
 + FF `push`, so GitHub auto-marks the PR merged — no forge merge button advances trunk. `status` is
-content-aware (`in-sync` / `local-ahead` → `push` / `forge-ahead` → `pull` / `diverged` → `pull`).
+content-aware (`in-sync` / `local-ahead` → `push` / `forge-ahead` / `diverged` → `sync --trunk`).
 `gitman push --reset-origin` is the rare, lease-safe escape for migrating a repo that carries legacy
 re-hash residue.
 
@@ -184,7 +185,7 @@ pre-hook, and land mutations. Gitman releases it before the post-hook.
 
 A pre-hook may start a synchronous generator, but Gitman does not include its
 file changes in the current land. Gitman refuses when the hook changes files.
-`allowed_paths` classifies permitted generated paths; save or reconcile those
+`allowed_paths` classifies permitted generated paths; describe or repair those
 changes, then retry land. A post-hook failure reports that land succeeded and
 returns exit 1. Missing commands and timeouts return exit 2.
 
@@ -192,7 +193,7 @@ returns exit 1. Missing commands and timeouts return exit 2.
 
 ```bash
 gitman version                         # show current version
-gitman version bump <major|minor|patch>   # bump (on a lane) + save a "Bump version" change
+gitman version bump <major|minor|patch>   # bump (on a lane) + describe a "Bump version" change
 gitman release                         # annotated tag vX.Y.Z on trunk → push tag
 ```
 
@@ -213,7 +214,7 @@ is six steps:
 ```bash
 gitman start release-x-y-z
 gitman version bump minor
-gitman save -m "chore: bump version to X.Y.Z"
+gitman describe -m "chore: bump version to X.Y.Z"
 gitman land
 gitman push
 gitman release                         # no level — tags trunk
@@ -228,5 +229,5 @@ structured `RepoState`/result model. Use `--repo <path>` to target a repo other 
 ## 9. The golden rule
 
 Route **all** version control through `gitman`. Raw `jj`/`git` edits break canonicity; if
-that happens, `gitman status` reports **off-canonical** and `gitman reconcile` is the single
+that happens, `gitman status` reports **off-canonical** and `gitman repair` is the single
 recovery path (adopt strays into lanes, or `--abandon` them).

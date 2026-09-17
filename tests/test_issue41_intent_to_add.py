@@ -155,4 +155,4 @@ def test_doctor_warns_on_a_diverged_result(tmp_path: Path, monkeypatch):
     check = _check(run_doctor(d), "colocated-index")
     assert check.level == WARN
     assert "b.txt" in check.detail
-    assert "gitman reconcile" in check.detail
+    assert "gitman repair" in check.detail

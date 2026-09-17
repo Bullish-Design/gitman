@@ -102,8 +102,8 @@ def _trunk_conflicted(view: RepoView, trunk: str) -> bool:
     """True if the local `<trunk>` bookmark is *conflicted* (multiple recorded targets): either
     un-pushed local lands AND origin moved, or jj and the colocated git each holding a different
     commit. `resolve(trunk)` raises against it; `view.bookmarks()` exposes it structurally via
-    `.conflicted` (`len(target_ids) > 1`) — the clean detector, no error-string match. `gitman pull`
-    resolves the origin case (rebasing local lands onto the forge head); `gitman reconcile` resolves
+    `.conflicted` (`len(target_ids) > 1`) — the clean detector, no error-string match. `gitman sync --trunk`
+    resolves the origin case (rebasing local lands onto the forge head); `gitman repair` resolves
     the jj↔git case (jj keeps trunk, git's side becomes a lane). The `adopt --force` verb these
     docs used to name is gone — see `core._advance_trunk`."""
     return any(b.name == trunk and b.remote is None and b.conflicted for b in view.bookmarks())
@@ -348,7 +348,7 @@ def find_divergent_lane_twins(
     `lane-divergent` is detected far more broadly than this: `capture_state` flags a lane when ANY
     commit in its range carries a change-id that resolves to >1 visible commit, wherever the twin
     lives (a stray, an unbookmarked keep-ref leftover, a deeper commit in the range). This survey is
-    deliberately narrower — it names only the shape `reconcile` can actually repair:
+    deliberately narrower — it names only the shape `repair` can actually repair:
 
       * the lane is published (a real `<lane>@<remote>` row, not the colocated `git` backing),
       * neither side is conflicted, so each names exactly one commit,
@@ -356,7 +356,7 @@ def find_divergent_lane_twins(
       * and the forge side is VISIBLE (a rewritten predecessor that jj has already hidden is not a
         divergence — `<lane>@<remote>` pointing at it is the ordinary "local is ahead" state).
 
-    A divergent lane outside this shape gets no repair here, and `reconcile` reports that honestly
+    A divergent lane outside this shape gets no repair here, and `repair` reports that honestly
     rather than claiming a fix (the G0 rule, stage 1).
 
     `lanes`, when given, narrows the candidates to that name set (issue 44 stage 3f, guide
@@ -438,7 +438,7 @@ def orphaned_git_head(view: RepoView, ws: Workspace) -> str | None:
     from some local bookmark. Unreachable therefore means broken, with no false positives from
     ordinary lane work.
 
-    Detection only — `reconcile` owns the repair. Returns `None` on any engine failure, so a
+    Detection only — `repair` owns the repair. Returns `None` on any engine failure, so a
     diagnostic can never crash `status` or `doctor`.
     """
     from pyjutsu import PyjutsuError
@@ -567,7 +567,7 @@ def colocated_record_stale(view: RepoView, ws: Workspace) -> tuple[str | None, l
     reality, which a plain ref/bookmark comparison cannot see (issue 44 S9).
 
     `colocated_ref_desync` compares jj bookmarks against the actual `refs/heads/*` — the two can
-    agree (so `reconcile` reports CLEAN) while jj's *records* of them are still stale:
+    agree (so `repair` reports CLEAN) while jj's *records* of them are still stale:
     `restore_operation` (an `undo`, or a rolled-back postcondition) rewinds jj's memory of git-side
     writes that genuinely happened, leaving `sync_colocated` unable to move `HEAD` (no
     compare-and-swap base) even though the ref itself already matches. Both conditions heal the
@@ -591,7 +591,7 @@ def colocated_record_stale(view: RepoView, ws: Workspace) -> tuple[str | None, l
                 f"git HEAD {head_oid[:12]} lags @'s parent {parent_oid[:12]}"
                 + (f" ({distance} commit(s) behind)" if distance is not None else " (unrelated)")
                 + " — jj's own record of the colocated git state is stale, not a ref/bookmark "
-                "disagreement; `gitman reconcile` re-imports and re-syncs it."
+                "disagreement; `gitman repair` re-imports and re-syncs it."
             )
     except PyjutsuError:
         head_note = None
@@ -641,9 +641,9 @@ def orphaned_by_rewrite(view: RepoView, git_id: str) -> bool:
 
     `classify_ref_desync`'s `rewrite` branch is safe from issue 31's data loss because jj *knows*
     the commit — but "known to jj" is not "reachable from something". After `undo` rewinds past a
-    `reconcile` that imported git-only history, the imported commit is still in jj's index (so it
+    `repair` that imported git-only history, the imported commit is still in jj's index (so it
     classifies as `rewrite`) and is reachable from no bookmark at all (so force-writing the ref
-    leaves the op log as its only referent). That is issue 31's shape relocated from `reconcile`
+    leaves the op log as its only referent). That is issue 31's shape relocated from `repair`
     into `undo`, and it is the hazard F2 asks for protection against.
 
     Reachability, not ancestry: the question is whether some bookmark or the working copy still
@@ -742,7 +742,7 @@ def capture_state(session: Session) -> RepoState:
     #
     # Two ways in, and they need OPPOSITE remedies, so the report must not guess: un-pushed local
     # lands + a moved origin (→ `pull`), or jj and the colocated git each holding a different commit
-    # (→ `reconcile`, which keeps jj's side and adopts git's into a lane). The old message asserted
+    # (→ `repair`, which keeps jj's side and adopts git's into a lane). The old message asserted
     # the origin story unconditionally — it read "un-pushed local lands + origin moved" on repos with
     # no remote at all, and sent the operator to a `pull` that cannot resolve a local conflict.
     # A remote-tracking row for trunk is what actually distinguishes them.
@@ -754,11 +754,11 @@ def capture_state(session: Session) -> RepoState:
         if tracked_on_remote:
             kind = "trunk-diverged"
             reason = f"trunk '{trunk_name}' diverged from {remote_name} (un-pushed local lands + origin moved)."
-            note = f"run `gitman pull` to rebase your local lands onto {remote_name}/{trunk_name}."
+            note = f"run `gitman sync --trunk` to rebase your local lands onto {remote_name}/{trunk_name}."
         else:
             kind = "trunk-conflicted"
             reason = f"trunk '{trunk_name}' is conflicted — jj and colocated git each hold a different commit for it."
-            note = "run `gitman reconcile` — it keeps jj's side as trunk and adopts git's side into a lane."
+            note = "run `gitman repair` — it keeps jj's side as trunk and adopts git's side into a lane."
         return RepoState(
             repo_root=repo_root,
             colocated_git=_is_colocated(repo_root),
@@ -798,7 +798,7 @@ def capture_state(session: Session) -> RepoState:
 
     # A conflicted LANE bookmark is the lane-level analogue of a conflicted trunk: its name can't be
     # resolved as a revset, so it must be read structurally and reported off-canonical (recovery is
-    # `gitman reconcile`), never resolved — else the lane loop below crashes the whole capture, and
+    # `gitman repair`), never resolved — else the lane loop below crashes the whole capture, and
     # with it the precheck of every guarded intent (issue 11). Detected once, up front.
     conflicted = _conflicted_lanes(view, trunk_name)
     # Fractal-lanes F2: a lane's own stats are `parentHead..name`, not `trunk..name` — for a stacked
@@ -921,10 +921,10 @@ def capture_state(session: Session) -> RepoState:
     anomalies: list[Anomaly] = []
     if conflicted:
         # No "diverged" here, by design: render keys the *trunk*-divergence recovery hint on that
-        # word, whereas a conflicted lane's recovery is `gitman reconcile`, not `adopt`.
+        # word, whereas a conflicted lane's recovery is `gitman repair`, not `adopt`.
         detail = (
             f"lane(s) {', '.join(sorted(conflicted))} are conflicted with their pushed branch "
-            f"(likely forge-merged) — run `gitman reconcile`."
+            f"(likely forge-merged) — run `gitman repair`."
         )
         for name in sorted(conflicted):
             anomalies.append(make_anomaly("lane-conflicted", Subject(kind="lane", name=name), detail))
@@ -936,31 +936,31 @@ def capture_state(session: Session) -> RepoState:
         for c in strays:
             anomalies.append(make_anomaly("stray-change", Subject(kind="change", name=c.change_id), detail))
     # H1 (I5): non-linear / divergent lanes. Deliberately keyed on "non-linear" / "divergent" (not
-    # "diverged" — that word keys the trunk-`adopt` render path), each ending in `gitman reconcile`,
+    # "diverged" — that word keys the trunk-`adopt` render path), each ending in `gitman repair`,
     # mirroring the conflicted-lane string above so the recovery pointer is unambiguous.
     non_linear_lanes = sorted(lane.name for lane in lanes if lane.non_linear)
     if non_linear_lanes:
-        detail = f"lane(s) {', '.join(non_linear_lanes)} contain a merge commit (non-linear) — run `gitman reconcile`."
+        detail = f"lane(s) {', '.join(non_linear_lanes)} contain a merge commit (non-linear) — run `gitman repair`."
         for name in non_linear_lanes:
             anomalies.append(make_anomaly("lane-non-linear", Subject(kind="lane", name=name), detail))
     divergent_lanes = sorted(lane.name for lane in lanes if lane.divergent)
     if divergent_lanes:
         detail = (
             f"lane(s) {', '.join(divergent_lanes)} have a divergent change-id "
-            f"(one change → multiple commits) — run `gitman reconcile`."
+            f"(one change → multiple commits) — run `gitman repair`."
         )
         for name in divergent_lanes:
             anomalies.append(make_anomaly("lane-divergent", Subject(kind="lane", name=name), detail))
     # step 13: colocated git-ref desync (round-09 gap B + projects 28/29):
     #   a live bookmark whose refs/heads/<name> exists in git but points elsewhere, or a
     #   leftover ref with no jj bookmark. Must be fed into off_canonical so status never
-    #   says CANONICAL when doctor reports PROBLEMS — the trust gap. Recovery is `reconcile`.
+    #   says CANONICAL when doctor reports PROBLEMS — the trust gap. Recovery is `repair`.
     #   The git refs were synced at the top of capture_state, so current jj↔git agreement
     #   is expected; a mismatch here signals genuine split-brain (external git writes).
     mismatched, leftover = colocated_ref_desync(pre_view, session.ws)
     # Only flag genuinely mismatched bookmarks — a git ref that exists but points
     # elsewhere. Leftover refs (no matching jj bookmark) are common after undo/abandon
-    # and don't cause split-brain; `doctor` still surfaces them, and `reconcile` heals.
+    # and don't cause split-brain; `doctor` still surfaces them, and `repair` heals.
     #
     # Issue 44 stage 4c: split into two kinds by direction (31-RC4), not one merged detail —
     # `classify_ref_desync` already tells adopt from rewrite, and the two calls for opposite
@@ -970,7 +970,7 @@ def capture_state(session: Session) -> RepoState:
     # `ref-lagging`: jj is authoritative, the ref is safe to force, and this is the ordinary shape
     # between two gitman-driven writes once 4d removes the per-intent export. `ref-lagging` is in
     # `NOTE_ONLY_KINDS`, so it never flips `canonical` and never rolls back a postcondition delta —
-    # only a surfaced note, healed the same as everything else by `reconcile`.
+    # only a surfaced note, healed the same as everything else by `repair`.
     ref_lagging_note: str | None = None
     if mismatched:
         adopt, rewrite = classify_ref_desync(pre_view, mismatched)
@@ -980,14 +980,14 @@ def capture_state(session: Session) -> RepoState:
             # number here would be invented.
             detail = (
                 f"{len(adopt)} bookmark(s) out of sync with git — git has history jj hasn't "
-                f"imported on: {names} (`gitman reconcile` adopts it — nothing is discarded)."
+                f"imported on: {names} (`gitman repair` adopts it — nothing is discarded)."
             )
             for name, _local, _remote in adopt:
                 anomalies.append(make_anomaly("ref-mismatched", Subject(kind="ref", name=name), detail))
         if rewrite:
             names = ", ".join(n for n, _, _ in rewrite)
             ref_lagging_note = (
-                f"{len(rewrite)} git ref(s) lag jj: {names} — `gitman reconcile` brings them "
+                f"{len(rewrite)} git ref(s) lag jj: {names} — `gitman repair` brings them "
                 f"forward (jj is authoritative here; nothing is lost)."
             )
             for name, _local, _remote in rewrite:
@@ -1005,7 +1005,7 @@ def capture_state(session: Session) -> RepoState:
         names = ", ".join(record_stale_bookmarks)
         record_bookmarks_note = (
             f"jj's git-tracking record for {names} disagrees with the actual ref (a rewound "
-            f"`undo`/rollback) — `gitman reconcile` re-imports and re-syncs it."
+            f"`undo`/rollback) — `gitman repair` re-imports and re-syncs it."
         )
         for name in record_stale_bookmarks:
             anomalies.append(
@@ -1022,18 +1022,20 @@ def capture_state(session: Session) -> RepoState:
     if record_bookmarks_note is not None:
         notes.append(record_bookmarks_note)
     if session.is_stale():
-        notes.append("working copy is stale — run `gitman reconcile`.")
+        notes.append("working copy is stale — run `gitman repair`.")
     if not has_remote(session.ws):
         notes.append("no git remote — publish/release unavailable.")
     # Content-aware trunk↔origin note (twin-proof — a re-hash twin reads in-sync/local-ahead, so it
     # never fires). `forge-ahead` → `pull` (safe FF; local has nothing to lose). `diverged` → `pull`
     # (it rebases local lands onto origin, preserving local work). `local-ahead` → `push` to publish.
     if relation == "forge-ahead":
-        notes.append(f"{remote_name}/{trunk_name} has new commits local lacks — `gitman pull` to integrate them.")
+        notes.append(
+            f"{remote_name}/{trunk_name} has new commits local lacks — `gitman sync --trunk` to integrate them."
+        )
     elif relation == "diverged":
         notes.append(
             f"local {trunk_name} and {remote_name}/{trunk_name} have diverged (each holds content the "
-            f"other lacks) — `gitman pull` to rebase your lands onto origin."
+            f"other lacks) — `gitman sync --trunk` to rebase your lands onto origin."
         )
     elif relation == "local-ahead":
         notes.append(f"local {trunk_name} is ahead of {remote_name} — `gitman push` to publish it.")
@@ -1048,17 +1050,17 @@ def capture_state(session: Session) -> RepoState:
     elif current_lane is None and trunk_name in (wc.bookmarks or []):
         notes.append("you are on trunk with no active lane — `gitman start <name> --workspace` to begin working.")
     # Fractal-lanes I3′: an orphaned node (its `/`-path name-parent was deleted out-of-band) is still a
-    # valid, resolvable lane — surface it as a note pointing at `reconcile`, never a crash. The tree
+    # valid, resolvable lane — surface it as a note pointing at `repair`, never a crash. The tree
     # render marks the node itself; this names the recovery verb.
     orphans = sorted(lane.name for lane in lanes if lane.orphaned)
     if orphans:
         detail = (
             f"orphaned lane(s) {', '.join(orphans)}: name-parent deleted out-of-band — "
-            f"`gitman reconcile` to re-root (or rename)."
+            f"`gitman repair` to re-root (or rename)."
         )
         notes.append(detail)
         # NOTE_ONLY_KINDS (models.RepoState.canonical/off_canonical): this kind has no repair —
-        # `state.py`'s old note text advertised `reconcile` for it, which is backlog D3 / issue 42
+        # `state.py`'s old note text advertised `repair` for it, which is backlog D3 / issue 42
         # G6 in the flesh (a manual pointer disguised as a repair). It stays advisory-only in 3a.
         for name in orphans:
             anomalies.append(make_anomaly("lane-orphaned", Subject(kind="lane", name=name), detail))
@@ -1073,11 +1075,27 @@ def capture_state(session: Session) -> RepoState:
         detail = (
             f"lane(s) {', '.join(legacy_slash_lanes)} still use the pre-migration '/' path "
             f"separator, which git cannot use as a ref name alongside a sibling prefix — "
-            f"`gitman reconcile` renames them to the '+' separator."
+            f"`gitman repair` renames them to the '+' separator."
         )
         notes.append(detail)
         for name in legacy_slash_lanes:
             anomalies.append(make_anomaly("lane-legacy-name", Subject(kind="lane", name=name), detail))
+
+    # Project 46 S6 / issue 43 D3: a workspace registration with no live lane is invisible until
+    # it refuses the next `start` of that name. Name it here so `workspace list`/`prune`/
+    # `forget` is discoverable. The primary `default` workspace is excluded — it legitimately has
+    # no lane whenever work is not in a `start --workspace` flow.
+    laneless_workspaces = sorted(
+        w.name
+        for w in session.ws.workspaces()
+        if w.name != session.ws.name and w.name != "default" and w.name not in local_names
+    )
+    if laneless_workspaces:
+        names = ", ".join(laneless_workspaces)
+        notes.append(
+            f"workspace registration(s) with no lane: {names} — `gitman workspace list`, then "
+            f"`gitman workspace prune` (empty ones) or `gitman workspace forget <name>`."
+        )
 
     anomalies.sort(key=lambda a: ANOMALY_ORDER.index(a.kind))
 

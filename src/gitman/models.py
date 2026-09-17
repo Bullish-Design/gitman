@@ -25,7 +25,7 @@ ContentRelation = Literal["in-sync", "local-ahead", "forge-ahead", "diverged"]
 # content axis above. See `state.trunk_push_safety`.
 PushSafety = Literal["fast-forward", "twin-rewrite", "drops-remote-commits", "unknown"]
 
-# The operator's explicit choice on a genuine fork (`reconcile --keep`).
+# The operator's explicit choice on a genuine fork (`repair --keep`).
 KeepSide = Literal["local", "origin"]
 
 
@@ -43,7 +43,7 @@ class LaneState(StrEnum):
 
     draft = "draft"  # being edited
     published = "published"  # pushed / PR open
-    merged = "merged"  # the forge merged it; `gitman pull` retires it locally
+    merged = "merged"  # the forge merged it; `gitman sync --trunk` retires it locally
 
 
 class Change(BaseModel):
@@ -133,13 +133,13 @@ class Lane(BaseModel):
     name: str  # = bookmark = git branch (readable)
     base: str | None = None  # the lane this one is stacked on (fractal lanes); None = based on trunk
     depth: int = 0  # task-tree depth = the `/`-path segment count below the root (`T`→0, `T/api`→1)
-    orphaned: bool = False  # name-parent deleted out-of-band (I3′) — reported by `status`/`reconcile`
+    orphaned: bool = False  # name-parent deleted out-of-band (I3′) — reported by `status`/`repair`
     state: LaneState = LaneState.draft
     head: Change | None = None  # None for a *conflicted* lane bookmark — it names no single commit
     workspace: str | None = None  # isolated workspace dir, if any
     conflict: bool = False
-    non_linear: bool = False  # a merge commit sits in this lane's range (I5) — reconcile to linearize
-    divergent: bool = False  # a change-id in this lane resolves to >1 visible commit — reconcile
+    non_linear: bool = False  # a merge commit sits in this lane's range (I5) — repair to linearize
+    divergent: bool = False  # a change-id in this lane resolves to >1 visible commit — repair
     ahead: int = 0  # changes vs the base (a stacked lane's own range parentHead..head)
     behind: int = 0  # commits the base (trunk or parent lane) is ahead of the lane
     change_count: int = 1
@@ -164,7 +164,7 @@ class LaneTwin(BaseModel, frozen=True):
     reason: one word for one meaning. `in-sync` = a content-identical re-hash twin; `local-ahead`
     = the local side holds everything the forge side does, and more; `forge-ahead` = the mirror;
     `diverged` = each side holds content the other lacks (a genuine fork — the one case
-    `reconcile` cannot decide). `None` = the content merge could not run; treat it as `diverged`
+    `repair` cannot decide). `None` = the content merge could not run; treat it as `diverged`
     (never discard on a guess) — rendered as the word `unknown` at the report boundary.
     """
 

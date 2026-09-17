@@ -17,28 +17,28 @@ from gitman.repairs import REPAIRS, REPAIRS_ORDER, assert_registry_agrees
 
 
 def test_registry_and_repairs_agree_both_ways():
-    """Every `repair="reconcile"` row has a callable, and every callable's row says so."""
+    """Every `repair="repair"` row has a callable, and every callable's row says so."""
     for slug, kind in REGISTRY.items():
-        if kind.repair == "reconcile":
+        if kind.repair == "repair":
             assert slug in REPAIRS, f"{slug}: REGISTRY wants reconcile but REPAIRS has no callable"
     for slug in REPAIRS:
-        assert REGISTRY[slug].repair == "reconcile", f"{slug}: REPAIRS has a callable REGISTRY doesn't ask for"
+        assert REGISTRY[slug].repair == "repair", f"{slug}: REPAIRS has a callable REGISTRY doesn't ask for"
 
 
 def test_assertion_bites_on_a_kind_registry_says_reconcile_repairs_but_repairs_lacks():
-    """The mechanism itself: register a bogus kind with `repair="reconcile"` and no matching
+    """The mechanism itself: register a bogus kind with `repair="repair"` and no matching
     `repairs` entry — this is exactly what a forgotten callable looks like, and it must fail
     the assertion `repairs.py` runs at import time (an import error), not livelock a recovery
     verb at runtime."""
     bogus_registry = {
-        "bogus-kind": AnomalyKind(tier="lane", repair="reconcile", blocks=frozenset()),
+        "bogus-kind": AnomalyKind(tier="lane", repair="repair", blocks=frozenset()),
     }
     with pytest.raises(AssertionError, match="bogus-kind"):
         assert_registry_agrees(bogus_registry, REPAIRS)
 
 
 def test_assertion_bites_the_other_direction_too():
-    """A `repairs` entry whose registry row does NOT say `repair="reconcile"` is just as wrong —
+    """A `repairs` entry whose registry row does NOT say `repair="repair"` is just as wrong —
     a callable nothing declares itself as needing."""
     bogus_repairs = dict(REPAIRS)
     bogus_repairs["lane-non-linear"] = REPAIRS["stray-change"]  # REGISTRY says repair=None here
@@ -88,9 +88,9 @@ def test_do_reconcile_dispatches_through_the_table():
     `REPAIRS[kind]`, not a hand-maintained branch per kind."""
     import inspect
 
-    import gitman.reconcile as reconcile_mod
+    import gitman.repair as repair_mod
 
-    src = inspect.getsource(reconcile_mod.do_reconcile)
+    src = inspect.getsource(repair_mod.do_repair)
     assert "REPAIRS_ORDER" in src
     assert "REPAIRS[" in src
     assert "for kind in REPAIRS_ORDER" in src

@@ -17,7 +17,7 @@ from pyjutsu import Workspace
 
 from gitman.config import GitmanConfig
 from gitman.lanes import adopted_lane_name
-from gitman.reconcile import do_reconcile
+from gitman.repair import do_reconcile
 from gitman.session import Session
 from gitman.state import find_divergent_lane_twins
 
@@ -115,7 +115,7 @@ def test_reconcile_keep_over_a_pre_existing_same_named_adopted_lane_does_not_rai
         tx.create_bookmark(decoy_name, "@")
 
     result = do_reconcile(_sess(work), abandon_=False, keep="local")
-    assert result.outcome == "RECONCILED", (result.messages, result.notes)
+    assert result.outcome == "REPAIRED", (result.messages, result.notes)
 
     view = Workspace.load(work).head()
     assert view.resolve(LANE).commit_id == twin.local
@@ -151,7 +151,7 @@ def test_reconcile_keep_rejects_anything_but_local_or_origin():
 
     from gitman.cli import app
 
-    result = CliRunner().invoke(app, ["reconcile", "--keep", "bogus"])
+    result = CliRunner().invoke(app, ["repair", "--keep", "bogus"])
     assert result.exit_code != 0
     assert "--keep" in (result.output or "")
 
@@ -240,7 +240,7 @@ def test_capture_state_is_not_called_once_per_twin(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(state_mod, "capture_state", counting)
 
     result = do_reconcile(_sess(work), abandon_=False)
-    assert result.outcome == "RECONCILED", (result.messages, result.notes)
+    assert result.outcome == "REPAIRED", (result.messages, result.notes)
     # Exactly two — one for the pre-repair `Survey` the stage 3f gate takes (replacing the old
     # raw multi-survey gate; guide §3.13.5 step 2) and one for the final G0 check — never one per
     # twin, which is the invariant this test exists to pin.

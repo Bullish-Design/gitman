@@ -71,6 +71,9 @@ _ctx: dict = {"repo": None, "json": False}
 # the exception after Typer's runtime has unwound, so it cannot ask Click at that point.
 _CURRENT_INTENT: str | None = None
 
+# Deprecation notes set by a hidden verb alias, drained by `_finish_intent` into the report.
+_ALIAS_NOTES: list[str] = []
+
 
 def _version_callback(value: bool) -> None:
     if value:
@@ -116,6 +119,10 @@ def _finish_intent(result) -> None:
     # A retired config table warns on every intent until the owner migrates it. `render_intent`
     # shows `result.notes` only, so this cannot be left to `RepoState`.
     result.notes.extend(load_config(_repo_root()).deprecations)
+    # A deprecated verb alias rides in the report's notes, not on stderr — the report is the
+    # interface (concept §16), and `--json` consumers must see it too (project 46 S6).
+    result.notes.extend(_ALIAS_NOTES)
+    _ALIAS_NOTES.clear()
     if result.state is not None:
         try:
             sync_markdown(result.state)
@@ -249,14 +256,18 @@ def start(
     )
 
 
-@app.command()
+# Deprecated alias (project 46 S6). `subtask` is a special forwarder, not a row in
+# `_VERB_ALIASES`: it must qualify the leaf with the current lane name, which argv alone cannot
+# express. Its single-segment guard is the one thing `subtask` uniquely added, so it lives here.
+@app.command(hidden=True)
 def subtask(
-    name: Annotated[str, typer.Argument(help="Single-segment leaf name; creates `<current-lane>/<name>`.")],
+    name: Annotated[str, typer.Argument(help="Single-segment leaf name; creates `<current-lane>+<name>`.")],
     workspace: Annotated[bool, typer.Option("--workspace", help="Isolate the subtask in its own workspace.")] = False,
 ) -> None:
-    """Fan out a child lane under the current lane: `subtask api` on `T` ≡ `start T/api` (stacks on `T`)."""
+    """Deprecated alias for `start`: `subtask api` on `T` ≡ `start T+api`."""
     from gitman.core import do_subtask
 
+    _ALIAS_NOTES.append(f"'{_CURRENT_INTENT}' is deprecated — use `start` with a `+`-path name (e.g. `start T+api`).")
     _finish_intent(do_subtask(_session(), name, workspace))
 
 
@@ -317,13 +328,13 @@ def shape(
 
 
 @app.command()
-def save(
+def describe(
     message: Annotated[str | None, typer.Option("-m", "--message", help="Describe the current change.")] = None,
 ) -> None:
-    """Describe the current lane's change."""
-    from gitman.core import do_save
+    """Describe the current lane's change (jj already saved the content; this sets the message)."""
+    from gitman.core import do_describe
 
-    _finish_intent(do_save(_session(), message))
+    _finish_intent(do_describe(_session(), message))
 
 
 @app.command()
@@ -376,34 +387,20 @@ def abandon(
 
 @app.command()
 def sync(
-    all_: Annotated[bool, typer.Option("--all", help="Sync all lanes, not just the current one.")] = False,
+    all_: Annotated[bool, typer.Option("--all", help="Every lane (or, with --trunk, every stale workspace).")] = False,
+    trunk: Annotated[bool, typer.Option("--trunk", help="Integrate origin/<trunk> (the old `pull`).")] = False,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Report the plan without mutating.")] = False,
 ) -> None:
-    """Fetch lane branches + rebase the current lane (or all) onto local trunk (never advances trunk)."""
+    """Fetch + rebase: the current lane onto its base, or `--trunk` for origin/<trunk> vs local trunk.
+
+    Plain `sync` rebases the current lane onto its base (parent lane or local trunk). `--all`
+    rebases every lane, parent→child. `--trunk` integrates a moved origin/<trunk> — advance or
+    rebase local trunk, retire/rebase surviving lanes, repark `@` — and with `--all` it also
+    refreshes every stale workspace. `--dry-run` reports the plan without mutating.
+    """
     from gitman.core import do_sync
 
-    _finish_intent(do_sync(_session(), all_))
-
-
-@app.command()
-def catchup(
-    dry_run: Annotated[bool, typer.Option("--dry-run", help="Show what would change, without changing it.")] = False,
-) -> None:
-    """Catch up to origin: fetch + integrate + rebase lanes + refresh stale workspaces.
-    The everyday two-machine verb."""
-    from gitman.core import do_catchup
-
-    _finish_intent(do_catchup(_session(), dry_run=dry_run))
-
-
-@app.command()
-def pull(
-    dry_run: Annotated[bool, typer.Option("--dry-run", help="Report the pull plan without mutating.")] = False,
-) -> None:
-    """Integrate a moved origin/<trunk>: fetch, advance/rebase local trunk (never dropping local work),
-    rebase/retire surviving lanes, repark @."""
-    from gitman.core import do_pull
-
-    _finish_intent(do_pull(_session(), dry_run=dry_run))
+    _finish_intent(do_sync(_session(), all_, trunk_=trunk, dry_run=dry_run))
 
 
 @app.command()
@@ -416,7 +413,7 @@ def push(
         ),
     ] = False,
 ) -> None:
-    """Push local trunk to origin — content-gated strict fast-forward (refuses non-FF → `gitman pull`)."""
+    """Push local trunk to origin — content-gated strict fast-forward (refuses non-FF → `gitman sync --trunk`)."""
     from gitman.core import do_push
 
     _finish_intent(do_push(_session(), reset_origin=reset_origin))
@@ -511,7 +508,7 @@ def init(
 
 
 @app.command()
-def reconcile(
+def repair(
     abandon_: Annotated[bool, typer.Option("--abandon", help="Discard strays instead of adopting them.")] = False,
     keep: Annotated[
         str | None,
@@ -526,15 +523,99 @@ def reconcile(
     Every ref move is reported with both commit ids.
 
     A published lane that diverged from its own forge twin is classified by content. When one side
-    contains the other, reconcile resolves it on its own. When each side holds content the other
+    contains the other, repair resolves it on its own. When each side holds content the other
     lacks it stops and says so; --keep names the side to build on, and the other side is duplicated
     onto its own `adopted-<commit>` lane (or dropped, with --abandon).
     """
-    from gitman.reconcile import do_reconcile
+    from gitman.repair import do_repair
 
     if keep is not None and keep not in ("local", "origin"):
         raise typer.BadParameter("--keep takes 'local' or 'origin'.", param_hint="--keep")
-    _finish_intent(do_reconcile(_session(), abandon_, keep))
+    _finish_intent(do_repair(_session(), abandon_, keep))
+
+
+# --- workspace noun (project 46 S6, step 1; issue 43 D3) ------------------------------
+
+workspace_app = typer.Typer(help="Manage jj workspace registrations (list, forget, prune).", no_args_is_help=True)
+app.add_typer(workspace_app, name="workspace")
+
+
+@workspace_app.command("list")
+def workspace_list() -> None:
+    """List workspace registrations; mark the ones with no live lane."""
+    from gitman.core import do_workspace_list
+
+    _finish_intent(do_workspace_list(_session()))
+
+
+@workspace_app.command("forget")
+def workspace_forget(
+    name: Annotated[str, typer.Argument(help="Workspace registration to drop (its directory is kept).")],
+) -> None:
+    """Drop a jj workspace registration; never removes the directory."""
+    from gitman.core import do_workspace_forget
+
+    _finish_intent(do_workspace_forget(_session(), name))
+
+
+@workspace_app.command("prune")
+def workspace_prune() -> None:
+    """Retire every registration with no live lane and an empty `@`."""
+    from gitman.core import do_workspace_prune
+
+    _finish_intent(do_workspace_prune(_session()))
+
+
+# --- deprecated verb aliases (project 46 S6) ------------------------------------------
+#
+# Every rename ships behind a hidden alias that forwards to the new verb and appends a note
+# naming the replacement (concept §16 — the report is the interface, and `--json` consumers see
+# the note too). The alias re-enters the Typer app with the replacement and the caller's own
+# arguments, so every option and the exit code pass through unchanged; `--repo`/`--json` are
+# re-supplied because the inner invocation reads `_ctx` fresh.
+#
+# `subtask` is not in this table: it qualifies its leaf with the current lane name, which argv
+# alone cannot express. Its hidden command lives above and calls `do_subtask` directly.
+_VERB_ALIASES: dict[str, tuple[str, tuple[str, ...]]] = {
+    "save": ("describe", ()),
+    "reconcile": ("repair", ()),
+    "pull": ("sync", ("--trunk",)),
+    "catchup": ("sync", ("--trunk", "--all")),
+}
+
+
+def _alias_argv(new: str, injected: tuple[str, ...], extra: list[str]) -> list[str]:
+    """The replacement command line: root options first, then the new verb, injected flags, args."""
+    prefix: list[str] = []
+    if _ctx["repo"] is not None:
+        prefix += ["--repo", str(_ctx["repo"])]
+    if _ctx["json"]:
+        prefix.append("--json")
+    return [*prefix, new, *injected, *extra]
+
+
+def _register_alias(old: str, new: str, injected: tuple[str, ...]) -> None:
+    """Register `old` as a hidden command that warns once and forwards to `new`.
+
+    `add_help_option=False` so `gitman <old> --help` forwards and shows the replacement's help
+    rather than the alias's empty one. `ignore_unknown_options`/`allow_extra_args` collect every
+    token (including the replacement's own options) into `ctx.args` for the forward.
+    """
+
+    @app.command(
+        name=old,
+        hidden=True,
+        add_help_option=False,
+        context_settings={"ignore_unknown_options": True, "allow_extra_args": True},
+    )
+    def _alias(ctx: typer.Context) -> None:
+        """Deprecated verb — forwards to its replacement and notes it."""
+        _ALIAS_NOTES.append(f"'{old}' is deprecated — use '{new}'.")
+        raise typer.Exit(code=app(_alias_argv(new, injected, list(ctx.args)), standalone_mode=False))
+
+
+for _old_verb, (_new_verb, _injected_flags) in _VERB_ALIASES.items():
+    _register_alias(_old_verb, _new_verb, _injected_flags)
 
 
 def _refusal_result(exc: GitmanError):
@@ -545,13 +626,17 @@ def _refusal_result(exc: GitmanError):
     boundary instead of at each call site."""
     from gitman.models import IntentResult
 
+    # A refusal raised by an aliased verb never reaches `_finish_intent`, so drain the alias note
+    # here too — the operator must still see which verb replaced the one they typed.
+    notes = [f"Recover: `gitman {r}`" for r in exc.remedies] + _ALIAS_NOTES
+    _ALIAS_NOTES.clear()
     return IntentResult(
         intent=_CURRENT_INTENT or "gitman",
         outcome="REFUSED",
         exit_code=exc.exit_code,
         lane=exc.subject,
         messages=[f"reason: {exc}"],
-        notes=[f"Recover: `gitman {r}`" for r in exc.remedies],
+        notes=notes,
     )
 
 

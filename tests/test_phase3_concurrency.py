@@ -28,7 +28,7 @@ from pyjutsu import Workspace
 
 from gitman.config import GitmanConfig
 from gitman.core import GitmanError, do_abandon, do_land, do_save, do_start, do_subtask, do_sync
-from gitman.reconcile import do_reconcile
+from gitman.repair import do_reconcile
 from gitman.session import Session
 from gitman.state import capture_state
 
@@ -447,7 +447,7 @@ def test_abandon_recursive_keeps_cd_inside_workspace(tmp_path: Path):
 def test_reconcile_refreshes_stale_grandchild_workspace(tmp_path: Path):
     """§3.3: a depth-2 grandchild workspace whose `@` was rewritten out from under it (an out-of-band
     fold/`pull` — modelled here by a scoped op-log rewind, the proven staleness injection) is
-    `is_stale()`, and `gitman reconcile` from INSIDE it refreshes to a non-stale, canonical `@` with a
+    `is_stale()`, and `gitman repair` from INSIDE it refreshes to a non-stale, canonical `@` with a
     rebuilt colocated index and no materialized markers. This is the one genuinely-new reconcile
     mutation (`update_stale` + repark + `sync_colocated`)."""
     work = tmp_path / "work"
@@ -484,7 +484,7 @@ def test_reconcile_refreshes_stale_grandchild_workspace(tmp_path: Path):
 
     # reconcile from INSIDE the grandchild refreshes it.
     r = do_reconcile(_sess(handler_w), abandon_=False)
-    assert r.outcome in ("RECONCILED", "CLEAN"), r.messages
+    assert r.outcome in ("REPAIRED", "CLEAN"), r.messages
     assert "refreshed stale working copy" in " ".join(r.messages)
 
     fresh = _sess(handler_w)

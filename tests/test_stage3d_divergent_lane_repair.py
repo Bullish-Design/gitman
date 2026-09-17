@@ -26,7 +26,7 @@ from pyjutsu import Workspace
 
 from gitman.anomalies import REGISTRY
 from gitman.config import GitmanConfig
-from gitman.reconcile import do_reconcile
+from gitman.repair import do_reconcile
 from gitman.session import Session
 from gitman.state import capture_state, find_divergent_lane_twins
 
@@ -179,7 +179,7 @@ def test_reconcile_resolves_the_contained_cases(
     assert _divergent(before)
 
     result = do_reconcile(_sess(work), abandon_=False)
-    assert result.outcome == "RECONCILED", (result.messages, result.notes)
+    assert result.outcome == "REPAIRED", (result.messages, result.notes)
     assert result.exit_code == 0
     assert any(relation in m for m in result.messages), result.messages
 
@@ -224,7 +224,7 @@ def test_keep_local_rescues_the_forge_side_into_its_own_lane(tmp_path: Path):
     twin = find_divergent_lane_twins(_sess(work), _sess(work).fresh_view(), "main")[0]
 
     result = do_reconcile(_sess(work), abandon_=False, keep="local")
-    assert result.outcome == "RECONCILED", (result.messages, result.notes)
+    assert result.outcome == "REPAIRED", (result.messages, result.notes)
     after = capture_state(_sess(work))
     assert after.canonical is True, after.off_canonical
 
@@ -245,7 +245,7 @@ def test_keep_origin_moves_the_lane_and_rescues_the_local_side(tmp_path: Path):
     twin = find_divergent_lane_twins(_sess(work), _sess(work).fresh_view(), "main")[0]
 
     result = do_reconcile(_sess(work), abandon_=False, keep="origin")
-    assert result.outcome == "RECONCILED", (result.messages, result.notes)
+    assert result.outcome == "REPAIRED", (result.messages, result.notes)
     assert capture_state(_sess(work)).canonical is True
 
     view = Workspace.load(work).head()
@@ -260,7 +260,7 @@ def test_keep_with_abandon_drops_the_losing_side(tmp_path: Path):
     twin = find_divergent_lane_twins(_sess(work), _sess(work).fresh_view(), "main")[0]
 
     result = do_reconcile(_sess(work), abandon_=True, keep="local")
-    assert result.outcome == "RECONCILED", (result.messages, result.notes)
+    assert result.outcome == "REPAIRED", (result.messages, result.notes)
     assert capture_state(_sess(work)).canonical is True
     view = Workspace.load(work).head()
     assert f"adopted-{twin.forge[:8]}" not in {b.name for b in view.bookmarks() if b.remote is None}
@@ -271,14 +271,14 @@ def test_keep_with_abandon_drops_the_losing_side(tmp_path: Path):
 
 def test_registry_row_describes_what_happens_today():
     row = REGISTRY["lane-divergent"]
-    assert row.repair == "reconcile"
+    assert row.repair == "repair"
     # The manual text is the genuine-fork residue, and it must name a flag that exists.
-    assert row.manual == "`gitman reconcile --keep local|origin`"
+    assert row.manual == "`gitman repair --keep local|origin`"
     from typer.testing import CliRunner
 
     from gitman.cli import app
 
-    help_text = CliRunner().invoke(app, ["reconcile", "--help"]).output
+    help_text = CliRunner().invoke(app, ["repair", "--help"]).output
     assert "--keep" in help_text
 
 

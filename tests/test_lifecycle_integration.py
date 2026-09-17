@@ -26,7 +26,7 @@ from gitman.core import (
     do_undo,
     map_pyjutsu_error,
 )
-from gitman.reconcile import do_reconcile
+from gitman.repair import do_reconcile
 from gitman.session import Session
 from gitman.state import capture_state
 
@@ -119,7 +119,7 @@ def test_precheck_is_subject_scoped_not_repo_wide(tmp_path: Path):
     # `save` on `keep` never touches the stray's subject — proceeds despite the repo being
     # off-canonical elsewhere.
     res = do_save(_sess(tmp_path), "again")
-    assert res.outcome == "SAVED"
+    assert res.outcome == "DESCRIBED"
 
     # `land` DOES declare the stray as a subject (land/push are the two intents a stray change-id
     # can quietly corrupt) — still refused. `do_land` catches the guard's refusal itself and
@@ -233,7 +233,7 @@ def test_undo_list_shows_gitman_ops(tmp_path: Path):
     assert res.outcome == "LIST"
     assert res.messages  # non-empty
     assert all("gitman:" in row for row in res.messages)
-    assert any("gitman:save" in row for row in res.messages)
+    assert any("gitman:describe" in row for row in res.messages)
     assert any("gitman:start" in row for row in res.messages)
 
 
@@ -264,7 +264,7 @@ def test_stale_working_copy_refused(tmp_path: Path):
     with pytest.raises(StaleWorkingCopyError) as exc:
         do_save(stale_session, "should refuse")
     assert map_pyjutsu_error(exc.value).exit_code == 1
-    assert "reconcile" in str(map_pyjutsu_error(exc.value))
+    assert "repair" in str(map_pyjutsu_error(exc.value))
 
 
 def test_trunk_rewrite_outside_land_reverts(tmp_path: Path):
@@ -276,7 +276,7 @@ def test_trunk_rewrite_outside_land_reverts(tmp_path: Path):
     trunk_before = capture_state(_sess(tmp_path)).trunk.commit_id
 
     with pytest.raises(GitmanError) as exc:
-        with canonical_tx(_sess(tmp_path), "save") as tx:
+        with canonical_tx(_sess(tmp_path), "describe") as tx:
             tx.set_bookmark("main", "feat")  # illegally advance trunk outside a land
     assert exc.value.exit_code == 1
     # Rollback leaves stale git refs; reconcile heals them.

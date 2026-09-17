@@ -44,7 +44,7 @@ def test_render_status_matches_ref_mismatched_by_kind(tmp_path: Path):
     assert {a.kind for a in state.anomalies} == {"ref-mismatched"}
     text = render_status(state)
     assert "Gitman status — DESYNCHRONIZED" in text
-    assert "gitman reconcile" in text
+    assert "gitman repair" in text
 
 
 def test_render_status_matches_lane_non_linear_by_kind(tmp_path: Path):

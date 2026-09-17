@@ -1,4 +1,4 @@
-"""`gitman reconcile`: the single recovery path from off-canonical (concept §11, §20).
+"""`gitman repair`: the single recovery path from off-canonical (concept §11, §20).
 
 Non-interactive (agent context): it heals off-canonical shapes in one pass — colocated git-ref
 drift, conflicted trunk/lane bookmarks, off-canonical strays, and published lanes diverged from
@@ -27,7 +27,7 @@ def _repair_orphaned_head(session: Session) -> list[str]:
 
     The mutating path now self-heals this at the moment it appears
     (`invariants.repair_git_head`), so reaching here means the repo was left broken by an older
-    gitman, or the self-heal failed. It stays first in `reconcile` because while `HEAD` is
+    gitman, or the self-heal failed. It stays first in `repair` because while `HEAD` is
     unusable every `git_export` raises, so no other healing below can land. Not a `REPAIRS` row:
     it is invisible to `capture_state` (project 29), so no anomaly kind could ever gate it.
     """
@@ -44,7 +44,7 @@ def _repair_orphaned_head(session: Session) -> list[str]:
     return [repaired]
 
 
-def do_reconcile(session: Session, abandon_: bool, keep: KeepSide | None = None):
+def do_repair(session: Session, abandon_: bool, keep: KeepSide | None = None):
     from gitman.invariants import repo_lock, write_undo_checkpoint
     from gitman.models import IntentResult
     from gitman.state import capture_state, colocated_ref_desync, find_divergent_lane_twins, find_strays
@@ -56,13 +56,13 @@ def do_reconcile(session: Session, abandon_: bool, keep: KeepSide | None = None)
         # adopt-time pruning of orphaned `refs/jj/keep/*` and moved it into `ws.gc()`, which also
         # refreshes jj's internal keep-refs. An obsolete keep-ref makes one change_id resolve to two
         # commits, and a divergent change_id dead-ends the very transactions this verb runs. gc is
-        # the documented cure and reconcile is the documented recovery intent, so it belongs here.
+        # the documented cure and repair is the documented recovery intent, so it belongs here.
         #
         # Two placement facts. gc publishes NO operation, so `op_before` stays the right undo anchor
         # and no canonical_guard postcondition sees a phantom op — this is why the call sits in the
         # lock and not inside a guard. And the cutoff is left at pyjutsu's default (two weeks, as
         # `jj util gc`); an aggressive expiry can destroy objects a concurrent writer is mid-write on.
-        # Best-effort: a repo that cannot collect garbage must still be able to reconcile.
+        # Best-effort: a repo that cannot collect garbage must still be able to repair.
         gc_notes: list[str] = []
         try:
             session.ws.gc()
@@ -70,7 +70,7 @@ def do_reconcile(session: Session, abandon_: bool, keep: KeepSide | None = None)
             gc_notes.append(f"garbage collection skipped ({exc}).")
         # A truly-stale `@` (its recorded commit rewritten away — the §1.3 fractal-lanes case, or a
         # `pull` under this workspace) can't be snapshotted by `fresh_view()` and never got refreshed.
-        # Refresh it FIRST (the one genuinely-new reconcile mutation), then heal refs/strays as before.
+        # Refresh it FIRST (the one genuinely-new repair mutation), then heal refs/strays as before.
         refresh_notes = _refresh_stale_working_copy(session, trunk)
         # An orphaned `.git/HEAD` must be repaired BEFORE anything below, because it is the one
         # fault that breaks the tools the rest of this function uses: while it stands, every
@@ -86,7 +86,7 @@ def do_reconcile(session: Session, abandon_: bool, keep: KeepSide | None = None)
             # divergent strays share a change_id, so their `Subject` rows are indistinguishable),
             # and a *pre-existing* trunk conflict (a hand-run `jj git import`, an interrupted run)
             # makes even that raise — the repo is precisely the state the operator is sent here
-            # from, so it must not be the state that makes `reconcile` error out on itself. Skip
+            # from, so it must not be the state that makes `repair` error out on itself. Skip
             # the pre-heal stray sighting in that case; `_repair_refs` clears the conflict first,
             # and `_repair_strays`'s own post-heal scan then sees whatever is left. `leftover`
             # colocated refs are `capture_state`'s one gap (they never flip `canonical` — `doctor`
@@ -105,19 +105,19 @@ def do_reconcile(session: Session, abandon_: bool, keep: KeepSide | None = None)
             if not repairable and not leftover and not refresh_notes and not head_notes:
                 if before.state.canonical:
                     return IntentResult(
-                        intent="reconcile",
+                        intent="repair",
                         outcome="CLEAN",
                         messages=["already canonical — no strays, refs in sync."],
                         notes=gc_notes,
                     )
                 return IntentResult(
-                    intent="reconcile",
+                    intent="repair",
                     outcome="PARTIAL",
                     messages=["no strays, refs in sync — but the repo is still off-canonical."],
                     notes=gc_notes
                     + [
                         f"still off-canonical: {before.state.off_canonical}",
-                        "reconcile has no repair for this shape — this is a gap, not your mistake.",
+                        "repair has no repair for this shape — this is a gap, not your mistake.",
                     ],
                     exit_code=1,
                 )
@@ -157,7 +157,7 @@ def do_reconcile(session: Session, abandon_: bool, keep: KeepSide | None = None)
                     if still_divergent
                     else ["nothing to do."]
                 )
-            write_undo_checkpoint(session.repo_root, op_before, "reconcile")
+            write_undo_checkpoint(session.repo_root, op_before, "repair")
             # Repair the colocated checkout LAST (HEAD + index), as every mutating intent does via
             # `_export_colocated_git`. An import can move trunk well past git's HEAD, and until this
             # runs a bare `git status` shows the whole delta as staged — the repo looks wrecked to
@@ -183,14 +183,19 @@ def do_reconcile(session: Session, abandon_: bool, keep: KeepSide | None = None)
         notes.append(
             f"lane '{twin.lane}' and {twin.remote}/{twin.lane} have genuinely forked "
             f"(local {twin.local[:12]}, forge {twin.forge[:12]}); {len(twin.paths)} path(s) differ"
-            f"{': ' + paths if paths else ''} — neither side contains the other, so `reconcile` will "
+            f"{': ' + paths if paths else ''} — neither side contains the other, so `repair` will "
             f"not choose. Run {REGISTRY['lane-divergent'].manual}."
         )
     return IntentResult(
-        intent="reconcile",
-        outcome="RECONCILED" if canonical else "PARTIAL",
+        intent="repair",
+        outcome="REPAIRED" if canonical else "PARTIAL",
         messages=actions,
         notes=notes,
         exit_code=0 if canonical else 1,
         undo_command="gitman undo",
     )
+
+
+# Deprecated function name (project 46 S6). The verb is `repair`; this keeps in-process callers
+# and the hidden `reconcile` alias working. New code uses `do_repair`.
+do_reconcile = do_repair

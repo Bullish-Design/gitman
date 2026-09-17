@@ -86,7 +86,7 @@ def _absorbed_divergence(tmp_path: Path) -> tuple[Path, Path, str]:
     """The incident's exact shape, built the way it actually arose. Returns (work, remote, foreign).
 
     Local trunk advances on its own line; a foreign commit reaches `origin/main` in parallel,
-    carrying content local already has. `gitman pull` then takes its `keep-local` branch (origin
+    carrying content local already has. `gitman sync --trunk` then takes its `keep-local` branch (origin
     holds no new *content*), which pins trunk to the local side and leaves `main@origin` naming the
     foreign commit. So at push time: origin holds no new content, and one commit local lacks — and
     `main@origin` is **accurate**, not stale.
@@ -97,7 +97,7 @@ def _absorbed_divergence(tmp_path: Path) -> tuple[Path, Path, str]:
     _land_new_commit(work, "more-work", "feature.txt", "feature\n")
     # In parallel, someone raw-commits the same pin content straight onto origin.
     foreign = _foreign_push(remote, tmp_path, "pin.txt", "0.22.0\n", "chore: bump the pin")
-    # `gitman pull` folds it in by content and keeps the local side.
+    # `gitman sync --trunk` folds it in by content and keeps the local side.
     pull = do_pull(_sess(work))
     assert pull.exit_code == 0, pull.messages
     return work, remote, foreign
@@ -145,7 +145,7 @@ def test_push_refuses_to_drop_a_remote_commit(tmp_path: Path):
     body = "\n".join(res.messages)
     assert foreign[:8] in body, body  # the refusal NAMES the commit at stake
     assert "chore: bump the pin" in body, body
-    assert "gitman pull" in body and "--reset-origin" in body, body
+    assert "gitman sync --trunk" in body and "--reset-origin" in body, body
     assert _origin_ref(remote) == before  # origin untouched
 
 

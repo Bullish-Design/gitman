@@ -26,7 +26,7 @@ from gitman.config import GitmanConfig
 from gitman.core import do_abandon, do_land, do_save, do_start
 from gitman.doctor import FAIL, OK, WARN, run_doctor
 from gitman.init import do_init
-from gitman.reconcile import do_reconcile
+from gitman.repair import do_reconcile
 from gitman.session import Session
 from gitman.state import colocated_record_stale, orphaned_git_head
 
@@ -106,7 +106,7 @@ def test_doctor_warns_when_head_lags_at_parent(tmp_path: Path):
     assert check.level == WARN
     assert commit2[:12] in check.detail  # names @'s parent (where HEAD should be)
     assert "commit(s) behind" in check.detail
-    assert "gitman reconcile" in check.detail
+    assert "gitman repair" in check.detail
 
 
 def test_doctor_does_not_warn_on_the_ordinary_self_healing_lag(tmp_path: Path):
@@ -140,7 +140,7 @@ def test_doctor_still_fails_on_a_stranded_head(tmp_path: Path):
     assert orphaned_git_head(Session.load(d).view(), ws) == stranded
     check = _check(run_doctor(d), "colocated-head")
     assert check.level == FAIL
-    assert "reconcile" in check.detail
+    assert "repair" in check.detail
 
 
 def test_reconcile_detects_and_repairs_a_stale_git_head_record(tmp_path: Path):
@@ -155,7 +155,7 @@ def test_reconcile_detects_and_repairs_a_stale_git_head_record(tmp_path: Path):
 
     result = do_reconcile(Session.load(d), abandon_=False)
 
-    assert result.outcome == "RECONCILED", result.messages
+    assert result.outcome == "REPAIRED", result.messages
     session = Session.load(d)
     assert colocated_record_stale(session.view(), ws) == (None, [])
     assert ws.git.head().oid == commit2
@@ -202,4 +202,4 @@ def test_note_only_never_blocks_an_intent(tmp_path: Path):
     (d / "c.txt").write_text("c\n")
     result = do_save(Session.load(d), "add c")
 
-    assert result.outcome == "SAVED", result.messages
+    assert result.outcome == "DESCRIBED", result.messages

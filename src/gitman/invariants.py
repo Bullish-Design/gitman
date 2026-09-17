@@ -148,7 +148,7 @@ def repo_lock(repo_root: Path) -> Iterator[None]:
 
 
 def _assert_fresh(session: Session) -> None:
-    """Refuse to mutate a stale `@` → `StaleWorkingCopyError` (mapped to exit 1 → reconcile).
+    """Refuse to mutate a stale `@` → `StaleWorkingCopyError` (mapped to exit 1 → repair).
 
     `fresh_view()` deliberately *skips* the snapshot when stale (so `status` can report it), and a
     mutating tx with `auto_snapshot=False` would otherwise silently act on the recorded `@`,
@@ -157,14 +157,14 @@ def _assert_fresh(session: Session) -> None:
     if session.is_stale():
         from pyjutsu.errors import StaleWorkingCopyError
 
-        raise StaleWorkingCopyError("working copy is stale — run `gitman reconcile`.")
+        raise StaleWorkingCopyError("working copy is stale — run `gitman repair`.")
 
 
 def _refresh_stale_working_copy(session: Session, trunk: str) -> list[str]:
     """Refresh a truly-stale `@` — its recorded commit was rewritten out from under this workspace.
 
     The fractal-lanes §1.3 case: a *sibling's* fold (or a `pull`) retired the lane this workspace had
-    checked out, so its `@` commit no longer exists. `do_reconcile` is the recovery surface for it —
+    checked out, so its `@` commit no longer exists. `do_repair` is the recovery surface for it —
     `fresh_view()` deliberately SKIPS the snapshot when stale (session.py:96-98, so `status` can report
     staleness instead of crashing), and nothing outside `do_pull` (core.py:1339) calls `update_stale()`.
     Reuse the proven `do_pull` sequence verbatim: `update_stale()` → repark `@` off trunk if it now
@@ -179,7 +179,7 @@ def _refresh_stale_working_copy(session: Session, trunk: str) -> list[str]:
     notes.append("refreshed stale working copy.")
     after = session.view()
     if after.working_copy().commit_id == after.resolve(trunk).commit_id:
-        with session.ws.transaction("gitman:reconcile-repark", auto_snapshot=False) as tx:
+        with session.ws.transaction("gitman:repair-repark", auto_snapshot=False) as tx:
             tx.new(trunk)
         notes.append("reparked @ onto a fresh child of trunk.")
     try:
@@ -363,7 +363,7 @@ def _ref_commit_on_remote(session: Session, commit_id: str) -> bool:
 def sync_colocated_refs(session: Session, *, preserve_orphans: bool = False) -> list[str]:
     """Make jj and the colocated `refs/heads/*` agree **without ever discarding history**.
 
-    The one shared ref-repair path — `reconcile` (gap B healing), `undo` (which rewinds jj but not
+    The one shared ref-repair path — `repair` (gap B healing), `undo` (which rewinds jj but not
     git), and `_export_colocated_git`'s fallback all route here, so the classification below can
     never be got right in one place and wrong in another (issue 31 had three near-duplicate loops,
     two of them destructive).
@@ -392,9 +392,9 @@ def sync_colocated_refs(session: Session, *, preserve_orphans: bool = False) -> 
 
     `preserve_orphans` turns on the F2 guard: before a **rewrite** force-writes a ref backward,
     bookmark what the ref named if nothing else would still reach it. It is OFF by default and ON
-    for exactly one caller — `undo` of a `reconcile`. Undoing an ordinary intent is meant to discard
+    for exactly one caller — `undo` of a `repair`. Undoing an ordinary intent is meant to discard
     that intent's commit, and preserving it litters the repo with `adopted-*` lanes; undoing a
-    `reconcile` discards history that arrived from git, which gitman's op log is not a credible
+    `repair` discards history that arrived from git, which gitman's op log is not a credible
     home for. The two are indistinguishable after the fact (both leave an unreachable commit with
     no visible successor), so the caller who knows says so.
 
@@ -531,7 +531,7 @@ def sync_colocated_refs(session: Session, *, preserve_orphans: bool = False) -> 
         notes.append(
             "could NOT re-point colocated git ref(s): "
             + ", ".join(failed_writes)
-            + " — the repo is still desynced; re-run `gitman reconcile`."
+            + " — the repo is still desynced; re-run `gitman repair`."
         )
     return notes
 
@@ -543,13 +543,13 @@ def _keep_jj_side_adopt_the_rest(session: Session) -> list[str]:
     jj wins the *name* because jj is gitman's engine — trunk stays where the op log says, so `undo`
     still means something and the lane model keeps its footing. Nothing is discarded: git's side
     becomes an ordinary lane the operator can inspect, land, or abandon with the verbs they already
-    have. Same never-discard rule `reconcile` applies to strays, and the same commit_id-keyed naming
+    have. Same never-discard rule `repair` applies to strays, and the same commit_id-keyed naming
     (issue 06 §G2) so two sides can't collide onto one bookmark.
 
     **Trunk only.** A conflicted *lane* already has an owner — `_resolve_conflicted_lane` (issue 11),
     which honours `--abandon` and knows about the lane's remote branch. Trunk is the one with no
     owner, and the one whose conflict wedges the whole repo: it is unresolvable by name, so every
-    trunk-anchored revset raises and every verb (including `reconcile` itself) refuses.
+    trunk-anchored revset raises and every verb (including `repair` itself) refuses.
 
     Which side is git's is read off `refs/heads/<trunk>` rather than remembered from before an
     import, so this works from any entry point — including a conflict that predates the call (a
@@ -615,7 +615,7 @@ def _export_colocated_git(session: Session) -> list[str]:
     mid-intent is too sharp, and could resurrect an abandoned lane) — but we no longer swallow it
     *silently*: round-09 gap B showed one stuck lane ref makes every *later* export raise too, so the
     desync (incl. a lagging trunk ref) must surface. Return a note naming the stuck ref(s) →
-    `gitman reconcile` heals them. The intent itself has already succeeded and is authoritative in jj.
+    `gitman repair` heals them. The intent itself has already succeeded and is authoritative in jj.
     """
 
     notes: list[str] = []
@@ -645,8 +645,7 @@ def _export_colocated_git(session: Session) -> list[str]:
         # Name the underlying error. Reporting only "stale refs" is what hid a total, permanent
         # colocated-export failure across two sessions and four sightings.
         notes.append(
-            f"colocated git ref(s) stale for: {names} ({type(exc).__name__}: {exc}) "
-            "— run `gitman reconcile` to re-sync."
+            f"colocated git ref(s) stale for: {names} ({type(exc).__name__}: {exc}) — run `gitman repair` to re-sync."
         )
         notes += sync_colocated_refs(session)
     return notes + _sync_colocated_checkout(session)
@@ -664,7 +663,7 @@ def _sync_colocated_checkout(session: Session) -> list[str]:
     except Exception as exc:  # was: except PyjutsuError — GitError/AttributeError escapes
         return [
             f"colocated git checkout not re-synced ({type(exc).__name__}: {exc}) "
-            "— run `gitman reconcile` if raw git looks stale."
+            "— run `gitman repair` if raw git looks stale."
         ]
 
 

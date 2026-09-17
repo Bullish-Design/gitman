@@ -18,7 +18,7 @@ from pyjutsu import Workspace
 from gitman.config import GitmanConfig
 from gitman.core import do_publish, do_save, do_start, do_subtask, do_switch
 from gitman.init import do_init
-from gitman.reconcile import do_reconcile
+from gitman.repair import do_reconcile
 from gitman.session import Session
 from gitman.state import capture_state
 
@@ -119,7 +119,7 @@ def test_export_no_longer_wedges(tmp_path: Path):
 
 
 def test_parent_child_prefix_anomaly_is_reported_pre_migration(tmp_path: Path):
-    """A repo still holding `/` bookmarks says so, note-only, and names `gitman reconcile`."""
+    """A repo still holding `/` bookmarks says so, note-only, and names `gitman repair`."""
     work, _remote, ws = _repo_with_remote(tmp_path)
 
     # Build the legacy shape directly (raw jj, bypassing the normalising CLI/core boundary) —
@@ -145,8 +145,8 @@ def test_parent_child_prefix_anomaly_is_reported_pre_migration(tmp_path: Path):
     assert "lane-legacy-name" in kinds
     detail = next(a.detail for a in state.anomalies if a.kind == "lane-legacy-name")
     assert "T/api" in detail
-    assert "gitman reconcile" in detail
-    assert any("gitman reconcile" in n for n in state.notes)
+    assert "gitman repair" in detail
+    assert any("gitman repair" in n for n in state.notes)
 
 
 def test_reconcile_renames_slash_lanes_and_leaves_the_parent_alone(tmp_path: Path):
@@ -177,7 +177,7 @@ def test_reconcile_renames_slash_lanes_and_leaves_the_parent_alone(tmp_path: Pat
 
     result = do_reconcile(_sess(work), abandon_=False)
 
-    assert result.outcome == "RECONCILED", result.messages
+    assert result.outcome == "REPAIRED", result.messages
     assert any("T/api" in m and "T+api" in m for m in result.messages), result.messages
 
     session = Session.load(work)

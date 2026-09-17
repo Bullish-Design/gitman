@@ -141,7 +141,7 @@ def run_doctor(repo_root: Path, config: GitmanConfig | None = None) -> DoctorRep
                     FAIL,
                     "colocated-head",
                     f"git HEAD is stranded at {stranded[:12]} (no bookmark reaches it) — every "
-                    "colocated export is failing; run `gitman reconcile`",
+                    "colocated export is failing; run `gitman repair`",
                 )
             )
         elif lag is not None:
@@ -152,7 +152,7 @@ def run_doctor(repo_root: Path, config: GitmanConfig | None = None) -> DoctorRep
                     WARN,
                     "colocated-head",
                     f"git HEAD is at {head_oid[:12]} but @'s parent is {parent_oid[:12]} {where} — "
-                    "raw `git status` will report committed files as modified; run `gitman reconcile`",
+                    "raw `git status` will report committed files as modified; run `gitman repair`",
                 )
             )
         else:
@@ -160,7 +160,7 @@ def run_doctor(repo_root: Path, config: GitmanConfig | None = None) -> DoctorRep
 
     # colocated jj-bookmark ↔ git-ref drift (round-09 gap B): a stuck/leftover ref makes every
     # later `git_export` raise, silently desyncing trunk. Surface it (warn, recoverable) so it
-    # can't hide; `gitman reconcile` re-syncs. Skipped when the repo isn't colocated/loadable.
+    # can't hide; `gitman repair` re-syncs. Skipped when the repo isn't colocated/loadable.
     if ws is not None and _is_colocated(repo_root):
         try:
             from gitman.state import colocated_ref_desync
@@ -176,7 +176,7 @@ def run_doctor(repo_root: Path, config: GitmanConfig | None = None) -> DoctorRep
                 bits.append(f"{len(mismatched)} bookmark(s) out of sync: {', '.join(n for n, _, _ in mismatched)}")
             if leftover:
                 bits.append(f"{len(leftover)} leftover git ref(s): {', '.join(leftover)}")
-            checks.append(Check(WARN, "colocated-refs", "; ".join(bits) + " — run `gitman reconcile`"))
+            checks.append(Check(WARN, "colocated-refs", "; ".join(bits) + " — run `gitman repair`"))
 
     # Colocated index intent-to-add entries (issue 41 / issue 44 stage 4e): jj's snapshot stages a
     # jj-tracked, git-uncommitted file as an intent-to-add entry (the empty blob) — correct and
@@ -198,7 +198,7 @@ def run_doctor(repo_root: Path, config: GitmanConfig | None = None) -> DoctorRep
                     "colocated-index",
                     f"{len(diverged)} path(s) intent-to-add AND in git HEAD: {shown} — a plain `git "
                     "commit` would record a deletion (jj's parent and git's HEAD disagree about "
-                    "the path); run `gitman reconcile`, or commit through gitman so they reconverge",
+                    "the path); run `gitman repair`, or commit through gitman so they reconverge",
                 )
             )
         elif expected:
@@ -218,7 +218,7 @@ def run_doctor(repo_root: Path, config: GitmanConfig | None = None) -> DoctorRep
     # forge PR merge) names two commits, so any revset on it raises and used to wedge every command.
     # `colocated_ref_desync` deliberately *skips* conflicted bookmarks, so it can't see this — a
     # dedicated structural read closes the doctor-vs-status blind spot that reported HEALTHY while the
-    # repo was bricked. WARN (recoverable): `gitman reconcile` retires/resolves it.
+    # repo was bricked. WARN (recoverable): `gitman repair` retires/resolves it.
     if ws is not None and cfg.trunk:
         try:
             from gitman.state import _conflicted_lanes
@@ -232,7 +232,7 @@ def run_doctor(repo_root: Path, config: GitmanConfig | None = None) -> DoctorRep
                     WARN,
                     "lane-conflicts",
                     f"lane bookmark(s) conflicted (diverged from origin): {', '.join(conflicted)} "
-                    "— run `gitman reconcile`",
+                    "— run `gitman repair`",
                 )
             )
 

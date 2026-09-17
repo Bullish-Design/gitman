@@ -2,7 +2,7 @@
 
 A leftover `refs/heads/<lane>` (abandoned lane) or a live bookmark whose git ref lags jj makes
 every later `git_export` raise — silently desyncing trunk. `gitman doctor` must surface it,
-`_export_colocated_git` must return a surfacing note (not swallow), and `gitman reconcile` must
+`_export_colocated_git` must return a surfacing note (not swallow), and `gitman repair` must
 heal it without resurrecting the abandoned lane. In-process over pyjutsu, colocated work repo.
 """
 
@@ -14,7 +14,7 @@ from pathlib import Path
 from pyjutsu import PyjutsuError, Workspace
 
 from gitman.config import GitmanConfig
-from gitman.reconcile import do_reconcile
+from gitman.repair import do_reconcile
 from gitman.session import Session
 from gitman.state import capture_state, colocated_ref_desync
 
@@ -98,7 +98,7 @@ def test_export_helper_surfaces_instead_of_swallowing(tmp_path: Path):
     notes = _export_colocated_git(_sess(work))
     assert notes, "a stuck colocated ref must surface a note, not be swallowed silently"
     assert "gone" in notes[0]
-    assert "reconcile" in notes[0]
+    assert "repair" in notes[0]
 
 
 def test_doctor_warns_on_desync(tmp_path: Path):
@@ -157,7 +157,7 @@ def test_reconcile_heals_a_lone_leftover_ref(tmp_path: Path):
     assert "gone" in leftover
 
     res = do_reconcile(_sess(work), abandon_=False)
-    assert res.outcome == "RECONCILED", res.messages
+    assert res.outcome == "REPAIRED", res.messages
     assert _gref(work, "refs/heads/gone") is None
     mismatched, leftover = colocated_ref_desync(_sess(work).view(), ws)
     assert not mismatched and not leftover
@@ -229,7 +229,7 @@ def test_git_only_commit_is_classified_as_adopt_not_rewrite(tmp_path: Path):
 def test_reconcile_never_discards_git_only_commits(tmp_path: Path):
     """Issue 31, exactly as reported: `reconcile` on a git-ahead trunk used to force
     `refs/heads/main` BACKWARD to jj, orphaning every commit git had and jj didn't — reporting
-    RECONCILED while doing it. It must adopt them into jj instead."""
+    REPAIRED while doing it. It must adopt them into jj instead."""
     work, ws = _colocated(tmp_path)
     git_sha = _raw_git_commit(work, "raw commit")
 
@@ -371,7 +371,7 @@ def test_reconcile_keeps_both_sides_when_jj_and_git_both_moved(tmp_path: Path):
 
     res = do_reconcile(_sess(work), abandon_=False)
     assert res.exit_code == 0, res.messages  # resolved, not wedged
-    assert res.outcome == "RECONCILED"
+    assert res.outcome == "REPAIRED"
 
     state = capture_state(_sess(work))
     assert state.canonical, state.off_canonical  # every verb is usable again
@@ -419,7 +419,7 @@ def test_local_trunk_conflict_is_not_reported_as_origin_divergence(tmp_path: Pat
     off = state.off_canonical or ""
     assert "origin moved" not in off and "diverged from" not in off, off
     assert "each hold a different commit" in off
-    assert "gitman reconcile" in render_status(state)
+    assert "gitman repair" in render_status(state)
 
 
 def test_reconcile_resolves_a_preexisting_trunk_conflict(tmp_path: Path):

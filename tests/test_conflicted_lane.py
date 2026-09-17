@@ -24,7 +24,7 @@ from pyjutsu.errors import RevsetError
 from gitman.config import GitmanConfig
 from gitman.core import GitmanError, do_abandon, do_pull
 from gitman.doctor import WARN, run_doctor
-from gitman.reconcile import do_reconcile
+from gitman.repair import do_reconcile
 from gitman.session import Session
 from gitman.state import _conflicted_lanes, capture_state
 
@@ -146,7 +146,7 @@ def test_status_survives_conflicted_lane(tmp_path: Path):
 
     assert state.canonical is False
     assert "L" in (state.off_canonical or "")
-    assert "reconcile" in (state.off_canonical or "")
+    assert "repair" in (state.off_canonical or "")
     lane = next(lo for lo in state.lanes if lo.name == "L")
     assert lane.conflict is True
     assert lane.head is None
@@ -163,7 +163,7 @@ def test_guarded_intent_refuses_not_crashes(tmp_path: Path):
     with pytest.raises(GitmanError) as exc:
         do_abandon(_sess(work), "L")
     assert exc.value.exit_code == 1
-    assert "reconcile" in str(exc.value)
+    assert "repair" in str(exc.value)
 
 
 # --- 3. reconcile resolves an un-merged conflicted lane (preserves work) --------------
@@ -174,7 +174,7 @@ def test_reconcile_resolves_unmerged_conflicted_lane(tmp_path: Path):
 
     res = do_reconcile(_sess(work), abandon_=False)
 
-    assert res.outcome == "RECONCILED", res.messages
+    assert res.outcome == "REPAIRED", res.messages
     assert res.exit_code == 0
     # the name resolves again → conflict cleared, lane kept.
     assert _conflicted_lanes(_sess(work).fresh_view(), "main") == {}
@@ -192,7 +192,7 @@ def test_reconcile_abandon_retires_conflicted_lane(tmp_path: Path):
 
     res = do_reconcile(_sess(work), abandon_=True)
 
-    assert res.outcome == "RECONCILED", res.messages
+    assert res.outcome == "REPAIRED", res.messages
     state = capture_state(_sess(work))
     assert state.canonical
     assert "L" not in {lo.name for lo in state.lanes}  # bookmark gone
@@ -218,11 +218,11 @@ def test_pull_defers_conflicted_lane_then_recovers(tmp_path: Path):
     blocked = do_pull(_sess(work), dry_run=False)
     assert blocked.outcome == "BLOCKED", blocked.messages
     assert blocked.exit_code == 1
-    assert "reconcile" in " ".join(blocked.messages).lower()
+    assert "repair" in " ".join(blocked.messages).lower()
 
     # 2. reconcile --abandon retires the conflicted lane (no strays, no drag).
     rec = do_reconcile(_sess(work), abandon_=True)
-    assert rec.outcome == "RECONCILED", rec.messages
+    assert rec.outcome == "REPAIRED", rec.messages
     assert _conflicted_lanes(_sess(work).fresh_view(), "main") == {}
 
     # 3. pull now advances trunk to the forge head, CANONICAL.
@@ -246,4 +246,4 @@ def test_doctor_flags_conflicted_lane(tmp_path: Path):
     assert check is not None
     assert check.level == WARN
     assert "L" in check.detail
-    assert "reconcile" in check.detail
+    assert "repair" in check.detail
