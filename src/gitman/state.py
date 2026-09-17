@@ -18,7 +18,18 @@ from pyjutsu.models import Commit, DiffStat, Operation
 
 from gitman.anomalies import ANOMALY_ORDER, Anomaly, Subject, make_anomaly
 from gitman.core import GitmanError, has_remote
-from gitman.models import Change, Conflict, ConflictFile, Lane, LaneState, LaneTwin, Op, RepoState, TrunkRef
+from gitman.models import (
+    Change,
+    Conflict,
+    ConflictFile,
+    ContentRelation,
+    Lane,
+    LaneState,
+    LaneTwin,
+    Op,
+    RepoState,
+    TrunkRef,
+)
 from gitman.session import Session
 
 
@@ -197,7 +208,9 @@ def _merge_tree_conflicts(view: RepoView, a: str, b: str) -> bool | None:
         return None
 
 
-def _trunk_content_relation(session: Session, view: RepoView, trunk: str) -> tuple[str | None, int, int, str | None]:
+def _trunk_content_relation(
+    session: Session, view: RepoView, trunk: str
+) -> tuple[ContentRelation | None, int, int, str | None]:
     """`(relation, behind, ahead, remote)` of local trunk vs its `<trunk>@<remote>` row.
 
     `relation` is the honest, twin-proof signal — one of `in-sync` / `local-ahead` / `forge-ahead`
@@ -239,15 +252,15 @@ def _trunk_content_relation(session: Session, view: RepoView, trunk: str) -> tup
     return "in-sync", behind, ahead, remote
 
 
-def lane_twin_relation(view: RepoView, local_sha: str, forge_sha: str) -> tuple[str, list[str]]:
+def lane_twin_relation(view: RepoView, local_sha: str, forge_sha: str) -> tuple[ContentRelation | None, list[str]]:
     """`(relation, differing paths)` of a lane's local side against its own forge twin.
 
     The lane-level twin of `_trunk_content_relation`, and the answer issue 42 D2 asked for. Both
     sides carry the same change-id and different commit-ids, so ancestry says nothing — only the
     content merge can tell a re-hash twin from a genuine fork. `_merge_tree_relation` returns
     `(forge_has_new, local_has_new)` (that order, not the reverse — see its docstring), which maps
-    onto the four `TrunkRef.relation` words. `None` (the merge could not run) becomes `unknown`,
-    which every caller must treat as `diverged`: never discard a side on a guess.
+    onto the four `ContentRelation` words. `None` (the merge could not run) is every caller's cue
+    to treat it as `diverged`: never discard a side on a guess.
 
     The path list is the tree-to-tree diff stat between the two sides. It is the number the
     devman incident needed and never got — "three files differ", not the lane's 5068-line diff
@@ -261,7 +274,7 @@ def lane_twin_relation(view: RepoView, local_sha: str, forge_sha: str) -> tuple[
     except PyjutsuError:
         paths = []
     if content is None:
-        return "unknown", paths
+        return None, paths
     forge_has_new, local_has_new = content
     if forge_has_new and local_has_new:
         return "diverged", paths

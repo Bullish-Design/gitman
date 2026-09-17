@@ -383,6 +383,7 @@ def sync_colocated_refs(session: Session, *, preserve_orphans: bool = False) -> 
     """
     from pyjutsu import PyjutsuError
 
+    from gitman.lanes import adopted_lane_name
     from gitman.state import _is_colocated, classify_ref_desync, colocated_ref_desync, orphaned_by_rewrite
 
     if not _is_colocated(session.repo_root):
@@ -413,6 +414,7 @@ def sync_colocated_refs(session: Session, *, preserve_orphans: bool = False) -> 
             failed_writes.append(f"{name} ({exc})")
 
     preserved: list[str] = []
+    taken = {b.name for b in view.bookmarks() if b.remote is None}
     for name, jj_id, git_id in rewrite:  # (1) jj-authoritative — but see F2 below
         # F2 — never let a force-write make a commit unreferenced. `rewrite` means jj knows the
         # commit, not that anything still points at it: `undo` of an import rewinds jj past
@@ -420,14 +422,16 @@ def sync_colocated_refs(session: Session, *, preserve_orphans: bool = False) -> 
         # from the op log alone. Bookmark it as a lane first, so the never-discard rule holds
         # here the same way it does for strays and for both-sides-moved trunks.
         if preserve_orphans and git_id and orphaned_by_rewrite(view, git_id):
-            lane = f"adopted-{git_id[:8]}"
-            try:
-                with session.ws.transaction("gitman:preserve-rewound-ref", auto_snapshot=False) as tx:
-                    tx.set_bookmark(lane, git_id)
-            except PyjutsuError:
-                pass
-            else:
-                preserved.append(f"{name} {git_id[:8]} -> lane '{lane}'")
+            lane = adopted_lane_name(git_id, taken)
+            if lane is not None:
+                try:
+                    with session.ws.transaction("gitman:preserve-rewound-ref", auto_snapshot=False) as tx:
+                        tx.create_bookmark(lane, git_id)
+                except PyjutsuError:
+                    pass
+                else:
+                    taken.add(lane)
+                    preserved.append(f"{name} {git_id[:8]} -> lane '{lane}'")
         _write(name, jj_id)
     for name in leftover:  # (2) retire before the import, else it re-creates the bookmark
         try:
@@ -506,6 +510,8 @@ def _keep_jj_side_adopt_the_rest(session: Session) -> list[str]:
     """
     from pyjutsu import PyjutsuError
 
+    from gitman.lanes import adopted_lane_name
+
     trunk = session.config.trunk
     if not trunk:
         return []
@@ -527,12 +533,16 @@ def _keep_jj_side_adopt_the_rest(session: Session) -> list[str]:
     # jj's side is whichever target the git ref does NOT name. If git's ref isn't a side at all (it
     # was rewritten under us), keep the first and adopt the rest — still nothing discarded.
     keep = next((s for s in sides if s != git_side), sides[0])
+    taken = {b.name for b in session.view().bookmarks() if b.remote is None}
     notes: list[str] = []
     with session.ws.transaction("gitman:resolve-trunk-divergence", auto_snapshot=False) as tx:
         # Adopt FIRST, so every side is bookmarked before the name stops pointing at it.
         for cid in (s for s in sides if s != keep):
-            lane = f"adopted-{cid[:8]}"
-            tx.set_bookmark(lane, cid)
+            lane = adopted_lane_name(cid, taken)
+            if lane is None:  # this side is already adopted under its own lane — nothing to add
+                continue
+            tx.create_bookmark(lane, cid)
+            taken.add(lane)
             notes.append(f"jj and git had both moved {trunk} — kept jj's side, adopted git's into lane '{lane}'")
         tx.set_bookmark(trunk, keep)
     return notes

@@ -7,6 +7,7 @@ core.py under a `canonical_tx`/`canonical_guard`. See concept §6, §8.
 from __future__ import annotations
 
 import re
+from collections.abc import Container
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -143,6 +144,22 @@ def resolve_workspace_path(repo_root: Path, config: GitmanConfig, lane: str) -> 
     if not path.is_absolute():
         path = (repo_root / path).resolve()
     return path
+
+
+def adopted_lane_name(commit_id: str, taken: Container[str]) -> str | None:
+    """The free `adopted-<commit>` name for `commit_id`, or None when it already has one.
+
+    The sole minter (issue 44 stage 3e): every site that adopts a stray or an orphaned-by-rewrite
+    commit into its own lane routes through this, so the name, the collision policy, and the
+    widening rule live in one place instead of four. Widens the prefix — 8 hex chars, then 12,
+    then the full id — until the name is free. `None` means the *full* commit id is already
+    bookmarked: this exact commit is adopted, so the caller must skip it rather than mint a
+    second lane for the same content."""
+    for width in (8, 12, len(commit_id)):
+        name = f"adopted-{commit_id[:width]}"
+        if name not in taken:
+            return name
+    return None
 
 
 def ensure_unique(session: Session, trunk: str, name: str) -> None:

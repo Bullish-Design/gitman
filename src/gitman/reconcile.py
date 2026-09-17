@@ -20,9 +20,10 @@ from pyjutsu.errors import ImmutableCommitError, RevsetError
 from gitman.anomalies import REGISTRY
 from gitman.core import _target, require_trunk
 from gitman.invariants import _refresh_stale_working_copy
+from gitman.lanes import adopted_lane_name
 
 if TYPE_CHECKING:
-    from gitman.models import LaneTwin
+    from gitman.models import KeepSide, LaneTwin
     from gitman.session import Session
 
 
@@ -47,8 +48,12 @@ def _repair_orphaned_head(session: Session) -> list[str]:
     return [repaired]
 
 
-def _resolve_lane_twin(session: Session, twin: LaneTwin, keep: str | None, abandon_: bool, actions: list[str]) -> bool:
-    """Repair one `lane-divergent` twin. Returns True when the divergence is cleared.
+def _resolve_lane_twin(
+    session: Session, twin: LaneTwin, keep: KeepSide | None, abandon_: bool, actions: list[str]
+) -> bool:
+    """Repair one `lane-divergent` twin. Returns True once the repair transaction has run — the
+    caller re-surveys once, after the whole loop, to confirm the divergence actually cleared
+    (issue 44 stage 3e.2: this used to run its own `capture_state` here, once per twin).
 
     A jj divergence ends only when one of the two commits stops being VISIBLE, and the only verb
     that hides a commit is `tx.abandon`. Moving the local bookmark does not do it, and neither does
@@ -63,14 +68,13 @@ def _resolve_lane_twin(session: Session, twin: LaneTwin, keep: str | None, aband
         the remote still holds it. Abandoning it loses nothing.
       * `forge-ahead` — the local side's content is wholly inside the forge side. Same argument,
         mirrored: move the lane onto the forge commit, then abandon the local one.
-      * `diverged` / `unknown` — each side holds content the other lacks, so no automatic choice is
-        safe. `reconcile` refuses and reports; `--keep local|origin` is the operator's explicit
-        choice, and even then the losing side is DUPLICATED onto its own `adopted-<commit>` lane
-        first (a duplicate carries a NEW change-id, so the divergence still clears) unless
-        `--abandon` says to drop it — exactly what the stray loop below already does.
+      * `diverged` / `None` (the content check could not run) — each side holds content the other
+        lacks, so no automatic choice is safe. `reconcile` refuses and reports; `--keep
+        local|origin` is the operator's explicit choice, and even then the losing side is
+        DUPLICATED onto its own `adopted-<commit>` lane first (a duplicate carries a NEW change-id,
+        so the divergence still clears) unless `--abandon` says to drop it — exactly what the
+        stray loop below already does.
     """
-    from gitman.state import capture_state
-
     # The content relation wins over `--keep` on the three contained cases: honouring `--keep origin`
     # on a `local-ahead` lane would throw away local content for no reason, and the flag is
     # documented as the genuine-fork choice. An unrecognised value repairs nothing.
@@ -87,27 +91,30 @@ def _resolve_lane_twin(session: Session, twin: LaneTwin, keep: str | None, aband
     # A forced choice on a genuine fork discards unique content unless the loser is kept somewhere.
     # `duplicate` re-creates it with a fresh change-id, which is what lets it stay visible as its
     # own lane without re-tripping the divergence it is being pulled out of.
-    rescue = twin.relation in ("diverged", "unknown") and not abandon_
+    rescue = twin.relation in ("diverged", None) and not abandon_
     with session.ws.transaction("gitman:reconcile", auto_snapshot=False) as tx:
+        rescued: str | None = None
         if rescue:
-            dup = tx.duplicate(loser)[0]
-            rescued = f"adopted-{loser[:8]}"
-            tx.create_bookmark(rescued, dup.commit_id)
+            existing = {b.name for b in session.view().bookmarks() if b.remote is None}
+            rescued = adopted_lane_name(loser, existing)
+            if rescued is not None:
+                dup = tx.duplicate(loser)[0]
+                tx.create_bookmark(rescued, dup.commit_id)
         if winner != twin.local:
             tx.set_bookmark(twin.lane, winner)
         tx.abandon(loser)
     side = "forge" if keep_side == "local" else "local"
     detail = f" ({len(twin.paths)} path(s) differ: {', '.join(twin.paths[:5])})" if twin.paths else ""
     actions.append(
-        f"lane '{twin.lane}' vs {twin.remote}/{twin.lane}: {twin.relation} — kept the {keep_side} side "
+        f"lane '{twin.lane}' vs {twin.remote}/{twin.lane}: {twin.relation or 'unknown'} — kept the {keep_side} side "
         f"{winner[:12]}, retired the {side} side {loser[:12]}{detail}"
     )
-    if rescue:
+    if rescued is not None:
         actions.append(f"rescued the {side} side {loser[:12]} → lane '{rescued}' (duplicated, new change-id)")
-    return not any(a.kind == "lane-divergent" and a.subject.name == twin.lane for a in capture_state(session).anomalies)
+    return True
 
 
-def do_reconcile(session: Session, abandon_: bool, keep: str | None = None):
+def do_reconcile(session: Session, abandon_: bool, keep: KeepSide | None = None):
     from gitman.core import _resolve_conflicted_lane
     from gitman.invariants import repo_lock, sync_colocated_refs, write_undo_checkpoint
     from gitman.models import IntentResult
@@ -239,8 +246,8 @@ def do_reconcile(session: Session, abandon_: bool, keep: str | None = None):
 
             existing = {b.name for b in session.view().bookmarks() if b.remote is None}
             if strays:
-                # Target AND name each stray by commit_id (via `_target`), never the bare change_id.
-                # A divergent change-id resolves to ≥2 commits, so a change-id target dead-ends the
+                # Target AND name each stray by commit_id, never the bare change_id. A divergent
+                # change-id resolves to ≥2 commits, so a change-id target dead-ends the
                 # transaction — and, critically, the two divergent sides *share* a change_id, so naming
                 # by change_id collides them onto one bookmark. commit_id is what actually differs, so
                 # it both resolves unambiguously and yields distinct lane names (issue 06 §G2).
@@ -256,9 +263,10 @@ def do_reconcile(session: Session, abandon_: bool, keep: str | None = None):
                                 tx.abandon(cid)
                                 actions.append(f"abandoned {cid[:12]}")
                             else:
-                                name = f"adopted-{cid[:8]}"
-                                if name in existing:
-                                    name = f"adopted-{cid[:12]}"
+                                name = adopted_lane_name(cid, existing)
+                                if name is None:  # this exact commit already has its own adopted lane
+                                    actions.append(f"{cid[:12]} already adopted — skipping.")
+                                    continue
                                 tx.create_bookmark(name, cid)
                                 existing.add(name)
                                 actions.append(f"adopted {cid[:12]} → lane '{name}'")
@@ -274,12 +282,15 @@ def do_reconcile(session: Session, abandon_: bool, keep: str | None = None):
                 twins = find_divergent_lane_twins(session, session.fresh_view(), trunk)
                 for twin in twins:
                     try:
-                        if not _resolve_lane_twin(session, twin, keep, abandon_, actions):
-                            unresolved.append(twin)
+                        _resolve_lane_twin(session, twin, keep, abandon_, actions)
                     except ImmutableCommitError as exc:
                         from gitman.core import explain_immutable
 
                         raise explain_immutable(session, exc, f"retire a side of divergent lane '{twin.lane}'") from exc
+                # One re-survey after the whole loop (issue 44 stage 3e.2), not a `capture_state`
+                # taken once per twin inside `_resolve_lane_twin` — cheaper, and a truer
+                # postcondition: it tests whether the divergence actually cleared, not a proxy read.
+                unresolved = find_divergent_lane_twins(session, session.fresh_view(), trunk)
             actions += ref_notes
             if not actions:
                 # "nothing to do" would be false when a fork was surveyed and classified — the verb

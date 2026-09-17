@@ -15,6 +15,14 @@ from pydantic import BaseModel, Field, computed_field
 
 from gitman.anomalies import NOTE_ONLY_KINDS, Anomaly
 
+# The one content-relation vocabulary (issue 44 stage 3e): `TrunkRef.relation` and
+# `LaneTwin.relation` name the same four words. `None` is the one convention for "could not
+# tell" — never a fifth string member; render the word `unknown` at the report boundary instead.
+ContentRelation = Literal["in-sync", "local-ahead", "forge-ahead", "diverged"]
+
+# The operator's explicit choice on a genuine fork (`reconcile --keep`).
+KeepSide = Literal["local", "origin"]
+
 
 class LaneState(StrEnum):
     """The three states a lane is ever in (concept §5 lifecycle)."""
@@ -87,10 +95,10 @@ class TrunkRef(BaseModel):
     commit_id: str | None = None
     # The remote `<trunk>@<remote>` is compared against — None when no remote / not fetched.
     remote: str | None = None
-    # Content-aware relation to `<trunk>@<remote>`: "in-sync" | "local-ahead" | "forge-ahead"
-    # | "diverged", or None when unknown (no remote, unfetched, or the content check failed).
-    # This is the honest signal (survives re-hash twins); the counts below are display-only.
-    relation: str | None = None
+    # Content-aware relation to `<trunk>@<remote>` — None when unknown (no remote, unfetched, or
+    # the content check failed). This is the honest signal (survives re-hash twins); the counts
+    # below are display-only.
+    relation: ContentRelation | None = None
     # ahead/behind *by ancestry* of the local trunk bookmark vs its remote tracking branch —
     # kept for the count display only. A re-hash twin reads N/N here yet is content-in-sync.
     behind_remote: int = 0
@@ -132,18 +140,19 @@ class LaneTwin(BaseModel, frozen=True):
     """A published lane whose own `<lane>@<remote>` row shares its change-id but not its commit-id
     — the issue-42 shape, classified by CONTENT (`state.lane_twin_relation`).
 
-    `relation` uses the same four words as `TrunkRef.relation`, for the same reason: one word for
-    one meaning. `in-sync` = a content-identical re-hash twin; `local-ahead` = the local side holds
-    everything the forge side does, and more; `forge-ahead` = the mirror; `diverged` = each side
-    holds content the other lacks (a genuine fork — the one case `reconcile` cannot decide).
-    `unknown` = the content merge could not run; treat it as `diverged` (never discard on a guess).
+    `relation` uses `ContentRelation`, the same vocabulary as `TrunkRef.relation`, for the same
+    reason: one word for one meaning. `in-sync` = a content-identical re-hash twin; `local-ahead`
+    = the local side holds everything the forge side does, and more; `forge-ahead` = the mirror;
+    `diverged` = each side holds content the other lacks (a genuine fork — the one case
+    `reconcile` cannot decide). `None` = the content merge could not run; treat it as `diverged`
+    (never discard on a guess) — rendered as the word `unknown` at the report boundary.
     """
 
     lane: str
     local: str  # the local bookmark's commit id
     forge: str  # the `<lane>@<remote>` row's commit id
     remote: str
-    relation: Literal["in-sync", "local-ahead", "forge-ahead", "diverged", "unknown"]
+    relation: ContentRelation | None
     paths: list[str] = Field(default_factory=list)  # paths that differ between the two sides
 
 
