@@ -16,6 +16,10 @@ Two entry points share the helpers:
   `land`, workspaced `abandon`) that interleave non-tx ops (`git_fetch`/`git_push`/`add_workspace`/
   `forget_workspace`) with one or more transactions. Yields a small `Canon` handle; the caller opens
   its own `ws.transaction(..., auto_snapshot=False)` blocks.
+
+A third entry point, `run_plan`, executes a declarative `plan.Plan` (project 46 S7). It sits beside
+the two context managers, not in place of them: the verbs that still pass a callback body are
+unchanged while `describe`/`switch`/`start`/`split`/`land` migrate one at a time.
 """
 
 from __future__ import annotations
@@ -23,7 +27,7 @@ from __future__ import annotations
 import json
 import os
 import time
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -36,6 +40,7 @@ if TYPE_CHECKING:
 
     from gitman.anomalies import Subject
     from gitman.models import RepoState
+    from gitman.plan import OutsideStep, Plan, Step
     from gitman.session import Session
 
 LOCK_PATH = ".gitman/lock"
@@ -711,12 +716,155 @@ class Canon:
     """The multi-op guard handle: the undo target, the post-state, and accumulated notes."""
 
     op_before: str
-    state: object | None = None
+    state: RepoState | None = None
     notes: list[str] = field(default_factory=list)
+    # The precheck state (carries `trunk_before` and the pre-snapshot lanes). A `Plan` executor
+    # builds its steps from this, so planning sees exactly the state the transaction will mutate.
+    before: RepoState | None = None
+    # The `Plan` a `run_plan` call is executing, if any (for the caller's own reporting).
+    plan: Plan | None = None
+    # Whether the guard should export colocated git refs at its tail. Mutable so `run_plan` can
+    # honor `Plan.export`, which is only known after the plan is built inside the guard body.
+    export: bool = False
 
     @property
     def undo_command(self) -> str:
         return "gitman undo"
+
+
+# --- the Plan executor (project 46 S7) -------------------------------------------------
+
+
+def apply_steps(tx: Transaction, steps: Iterable[Step]) -> None:
+    """Interpret a `Plan`'s transaction steps into `tx` — the one step interpreter.
+
+    `run_plan` is the only caller: every migrated verb routes through it (`land` calls `run_plan`
+    once per lane, with `checkpoint=False`). One interpreter means a step can never mean two
+    things.
+    """
+    from gitman.plan import (
+        CreateBookmark,
+        DeleteBookmark,
+        Describe,
+        Edit,
+        New,
+        Rebase,
+        Restore,
+        SetBookmark,
+        Split,
+    )
+
+    for step in steps:
+        if isinstance(step, New):
+            tx.new(step.parents)
+        elif isinstance(step, Edit):
+            tx.edit(step.revision)
+        elif isinstance(step, Describe):
+            tx.describe(step.revision, step.message)
+        elif isinstance(step, CreateBookmark):
+            tx.create_bookmark(step.name, step.revision)
+        elif isinstance(step, SetBookmark):
+            tx.set_bookmark(step.name, step.revision)
+        elif isinstance(step, DeleteBookmark):
+            tx.delete_bookmark(step.name)
+        elif isinstance(step, Rebase):
+            rebased = tx.rebase(step.revision, onto=step.onto, mode=step.mode)
+            if step.conflict_reason and rebased.has_conflict:
+                raise GitmanError(step.conflict_reason, exit_code=1)
+        elif isinstance(step, Restore):
+            tx.restore(step.target, from_=step.from_, paths=step.paths)
+        elif isinstance(step, Split):
+            from pyjutsu import PyjutsuError
+
+            try:
+                carved, _remainder = tx.split(step.change, step.selection, mode="siblings")
+            except PyjutsuError as exc:
+                message = step.error_message.format(exc=exc) if step.error_message else f"split could not carve: {exc}"
+                raise GitmanError(message, exit_code=3) from exc
+            tx.create_bookmark(step.bookmark, carved.change_id)
+            if step.message:
+                tx.describe(step.bookmark, step.message)
+        else:
+            raise AssertionError(f"unknown plan step: {step!r}")
+
+
+def apply_outside_steps(session: Session, steps: Iterable[OutsideStep]) -> list[str]:
+    """Run a `Plan`'s post-transaction steps (each publishes its own op). Returns their notes."""
+    from gitman.plan import CleanupWorkspace, RetireGitRef
+
+    notes: list[str] = []
+    for step in steps:
+        if isinstance(step, RetireGitRef):
+            from gitman.core import _retire_git_ref
+
+            notes += _retire_git_ref(session, step.lane)
+        elif isinstance(step, CleanupWorkspace):
+            from gitman.core import _cleanup_workspace
+
+            notes += _cleanup_workspace(session, step.lane, keep_foreign=step.keep_foreign)
+        else:
+            raise AssertionError(f"unknown plan outside-step: {step!r}")
+    return notes
+
+
+def build_plan(session: Session, build: Callable[[RepoState], Plan]) -> Plan:
+    """Build a `Plan` from a NON-snapshotting state capture — the `--dry-run` entry point.
+
+    A real run builds its plan under the lock after the precheck snapshot (`run_plan`). A dry run
+    must not snapshot (a snapshot of a dirty `@` publishes an op — a mutation), so it plans from
+    the recorded head view. The report says so when the working copy is dirty.
+    """
+    from gitman.state import capture_state
+
+    return build(capture_state(session, snapshot=False))
+
+
+def run_plan(
+    session: Session,
+    intent: str,
+    build: Callable[[RepoState], Plan],
+    *,
+    lane: str | None = None,
+    lanes: Iterable[str] | None = None,
+    acquire_lock: bool = True,
+    checkpoint: bool = True,
+    export: bool = False,
+) -> Canon:
+    """Run one `Plan`: precheck, one transaction, the additive postcondition, one undo checkpoint.
+
+    Sits BESIDE `canonical_tx`/`canonical_guard` (project 46 S7, guide step 3) — the verbs that
+    still pass a callback body are unchanged. `build` runs inside the guard, after the precheck
+    snapshot, and returns the `Plan`. The precheck gate derives its scope through the same
+    `subjects_for` the builder records in `Plan.subjects` (one derivation, so the two cannot
+    drift — but the gate runs before the plan exists, so `plan.subjects` is informational, not the
+    gate's input). `plan.steps` run in one jj transaction; `plan.postcondition` runs after
+    `_postcondition` (D-D2, additive). `checkpoint=False` lets a caller (`land`) write ONE batch
+    undo checkpoint for many plans.
+    """
+    holder: dict[str, Plan] = {}
+
+    def _plan_postcondition(state: RepoState) -> str | None:
+        plan = holder.get("plan")
+        return plan.postcondition(state) if plan is not None and plan.postcondition is not None else None
+
+    with canonical_guard(
+        session,
+        intent,
+        acquire_lock=acquire_lock,
+        lane=lane,
+        lanes=lanes,
+        export=export,
+        postcondition=_plan_postcondition,
+        checkpoint=checkpoint,
+    ) as canon:
+        plan = build(canon.before)
+        holder["plan"] = plan
+        canon.plan = plan
+        canon.export = plan.export
+        with session.ws.transaction(f"gitman:{intent}", auto_snapshot=False) as tx:
+            apply_steps(tx, plan.steps)
+        canon.notes += apply_outside_steps(session, plan.outside_steps)
+    return canon
 
 
 # --- single-transaction sugar ---------------------------------------------------------
@@ -772,6 +920,8 @@ def canonical_guard(
     lane: str | None = None,
     lanes: Iterable[str] | None = None,
     export: bool = False,
+    postcondition: Callable[[RepoState], str | None] | None = None,
+    checkpoint: bool = True,
 ) -> Iterator[Canon]:
     """Run a multi-op intent under the shared-root lock, unwinding partials to `op_before`.
 
@@ -783,6 +933,11 @@ def canonical_guard(
 
     `export` (issue 44 stage 4d): see `canonical_tx`'s docstring — `do_publish`/`do_push` are the
     only callers that pass `export=True`; every other intent leaves the colocated `.git` alone.
+    `canon.export` is mutable, so `run_plan` can set it from `Plan.export` after building.
+    `postcondition` is an ADDITIVE per-intent assertion run after the global delta check (project
+    46 S7, D-D2): it returns `None` when the plan held, else a reason string, and a reason unwinds
+    the intent. `checkpoint=False` suppresses this guard's undo checkpoint so a caller (`land`)
+    can write ONE batch checkpoint for a sequence of guards.
     """
     lock = repo_lock(session.repo_root) if acquire_lock else nullcontext()
     with lock:
@@ -790,13 +945,27 @@ def canonical_guard(
         before = precheck_canonical(session, intent, lane=lane, lanes=lanes)
         trunk_before = before.trunk.commit_id
         op_before = session.ws.head_operation()
-        canon = Canon(op_before=op_before)
+        canon = Canon(op_before=op_before, before=before, export=export)
         try:
             yield canon  # caller runs its own tx(s) + git/workspace ops
         except Exception:
             session.ws.restore_operation(op_before)  # an earlier op may have already published
             raise
-        if export:
+        if canon.export:
             canon.notes += _export_colocated_git(session)
         canon.state = _postcondition(session, intent, trunk_before, op_before, before)
-        write_undo_checkpoint(session.repo_root, op_before, intent)
+        # The additive per-plan postcondition (D-D2): run AFTER the global delta check, never
+        # instead of it. A failure unwinds like a `_postcondition` violation.
+        if postcondition is not None:
+            reason = postcondition(canon.state)
+            if reason:
+                session.ws.restore_operation(op_before)
+                from pyjutsu import PyjutsuError
+
+                try:
+                    session.ws.git_export()
+                except PyjutsuError:
+                    pass
+                raise GitmanError(f"reverted: {reason}; no change applied.", exit_code=1)
+        if checkpoint:
+            write_undo_checkpoint(session.repo_root, op_before, intent)

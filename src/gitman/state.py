@@ -718,8 +718,13 @@ def _orphan_working_copy(view: RepoView, wc: Commit, trunk: str) -> bool:
     return bool(view.log(f"@ & ({trunk}..)"))
 
 
-def capture_state(session: Session) -> RepoState:
-    """Build the full RepoState from one frozen view. Requires a frozen trunk (I1)."""
+def capture_state(session: Session, *, snapshot: bool = True) -> RepoState:
+    """Build the full RepoState from one frozen view. Requires a frozen trunk (I1).
+
+    `snapshot=True` (the default) snapshots a dirty `@` first, so every read and every intent
+    sees on-disk edits. `snapshot=False` reads the recorded head view without snapshotting — the
+    `--dry-run` path (project 46 S7): a snapshot of a dirty `@` publishes an op, and a dry run
+    must perform no mutation."""
     config = session.config
     repo_root = session.repo_root
     trunk_name = config.trunk
@@ -734,7 +739,7 @@ def capture_state(session: Session) -> RepoState:
     # dirty-file awareness.
     pre_view = session.view()
 
-    view = session.fresh_view()
+    view = session.fresh_view() if snapshot else pre_view
 
     # A conflicted trunk bookmark: both `view.resolve(trunk_name)` AND lane enumeration raise
     # against it. Detect it structurally and report off-canonical — don't crash. Handled before any

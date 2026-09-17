@@ -293,3 +293,82 @@ which they are removed). The guide asks only that the old names warn and work; a
 is a separate decision, and hard removal is the trap `[version]` sprang in 0.5.0.
 
 **Next:** S7 (`Plan` as a value) — now unblocked.
+
+## S7 — done (landed, pushed)
+
+`GUIDE_S7_plan_value.md`, issue 44 §8 / G6. The largest stage of the project. Suite: 446 passed
+(422 after S6 + 24 new). `ruff check` clean.
+
+**D-D1 (decided).** A `Step` is a **declarative record**, not a closure — the guide's
+recommendation, taken literally for the step kinds the five migration targets actually use. The
+types in `plan.py` are exactly the jj operations `describe`/`switch`/`start`/`split`/`land`
+perform: `New`, `Edit`, `Describe`, `CreateBookmark`, `SetBookmark`, `DeleteBookmark`, `Rebase`,
+`Restore`, `Split`, plus the two post-transaction steps `RetireGitRef` and `CleanupWorkspace`
+(they publish their own op, so they must run after the transaction commits, matching the old code).
+No general jj-operation algebra. `Split` owns its bookmark-and-describe tail because the carved
+commit's change-id does not exist until the step runs.
+
+**D-D2 (decided).** `Plan.postcondition` is **additive**. `run_plan` runs it AFTER
+`invariants._postcondition`'s global delta check, never instead of it. One refinement on the
+guide's sketch: the callable returns `None` when the plan held, else a **reason string**, so a
+failure report is specific ("lane 'x' was not folded") instead of generic.
+
+**The executor.** `invariants.run_plan(session, intent, build, ...)` sits BESIDE
+`canonical_tx`/`canonical_guard` (guide step 3) — the twelve verbs still passing a callback are
+untouched. `build(state)` runs inside the guard **after the precheck snapshot**, so planning sees
+exactly the state the transaction mutates (the guide flags the ordering hazard only for `pull`; it
+is real for every verb, so the plan is built under the lock). `canonical_guard` gained
+`postcondition=` and `checkpoint=`; `Canon` gained `before`/`plan`/`export`. `capture_state` gained
+`snapshot=False` for the dry-run path.
+
+**The dry-run finding.** A snapshot is a mutation when `@` is dirty (a clean snapshot is a no-op,
+measured with a probe). So the dry-run builder must NOT snapshot: `build_plan` captures state with
+`snapshot=False` and plans from the recorded head view. `do_switch`'s strand guard called
+`fresh_view()` on every path and would have published a snapshot op on `--dry-run`; fixed to read
+the recorded view when `dry_run`.
+
+**The migrations, one per commit** (`describe` → `switch` → `start` → `split` → `land`), each
+behind a behaviour-unchanged test written against the pre-migration verb first
+(`tests/test_s7_verb_migrations.py`, 12 tests). `start`'s non-workspace path migrated; its
+`--workspace` path keeps `canonical_guard` (it adds a workspace, then a sub-workspace tx — a shape
+the single-tx Plan executor does not cover). `land` keeps one `run_plan` per lane so
+`land --all`'s partial-progress BLOCKED shape is unchanged.
+
+**The batch undo (guide step 6, both S9a TODOs deleted).** `land` passes `checkpoint=False` to
+every per-lane `run_plan` and writes ONE checkpoint with the first fold's `op_before` — so a single
+`gitman undo` rewinds every lane the invocation landed. The "`gitman undo` reverts one lane at a
+time" note is gone for `land`. The `abandon --recursive` cascade and `pull`'s survivor loop keep
+their own per-node checkpoints **deliberately**: they are outside the guide's migration list, and
+`tests/test_phase3_concurrency.py::test_abandon_recursive_undo_reverses_one_node_at_a_time` asserts
+that per-node behaviour. So the *mechanism* is one (`run_plan(checkpoint=False)` +
+`write_undo_checkpoint`), but only `land` has adopted it. Recorded here rather than silently
+claiming all three sites were folded.
+
+**`--dry-run` is generic in `cli._finish_intent`.** A migrated `do_*` returns a `Plan` when
+`dry_run=True`; the handler renders it through `render_intent` (so `--json` works) with the note
+"dry run — nothing changed". All five verbs accept `--dry-run`. `land` builds a **composite**
+`Plan` (the concatenation of every fold's steps and outside-steps) for rendering only — its steps
+are exactly what a real run performs, in order; it is never executed.
+
+**`pull` deliberately does not migrate.** It runs a trial merge as planning input, the one shape
+that does not fit "plan then execute", and it is the verb every recovery path leans on. Its
+hand-rolled `--dry-run` and the `catchup` wrapper are unchanged.
+
+**Surprises worth recording.** (1) The subject gate: `run_plan`'s precheck derives subjects through
+`subjects_for` (unchanged), and each builder records the same set in `Plan.subjects` — one
+derivation, so they cannot drift, but the plan field is informational, not the gate's input (the
+gate must run before the plan exists, since it produces the state the plan is built from).
+(2) `describe`'s provenance note is computed inside the builder (pre-tx), matching the old
+code's read after the precheck snapshot. (3) `land`'s non-trunk fold keeps its textual merge-tree
+precheck and does NOT set `Rebase.conflict_reason` — the `mode="branch"` returned `has_conflict` is
+stale when the lane has a descendant `@` (the pre-existing trap).
+
+**Docs.** `.agents/skills/gitman/SKILL.md` gained a "Dry run" paragraph and had its stale "each
+level its own undo checkpoint" claim for `land --all` corrected; `docs/USING_GITMAN.md` gained the
+same dry-run line; `core.py`'s module docstring names the Plan executor. `GITMAN_CONCEPT.md` is
+still deliberately untouched (S8).
+
+**Not done, deliberately:** `pull` (above); `abandon`/`pull` per-node checkpoints (above);
+`start --workspace` on the Plan executor.
+
+**Next:** S8 (`GITMAN_CONCEPT.md` rewrite + drift test) — last, by construction.

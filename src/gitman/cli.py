@@ -114,8 +114,20 @@ def _emit(text: str, payload: dict | None = None) -> None:
 def _finish_intent(result) -> None:
     from gitman.config import load_config
     from gitman.markdown import MarkdownProjectionError, sync_markdown
+    from gitman.models import IntentResult
+    from gitman.plan import Plan, describe_plan
     from gitman.render import render_intent
 
+    # A migrated verb returns a `Plan` when it ran with `--dry-run` (project 46 S7): render the
+    # declared steps as the report and mutate nothing. One handler serves every migrated verb.
+    if isinstance(result, Plan):
+        result = IntentResult(
+            intent=result.intent,
+            outcome="DRY-RUN",
+            lane=result.lane,
+            messages=result.messages + describe_plan(result),
+            notes=["dry run — nothing changed; the plan is from the recorded state (unsnapshotted edits excluded)."],
+        )
     # A retired config table warns on every intent until the owner migrates it. `render_intent`
     # shows `result.notes` only, so this cannot be left to `RepoState`.
     result.notes.extend(load_config(_repo_root()).deprecations)
@@ -239,6 +251,7 @@ def start(
             help="Adopt only paths this session wrote; refuse if a co-tenant's paths are present.",
         ),
     ] = False,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Report the plan without mutating.")] = False,
 ) -> None:
     """Create a lane: a `/`-path name (`T/api`) stacks on its name-parent `T`; a flat name roots on trunk."""
     from gitman.core import do_start
@@ -252,6 +265,7 @@ def start(
             normalise_lane_name(onto) if onto else onto,
             adopt_all=adopt_all,
             adopt_mine=adopt_mine,
+            dry_run=dry_run,
         )
     )
 
@@ -274,12 +288,13 @@ def subtask(
 @app.command()
 def switch(
     name: Annotated[str, typer.Argument(help="The existing lane to resume.")],
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Report the plan without mutating.")] = False,
 ) -> None:
     """Move @ onto an existing lane's change to resume it."""
     from gitman.core import do_switch
     from gitman.lanes import normalise_lane_name
 
-    _finish_intent(do_switch(_session(), normalise_lane_name(name)))
+    _finish_intent(do_switch(_session(), normalise_lane_name(name), dry_run=dry_run))
 
 
 @app.command()
@@ -303,12 +318,13 @@ def split(
         ),
     ] = None,
     message: Annotated[str | None, typer.Option("-m", "--message", help="Describe the carved lane.")] = None,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Report the plan without mutating.")] = False,
 ) -> None:
     """Partition the current lane's change into two sibling lanes (whole-file --paths or --hunks)."""
     from gitman.core import do_split
     from gitman.lanes import normalise_lane_name
 
-    _finish_intent(do_split(_session(), paths or [], normalise_lane_name(into), message, hunks))
+    _finish_intent(do_split(_session(), paths or [], normalise_lane_name(into), message, hunks, dry_run=dry_run))
 
 
 @app.command()
@@ -330,11 +346,12 @@ def shape(
 @app.command()
 def describe(
     message: Annotated[str | None, typer.Option("-m", "--message", help="Describe the current change.")] = None,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Report the plan without mutating.")] = False,
 ) -> None:
     """Describe the current lane's change (jj already saved the content; this sets the message)."""
     from gitman.core import do_describe
 
-    _finish_intent(do_describe(_session(), message))
+    _finish_intent(do_describe(_session(), message, dry_run=dry_run))
 
 
 @app.command()
@@ -359,12 +376,15 @@ def publish() -> None:
 def land(
     lanes: Annotated[list[str] | None, typer.Argument(help="Lane(s) to fold into trunk (default: current).")] = None,
     all_: Annotated[bool, typer.Option("--all", help="Fold the whole forest bottom-up (child→parent→trunk).")] = False,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Report the plan without mutating.")] = False,
 ) -> None:
     """Fold lane(s) into their base (parent lane or trunk); `--all` folds the whole forest bottom-up."""
     from gitman.core import do_land
     from gitman.lanes import normalise_lane_name
 
-    _finish_intent(do_land(_session(), [normalise_lane_name(n) for n in lanes] if lanes else lanes, all_))
+    _finish_intent(
+        do_land(_session(), [normalise_lane_name(n) for n in lanes] if lanes else lanes, all_, dry_run=dry_run)
+    )
 
 
 @app.command()

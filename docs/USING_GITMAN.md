@@ -116,6 +116,9 @@ devenv shell -- gitman land fix-thing          # fold into trunk LOCALLY, advanc
 Safety net: `gitman undo` (revert the last intent), `gitman resolve` (surface conflicts —
 never blocking), `gitman repair` (recover from off-canonical).
 
+Check a plan before it runs: `describe`, `switch`, `start`, `split` and `land` accept `--dry-run`.
+They print the exact steps the intent would perform and change nothing.
+
 ### Trunk ↔ origin (the single local-authored model)
 
 Trunk is **local-authored**: gitman is the sole writer of trunk SHAs. `land` folds a lane into local
