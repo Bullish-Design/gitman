@@ -137,6 +137,52 @@ def test_reconcile_heals_desync_without_resurrecting(tmp_path: Path):
     assert check.level == OK
 
 
+def test_reconcile_heals_a_lone_leftover_ref(tmp_path: Path):
+    """Review §3: the `leftover` gate term is the ONLY thing that makes `reconcile` act on a repo
+    whose sole fault is a dangling ref (no mismatch). Drop the term and `reconcile` returns
+    CLEAN/exit-0 while the next `git_export` raises. A leftover ref pointing at a commit jj knows
+    is disposable, so it is removed."""
+    work, ws = _colocated(tmp_path)
+    _make_lane(ws, work, "gone", "g.txt")
+    ws.git_export()  # refs/heads/gone now exists
+    main_ref = _gref(work, "refs/heads/main")
+    with ws.transaction("abandon gone") as tx:
+        for c in ws.head().log("main..gone"):
+            tx.abandon(c.change_id)
+        tx.delete_bookmark("gone")
+    _git("update-ref", "refs/heads/gone", main_ref, cwd=work)  # lone leftover, no mismatch
+
+    mismatched, leftover = colocated_ref_desync(ws.head(), ws)
+    assert mismatched == []
+    assert "gone" in leftover
+
+    res = do_reconcile(_sess(work), abandon_=False)
+    assert res.outcome == "RECONCILED", res.messages
+    assert _gref(work, "refs/heads/gone") is None
+    mismatched, leftover = colocated_ref_desync(_sess(work).view(), ws)
+    assert not mismatched and not leftover
+
+
+def test_reconcile_keeps_a_leftover_ref_holding_unknown_history(tmp_path: Path):
+    """Issue 31 / stage 4b: a leftover ref whose commit jj never imported AND origin lacks is the
+    only name for that history. `reconcile` must not delete it; it keeps the ref and names it."""
+    work, ws = _colocated(tmp_path)  # no remote → nothing is on origin
+    base = _gref(work, "refs/heads/main")
+    git_sha = _raw_git_commit(work, "raw commit")  # git-only commit, unknown to jj
+    _git("update-ref", "refs/heads/ghost", git_sha, cwd=work)  # leftover name, no bookmark
+    _git("update-ref", "refs/heads/main", base, cwd=work)  # main back in sync with jj
+
+    mismatched, leftover = colocated_ref_desync(ws.head(), ws)
+    assert mismatched == []
+    assert "ghost" in leftover
+
+    res = do_reconcile(_sess(work), abandon_=False)
+
+    assert _gref(work, "refs/heads/ghost") == git_sha, "reconcile deleted a ref it did not own"
+    assert any("kept colocated git ref" in m for m in res.messages), res.messages
+    assert any("nothing was deleted" in m for m in res.messages), res.messages
+
+
 # --- issue 31: a git ref AHEAD of jj must be adopted, never force-reset -----------------
 
 

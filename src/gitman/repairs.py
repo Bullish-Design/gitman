@@ -259,11 +259,16 @@ def assert_registry_agrees(registry: dict, repairs: dict) -> None:
     the same way a real forgotten callable would fail *this module's import*, not a livelocked
     recovery verb (issue 44 stage 3f, guide §3.13.2)."""
     for slug, kind in registry.items():
-        assert (kind.repair == "reconcile") == (slug in repairs), (
-            f"{slug}: registry says repair={kind.repair!r} but repairs {'has' if slug in repairs else 'lacks'} it — "
-            f"a kind cannot claim `reconcile` as its repair without a callable registered here, or vice versa."
-        )
+        if (kind.repair == "reconcile") != (slug in repairs):
+            raise AssertionError(
+                f"{slug}: registry says repair={kind.repair!r} but repairs "
+                f"{'has' if slug in repairs else 'lacks'} it — a kind cannot claim `reconcile` as its "
+                f"repair without a callable registered here, or vice versa."
+            )
 
 
-assert set(REPAIRS_ORDER) == set(REPAIRS), "REPAIRS_ORDER must name exactly the REPAIRS keys, once each"
+if set(REPAIRS_ORDER) != set(REPAIRS):
+    # `raise`, not `assert`: `python -O` strips `assert`, and this is the guarantee that a
+    # forgotten callable is an import error rather than a livelocked recovery verb (review §6).
+    raise AssertionError("REPAIRS_ORDER must name exactly the REPAIRS keys, once each")
 assert_registry_agrees(REGISTRY, REPAIRS)

@@ -485,14 +485,20 @@ def _start_workspace(
     A sub-workspace tx
     re-bases it onto trunk (or, with `--onto`, the parent lane's head — the stacking atom in an
     isolated workspace, the fractal-lanes fan-out default) and creates the lane (which lands on the
-    shared op-log → visible from the default workspace). On any failure, remove the half-made
-    workspace dir and re-raise; the guard's `except` restores `op_before`, forgetting the record."""
+    shared op-log → visible from the default workspace). On any failure after this invocation
+    created the directory, remove it and re-raise; the guard's `except` restores `op_before`,
+    forgetting the record. A pre-existing directory is never removed (issue 43 D2): a refused
+    `start` must not delete operator state it did not create."""
     from pyjutsu import Workspace
 
     from gitman.invariants import canonical_guard, ensure_self_ignored_dir
     from gitman.lanes import ensure_unique, resolve_workspace_path
 
     wpath = resolve_workspace_path(session.repo_root, session.config, name)
+    # A refusal must have no side effects (issue 43 D2). Record whether this invocation will
+    # create the directory. The `finally`-style cleanup below removes the path only when this
+    # invocation made it, so a pre-existing operator directory survives a refused `start`.
+    created_dir = not wpath.exists()
     # For an in-repo workspace (the default `.worktrees/<lane>`), self-ignore the TOP in-repo
     # container so colocated git never reports the checkout as `?? .worktrees/` noise (jj-lib
     # already never snapshots a nested workspace). D7: a `/`-path name like `T/api` lands at
@@ -508,6 +514,14 @@ def _start_workspace(
         ensure_self_ignored_dir(top)
     with canonical_guard(session, "start") as canon:
         ensure_unique(session, trunk, name)
+        # Refuse a non-empty destination BEFORE touching it (issue 43 D2). `add_workspace` refuses
+        # it too, but only after creating parents; this keeps the refusal side-effect free.
+        if wpath.is_dir() and any(wpath.iterdir()):
+            raise GitmanError(
+                f"workspace path '{wpath}' already exists and is not empty — move it aside, or "
+                f"choose another lane name.",
+                exit_code=1,
+            )
         # Resolve the base AFTER the precheck snapshot (inside the guard): name-derived (D1) — the
         # `/`-path parent head when stacked, else trunk. A commit id is workspace-global, so the
         # sub-workspace tx can name it; the trunk bookmark resolves across the shared op-log.
@@ -531,7 +545,10 @@ def _start_workspace(
                 tx.new(base_ref)  # put the new workspace's @ on trunk (or the parent head)
                 tx.create_bookmark(name, "@")
         except Exception:
-            shutil.rmtree(wpath, ignore_errors=True)  # drop the half-made workspace dir
+            if created_dir:
+                shutil.rmtree(wpath, ignore_errors=True)  # drop the half-made workspace dir
+            # A pre-existing directory is never removed: this invocation did not create it, so it
+            # is not ours to delete (issue 43 D2).
             # The jj-side record is unwound by the enclosing `canonical_guard`: its `except` calls
             # `restore_operation(op_before)`, and a workspace registration lives in the operation's
             # view, so the rewind drops the row along with everything else this intent published.

@@ -110,7 +110,10 @@ REGISTRY: dict[str, AnomalyKind] = {
 }
 
 for _slug, _kind in REGISTRY.items():
-    assert _kind.repair or _kind.manual, f"{_slug}: needs a repair or an honest manual"
+    # `raise`, not `assert`: `python -O` strips `assert`. A row with neither a repair nor manual
+    # text is a detected-but-unfixable hole with no honest instruction — refuse it at import.
+    if not (_kind.repair or _kind.manual):
+        raise AssertionError(f"{_slug}: needs a repair or an honest manual")
 
 
 def make_anomaly(kind: str, subject: Subject, detail: str) -> Anomaly:

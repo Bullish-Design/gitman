@@ -100,6 +100,29 @@ def validate_lane_name(name: str) -> None:
             )
 
 
+# --- lane name ⇄ colocated git ref name (issue 44 stage 4a) ---------------------------
+# Git forbids `refs/heads/T` and `refs/heads/T/api` from coexisting: a ref is a file, and a `/`
+# in a name claims a directory. A fractal lane name therefore cannot be a git ref directly, and
+# gitman created that condition itself while calling it a desync (issue 43 D6). Encode every `/`
+# as `+` — a character `validate_lane_name` forbids, so the transform is total and reversible and
+# two distinct lane names can never collide onto one ref. `T/api` -> `T+api`.
+_REF_SEP = "+"
+
+
+def ref_for_lane(lane: str) -> str:
+    """The colocated git ref name for `lane` — total, reversible, readable.
+
+    Replaces each `/` in the lane name with `+`. The lane-name allowlist forbids `+`, so the map
+    is injective over valid lane names, and `lane_for_ref` recovers the original exactly. Trunk is
+    a flat name, so its ref is unchanged."""
+    return lane.replace("/", _REF_SEP)
+
+
+def lane_for_ref(ref: str) -> str:
+    """The lane name for a colocated git ref built by `ref_for_lane` — the inverse transform."""
+    return ref.replace(_REF_SEP, "/")
+
+
 def lane_base(session: Session, trunk: str, lane: str) -> str | None:
     """The lane `lane` is stacked on (its base), or None if trunk-based. Sole-source (D1): the
     name-parent if it resolves to a live lane, else None — no DAG ancestry. See `state._name_parent`."""

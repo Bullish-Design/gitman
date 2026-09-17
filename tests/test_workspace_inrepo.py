@@ -20,7 +20,7 @@ import pytest
 from pyjutsu import Workspace
 
 from gitman.config import GitmanConfig, LanesConfig
-from gitman.core import do_abandon, do_land, do_save, do_start
+from gitman.core import GitmanError, do_abandon, do_land, do_save, do_start
 from gitman.invariants import ensure_self_ignored_dir
 from gitman.session import Session
 from gitman.state import capture_state
@@ -102,6 +102,26 @@ def test_workspace_start_leaves_no_stray_change(tmp_path: Path):
     from gitman.state import find_strays
 
     assert find_strays(_sess(repo).fresh_view(), "main") == []
+
+
+def test_start_workspace_keeps_a_preexisting_directory(tmp_path: Path):
+    """Issue 43 D2: `start --workspace` must not delete a directory it did not create. Repro:
+    a real operator directory sits at the workspace path; `start` refuses on it. The refusal must
+    leave the directory and its contents untouched, and leave no lane or workspace registration."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _repo(repo)
+    wpath = repo / ".worktrees" / "wlane"
+    wpath.mkdir(parents=True)
+    (wpath / "operator-data.txt").write_text("precious\n")
+
+    with pytest.raises(GitmanError, match="already exists and is not empty"):
+        do_start(_sess(repo), "wlane", workspace=True)
+
+    assert wpath.is_dir()
+    assert (wpath / "operator-data.txt").read_text() == "precious\n"
+    assert "wlane" not in {w.name for w in Workspace.load(repo).workspaces()}
+    assert capture_state(_sess(repo)).lanes == []
 
 
 def test_failed_workspace_start_leaves_no_registration(tmp_path: Path, monkeypatch):

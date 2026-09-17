@@ -138,6 +138,15 @@ def do_reconcile(session: Session, abandon_: bool, keep: KeepSide | None = None)
                 repair(session, trunk, abandon_, keep, actions, before)
 
             state = capture_state(session)
+            # Re-survey the residue INSIDE the lock (review §1e): `fresh_view()` snapshots, which
+            # is a write under I4, so it must not run outside `repo_lock`. The filtered survey
+            # tests the real postcondition — the twin is gone — rather than a proxy read per twin.
+            divergent_lanes = sorted(lane.name for lane in state.lanes if lane.divergent)
+            twins = (
+                find_divergent_lane_twins(session, session.fresh_view(), trunk, lanes=divergent_lanes)
+                if divergent_lanes
+                else []
+            )
             if not actions:
                 # "nothing to do" would be false when a fork was surveyed and classified — the
                 # verb did the work of deciding, and declined to choose. Say that instead.
@@ -166,20 +175,16 @@ def do_reconcile(session: Session, abandon_: bool, keep: KeepSide | None = None)
     # Name the genuine forks explicitly. The whole devman cost was a report that said "divergent,
     # 5068 insertions" and never said WHICH content was at risk — the lane's diff against trunk is
     # carried identically by both sides, so it measures the lane, not the disagreement. Print the
-    # relation, both commit ids, and the paths that actually differ. One fresh, filtered re-survey
-    # (issue 44 stage 3e.2/3.13.3) tests the real postcondition — the twin is gone — rather than a
-    # proxy read taken once per twin inside the repair loop.
-    divergent_lanes = sorted(lane.name for lane in state.lanes if lane.divergent)
-    if divergent_lanes:
-        twins = find_divergent_lane_twins(session, session.fresh_view(), trunk, lanes=divergent_lanes)
-        for twin in twins:
-            paths = ", ".join(twin.paths[:8]) + (" …" if len(twin.paths) > 8 else "")
-            notes.append(
-                f"lane '{twin.lane}' and {twin.remote}/{twin.lane} have genuinely forked "
-                f"(local {twin.local[:12]}, forge {twin.forge[:12]}); {len(twin.paths)} path(s) differ"
-                f"{': ' + paths if paths else ''} — neither side contains the other, so `reconcile` will "
-                f"not choose. Run {REGISTRY['lane-divergent'].manual}."
-            )
+    # relation, both commit ids, and the paths that actually differ (surveyed inside the lock,
+    # above).
+    for twin in twins:
+        paths = ", ".join(twin.paths[:8]) + (" …" if len(twin.paths) > 8 else "")
+        notes.append(
+            f"lane '{twin.lane}' and {twin.remote}/{twin.lane} have genuinely forked "
+            f"(local {twin.local[:12]}, forge {twin.forge[:12]}); {len(twin.paths)} path(s) differ"
+            f"{': ' + paths if paths else ''} — neither side contains the other, so `reconcile` will "
+            f"not choose. Run {REGISTRY['lane-divergent'].manual}."
+        )
     return IntentResult(
         intent="reconcile",
         outcome="RECONCILED" if canonical else "PARTIAL",

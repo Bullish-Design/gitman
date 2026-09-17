@@ -15,7 +15,7 @@ from pyjutsu import Workspace
 
 from gitman.config import GitmanConfig
 from gitman.core import GitmanError, do_save, do_start, do_subtask, do_switch
-from gitman.lanes import name_parent, validate_lane_name
+from gitman.lanes import lane_for_ref, name_parent, ref_for_lane, validate_lane_name
 from gitman.render import render_status
 from gitman.state import capture_state
 
@@ -63,6 +63,36 @@ def test_validate_rejects(bad):
 @pytest.mark.parametrize("ok", ["T", "T/api", "feat-1", "a.b", "a_b", "T/api/handler"])
 def test_validate_accepts(ok):
     validate_lane_name(ok)  # must not raise
+
+
+# --- lane ⇄ colocated git ref encoding (issue 44 stage 4a) ----------------------------
+
+
+@pytest.mark.parametrize("name", ["T", "T/api", "T/api/handler", "feat-1", "a.b", "a_b", "adopted-abcdef12"])
+def test_ref_encoding_round_trips(name):
+    ref = ref_for_lane(name)
+    assert "/" not in ref  # no separator, so `refs/heads/T` and `refs/heads/T/x` cannot collide
+    assert lane_for_ref(ref) == name
+
+
+def test_ref_encoding_is_injective():
+    names = ["T", "T/api", "T-api", "T/api/handler", "T/api-handler"]
+    refs = [ref_for_lane(n) for n in names]
+    assert len(refs) == len(set(refs))
+
+
+def test_ref_encoding_separator_is_reserved():
+    """The transform is injective only because `+` cannot appear in a lane name."""
+    with pytest.raises(GitmanError):
+        validate_lane_name("a+b")
+
+
+def test_ref_encoding_is_a_valid_git_ref():
+    import subprocess
+
+    for name in ("T", "T/api", "T/api/handler", "feat-1"):
+        ref = ref_for_lane(name)
+        subprocess.run(["git", "check-ref-format", f"refs/heads/{ref}"], check=True)
 
 
 # --- D2 refusals: the tree is always explicitly built ---------------------------------

@@ -340,6 +340,19 @@ def _postcondition(
     return after
 
 
+def _ref_commit_on_remote(session: Session, commit_id: str) -> bool:
+    """Whether a remote-tracking ref names `commit_id` (issue 31 / stage 4b).
+
+    When this is true, origin still holds the history, so deleting a local ref to it cannot lose
+    work. Reads the colocated git's `refs/remotes/` directly. Any failure answers `False` — the
+    safe answer, which routes the caller to keep the ref rather than delete it."""
+    try:
+        remotes = session.ws.git.refs("refs/remotes/")
+    except Exception:
+        return False
+    return commit_id in set(remotes.values())
+
+
 def sync_colocated_refs(session: Session, *, preserve_orphans: bool = False) -> list[str]:
     """Make jj and the colocated `refs/heads/*` agree **without ever discarding history**.
 
@@ -384,7 +397,14 @@ def sync_colocated_refs(session: Session, *, preserve_orphans: bool = False) -> 
     from pyjutsu import PyjutsuError
 
     from gitman.lanes import adopted_lane_name
-    from gitman.state import _is_colocated, classify_ref_desync, colocated_ref_desync, orphaned_by_rewrite
+    from gitman.state import (
+        _git_refs_heads,
+        _is_colocated,
+        _known_to_jj,
+        classify_ref_desync,
+        colocated_ref_desync,
+        orphaned_by_rewrite,
+    )
 
     if not _is_colocated(session.repo_root):
         return []
@@ -433,9 +453,19 @@ def sync_colocated_refs(session: Session, *, preserve_orphans: bool = False) -> 
                     taken.add(lane)
                     preserved.append(f"{name} {git_id[:8]} -> lane '{lane}'")
         _write(name, jj_id)
+    git_refs_before = _git_refs_heads(session.ws)
+    deleted_leftovers: list[str] = []
+    kept_leftovers: list[str] = []
     for name in leftover:  # (2) retire before the import, else it re-creates the bookmark
+        git_id = git_refs_before.get(name)
+        if git_id and not _known_to_jj(view, git_id) and not _ref_commit_on_remote(session, git_id):
+            # Issue 31: this ref is the ONLY name for git-only history that origin also lacks.
+            # Deleting it orphans those commits outside the jj op log. Refuse and name it instead.
+            kept_leftovers.append(name)
+            continue
         try:
             session.ws.git.delete_ref(name)
+            deleted_leftovers.append(name)
         except PyjutsuError:
             pass
     git_names = set(session.ws.git.refs())
@@ -477,8 +507,14 @@ def sync_colocated_refs(session: Session, *, preserve_orphans: bool = False) -> 
             + "; ".join(preserved)
             + " (inspect with `gitman status`, discard with `gitman abandon`)."
         )
-    if leftover:
-        notes.append(f"removed leftover colocated git ref(s): {', '.join(leftover)}.")
+    if deleted_leftovers:
+        notes.append(f"removed leftover colocated git ref(s): {', '.join(deleted_leftovers)}.")
+    if kept_leftovers:
+        notes.append(
+            "kept colocated git ref(s) whose commits jj had not imported and origin lacks: "
+            + ", ".join(kept_leftovers)
+            + " — deleting them would discard unpushed work; nothing was deleted."
+        )
     if failed_writes:
         notes.append(
             "could NOT re-point colocated git ref(s): "
