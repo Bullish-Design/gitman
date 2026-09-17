@@ -65,6 +65,14 @@ def _origin_ref(remote: Path, ref: str = "refs/heads/main") -> str:
     return out.stdout.split()[0] if out.returncode == 0 else ""
 
 
+def _sync(work: Path) -> None:
+    """Stage 4d: intents no longer export/sync the colocated `.git` on their own — force it for a
+    raw-git assertion, the same way `_export_colocated_git` used to run after every mutation."""
+    ws = Workspace.load(work)
+    ws.git_export()
+    ws.sync_colocated()
+
+
 def _land_new_commit(work: Path, lane: str, fn: str, content: str) -> None:
     """start → edit → save → land a lane, advancing local trunk (fresh sessions each step)."""
     do_start(_sess(work), lane, workspace=False)
@@ -236,6 +244,7 @@ def test_untrack_removes_from_tree_keeps_file(tmp_path: Path):
     work, remote, ws = _with_remote(tmp_path)
     # land a machine-local file onto trunk so it's tracked
     _land_new_commit(work, "add-local", ".settings.local.json", '{"x":1}\n')
+    _sync(work)
     assert (
         ".settings.local.json" in subprocess.run(["git", "ls-files"], cwd=work, capture_output=True, text=True).stdout
     )
@@ -244,6 +253,7 @@ def test_untrack_removes_from_tree_keeps_file(tmp_path: Path):
     res = do_untrack(_sess(work), [".settings.local.json"])
 
     assert res.outcome == "UNTRACKED", res.messages
+    _sync(work)
     # removed from the lane change's tree (the colocated index still tracks trunk until we land)...
     show = subprocess.run(["git", "show", "untrack-lane:.settings.local.json"], cwd=work, capture_output=True)
     assert show.returncode != 0  # absent from the lane's tree
@@ -252,12 +262,14 @@ def test_untrack_removes_from_tree_keeps_file(tmp_path: Path):
     assert ".settings.local.json" in (work / ".gitignore").read_text()
     # ...and a fresh snapshot does NOT re-add it (gitignored)
     _sess(work).ws.snapshot()
+    _sync(work)
     show2 = subprocess.run(["git", "show", "untrack-lane:.settings.local.json"], cwd=work, capture_output=True)
     assert show2.returncode != 0  # a snapshot did not re-add it
 
     # landing the lane folds the untrack into trunk → gone from the tracked set, still on disk, and
     # now colocated `git check-ignore` reports it ignored (a tracked file is never "ignored" to git).
     do_land(_sess(work), ["untrack-lane"])
+    _sync(work)
     tracked = subprocess.run(["git", "ls-files"], cwd=work, capture_output=True, text=True).stdout
     assert ".settings.local.json" not in tracked.splitlines()
     assert (work / ".settings.local.json").exists()

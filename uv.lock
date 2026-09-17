@@ -234,7 +234,7 @@ dev = [
 requires-dist = [
     { name = "pydantic", specifier = ">=2.12" },
     { name = "pygithub", marker = "extra == 'github'", specifier = ">=2.3" },
-    { name = "pyjutsu", url = "https://github.com/Bullish-Design/Pyjutsu/releases/download/v0.21.1/pyjutsu-0.21.1-cp313-abi3-manylinux_2_39_x86_64.whl" },
+    { name = "pyjutsu", url = "https://github.com/Bullish-Design/Pyjutsu/releases/download/v0.22.0/pyjutsu-0.22.0-cp313-abi3-manylinux_2_39_x86_64.whl" },
     { name = "typer", specifier = ">=0.12" },
 ]
 provides-extras = ["github"]
@@ -409,13 +409,13 @@ wheels = [
 
 [[package]]
 name = "pyjutsu"
-version = "0.21.1"
-source = { url = "https://github.com/Bullish-Design/Pyjutsu/releases/download/v0.21.1/pyjutsu-0.21.1-cp313-abi3-manylinux_2_39_x86_64.whl" }
+version = "0.22.0"
+source = { url = "https://github.com/Bullish-Design/Pyjutsu/releases/download/v0.22.0/pyjutsu-0.22.0-cp313-abi3-manylinux_2_39_x86_64.whl" }
 dependencies = [
     { name = "pydantic" },
 ]
 wheels = [
-    { url = "https://github.com/Bullish-Design/Pyjutsu/releases/download/v0.21.1/pyjutsu-0.21.1-cp313-abi3-manylinux_2_39_x86_64.whl", hash = "sha256:ffb0aa2fb336657f656ce9b8078f24987e98fbc3cb54de4729e4e8cc66db9d65" },
+    { url = "https://github.com/Bullish-Design/Pyjutsu/releases/download/v0.22.0/pyjutsu-0.22.0-cp313-abi3-manylinux_2_39_x86_64.whl", hash = "sha256:9746c0ebc3861797698b1a38df4d6949131a1c1440b00795f7d95ba65acb4ea4" },
 ]
 
 [package.metadata]

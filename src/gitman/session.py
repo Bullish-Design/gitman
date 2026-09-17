@@ -103,16 +103,18 @@ class Session:
 
         **Why a read must do this.** `fresh_view()` snapshots a dirty `@`, which rewrites `@` —
         and any bookmark sitting on `@` follows it. The lane's jj position therefore advances
-        while `refs/heads/<lane>` stays put. `invariants._export_colocated_git` repairs that
-        after every *mutating* intent, but `status` is not one, so nothing repaired it and the
-        drift was permanent rather than transient:
+        while `refs/heads/<lane>` stays put. Since issue 44 stage 4d, `invariants._export_colocated_git`
+        runs only at `publish`/`push` (git refs are a publication artifact, not kept in lockstep
+        with every local write), so without this, the lag from a read's own snapshot would sit
+        there — permanent rather than transient — until the next `publish`/`push`/`status`:
 
             gitman start work     # bookmark at @
             echo x >> a.txt
-            gitman status         # CANONICAL — and the ref now lags
-            gitman status         # DESYNCHRONIZED, and `land` then refuses
+            gitman status         # CANONICAL — the ref now lags jj (ref-lagging, note-only)
+            gitman status         # still CANONICAL, still lagging, until this method runs
 
-        Four commands, and every editing session reaches them.
+        `ref-lagging` is note-only (stage 4c) — nothing refuses because of it — but a raw `git
+        log`/`status` sharing this `.git` would otherwise see a stale lane for the whole session.
 
         **Why the caller opts in.** Only `status` calls this, at the very end, after its report
         is rendered. Doing it inside `fresh_view()` instead puts a git write in the middle of

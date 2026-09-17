@@ -231,7 +231,10 @@ def test_pull_diverged_rebases_local_lands(tmp_path: Path):
     assert state.trunk.commit_id != origin_tip
     ahead = _sess(work).view().log("main@origin..main")
     assert len(ahead) == 1  # the preserved local land
-    # both contents are present on trunk's tree (nothing dropped)
+    # both contents are present on trunk's tree (nothing dropped). Stage 4d: `pull` no longer
+    # exports on its own, so `refs/heads/main` needs an explicit export before a raw `git show`
+    # can see the rebased tip.
+    ws.git_export()
     show = subprocess.run(["git", "show", "main:local.txt"], cwd=work, capture_output=True, text=True)
     assert show.returncode == 0 and show.stdout == "local\n"
     show2 = subprocess.run(["git", "show", "main:forge.txt"], cwd=work, capture_output=True, text=True)

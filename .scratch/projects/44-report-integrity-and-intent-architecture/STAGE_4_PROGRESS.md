@@ -94,15 +94,69 @@ instead of two.
 
 Suite: 375 passed (373 + 2 new). `ruff check` clean.
 
-## What's next — 4d, 4e
+## Stage 4d — export on demand — DONE (part 1 of the guide's 3 items)
 
-4d (remove the per-intent `_export_colocated_git`, consume stage 4a's total ref encoding) is now
-safely unblocked: `ref-lagging` — the shape 4d will make the ordinary steady-state between two
-gitman-driven writes — is note-only and rollback-safe.
+The guide's §Stage 4/4.1 lists three changes: (1) stop exporting after every op, move it to
+`publish`/`push`; (2) stop gating on ref state; (3) make the ref encoding total. Landed here:
 
-4e is still blocked on a pyjutsu capability: `GitIndexEntry` carries no intent-to-add flag, so
-`doctor` cannot classify the issue-41 state (`git add -N`) by porcelain code plus `HEAD` presence
-without a raw-git subprocess. A kickoff prompt for that pyjutsu-side change (add `intent_to_add:
-bool` to `GitIndexEntry`, sourced from `gix_index::entry::Flags::INTENT_TO_ADD`, confirmed present
-in the `gix-index` 0.53.0 this repo already pins) was handed off separately, to run from
-`/home/andrew/Documents/Projects/pyjutsu`.
+1. **On-demand export.** `canonical_tx`/`canonical_guard` (`invariants.py`) gained an
+   `export: bool = False` keyword; the existing `_export_colocated_git(session)` calls are now
+   `if export: ...`. Only `do_publish` (`core.py`) and `do_push` (`core.py`) pass `export=True`.
+   Every other mutating intent (`start`, `save`, `switch`, `split`, `shape`, `land`, `sync`,
+   `pull`, `untrack`, `release`, `version`) no longer touches the colocated `.git` at all — it
+   catches up at the next `publish`/`push`, or a `status` read's best-effort
+   `mirror_snapshot_refs`. `do_seed`'s inline `ws.git_export()` (bootstrap, before any lane
+   exists) and `do_abandon`/`do_undo`/`reconcile`'s own direct export/heal calls (all outside
+   `canonical_tx`/`canonical_guard`, for reasons specific to those verbs) are unchanged — the
+   guide's instruction targets the two guard call sites specifically.
+
+2. **Stop gating on ref state** — already true. `ref-mismatched`'s `blocks` has been
+   `frozenset()` since stage 3a, and `ref-lagging` is note-only since 4c. Confirmed, no code
+   change needed.
+
+3. **Total ref encoding — NOT done, and not a simple wiring job.** Traced jj-lib 0.44.0's own
+   export machinery (`~/.cargo/registry/.../jj-lib-0.44.0/src/git.rs`): `to_git_ref_name`
+   (`git.rs:378`) is an unconditional `format!("refs/heads/{name}")` off the jj bookmark's own
+   name — there is no indirection point to make it write `ref_for_lane(name)` instead. pyjutsu's
+   `git_export()` binding (`workspace.rs:1439`) wraps jj-lib's all-or-nothing `export_refs`, not
+   the filterable `export_some_refs` jj-lib also exposes. So consuming stage 4a's
+   `ref_for_lane`/`lane_for_ref` for real needs either (a) a new pyjutsu capability (expose
+   `export_some_refs`'s filter, or a rename hook), or (b) renaming the underlying jj bookmark
+   itself to the encoded form everywhere gitman creates/reads/resolves lane bookmarks
+   (`do_start`/`do_switch`/`do_land`/`do_shape`/`do_split`/`do_sync`, `lanes.py`'s fractal
+   parent-derivation, `state.py`'s lane capture) — plus a migration path for repos that already
+   have fractal-named bookmarks. Either is its own large/high-risk project, on the order of (or
+   bigger than) "stop exporting on every op" was. **Deferred as its own follow-up stage** (call it
+   4f), parallel to how 4e waits on a pyjutsu capability. A fractal lane will still hit the D/F
+   collision on export until this lands — same as before 4d, just triggered less often (only at
+   `publish`/`push`, not after every save).
+
+Test fallout, found by actually running the suite (not just the pre-change research pass, which
+only grepped for `rev-parse`/`refs/heads` and missed raw `git status`/`ls-files` checks): 6 tests
+across 5 files needed a fixture fix — `test_colocated_git_sync.py` (rewritten: its whole premise
+was "every intent exports," now tests the new contract in both directions),
+`test_tier2_trunk_verbs.py::test_untrack_removes_from_tree_keeps_file`,
+`test_tier1_trunk_model.py::test_colocated_git_clean_after_land`,
+`test_pull_integration.py::test_pull_diverged_rebases_local_lands` (all four: added an explicit
+`ws.git_export()`/`sync_colocated()` before the raw-git assertion, the established idiom already
+used by every other raw-pyjutsu-driven test in this suite), `test_read_intent_desync.py::_dirty_lane`
+(added one `ws.git_export()` so the shared fixture still represents "exported, now drifting" rather
+than "never exported"), and `test_stage3c_render_by_kind.py::test_render_status_matches_lane_non_linear_by_kind`
+(its `ref-lagging` co-anomaly no longer fires, since `do_save` no longer exports the lane in the
+first place — nothing to go stale). Also corrected two now-inaccurate docstrings
+(`session.py::mirror_snapshot_refs`, `test_read_intent_desync.py`'s module docstring) that
+described the pre-4d "every mutating intent exports" behavior.
+
+Suite: 377 passed (375 + 2 new in `test_colocated_git_sync.py`). `ruff check` clean.
+
+## What's next — 4e, 4f
+
+4e is still blocked on a pyjutsu capability: `GitIndexEntry` carried no intent-to-add flag — this
+landed in pyjutsu 0.22.0 (commit `5700f6e`, `intent_to_add: bool` sourced from
+`gix::index::entry::Flags::INTENT_TO_ADD`), but **0.22.0 is not yet published** (no GitHub
+release/wheel; `pyjutsu:publish` needs `vendomat publish pyjutsu` for the wheel and currently
+refuses on that repo's dirty `devenv.lock`/`devenv.nix`/`devenv.yaml`, pre-existing and unrelated).
+Once published, bump gitman's `[tool.uv.sources]` pin, then implement 4e's `doctor` classification.
+
+4f (total ref encoding, deferred above) needs its own scoping pass: decide between a pyjutsu
+capability and a bookmark-rename migration before writing any gitman code against it.

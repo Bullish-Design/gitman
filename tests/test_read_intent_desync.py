@@ -1,11 +1,11 @@
 """A read intent must not leave the repo off-canonical.
 
 `capture_state` snapshots a dirty `@`, which rewrites `@` — and any bookmark sitting on `@`
-follows it, so `refs/heads/<lane>` is left behind. `_export_colocated_git` repairs that after
-every *mutating* intent, but `status` is not one. The drift was therefore permanent, and four
-commands reached it:
+follows it, so `refs/heads/<lane>` is left behind. Since issue 44 stage 4d, mutating intents export
+only at `publish`/`push`, so nothing else repairs this drift either — it is permanent rather than
+transient until the next `publish`/`push`/`status`:
 
-    gitman start work · edit · gitman status · gitman status   → DESYNCHRONIZED, and `land` refuses
+    gitman start work · edit · gitman status · gitman status   → still CANONICAL, ref still lagging
 
 `Session.mirror_snapshot_refs` closes it, and `status` calls it last (project: read-intent-desync).
 """
@@ -48,8 +48,13 @@ def _dirty_lane(tmp_path: Path) -> Path:
     """A lane with an uncommitted on-disk edit — the state every session is in mid-work."""
     work = tmp_path / "work"
     work.mkdir()
-    _init(work)
+    ws = _init(work)
     do_start(_sess(work), "work", False)
+    # Stage 4d: `start` no longer exports on its own. Export explicitly here so the fixture
+    # still represents its intended starting point — a lane whose ref WAS in sync when work
+    # began, that then drifts from an on-disk edit — rather than a ref that was simply never
+    # created.
+    ws.git_export()
     (work / "f.txt").write_text("edited\n")
     return work
 

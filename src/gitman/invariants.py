@@ -595,11 +595,13 @@ def _export_colocated_git(session: Session) -> list[str]:
     """Mirror jj's refs into the colocated git after a successful mutation. Returns surfacing notes.
 
     jj-lib (via pyjutsu) does NOT auto-export to git — the jj *CLI* runs an explicit export after
-    every op so a colocated repo stays consistent for bare `git log`/`status`/`push`. gitman is that
-    CLI layer, so every mutating intent exports here (the same `ws.git_export()` `do_seed` runs inline).
-    Without it, `refs/heads/<trunk>` and lane branches lag jj after land/save/start, and a
-    `git push <trunk>` ships a stale ref. Runs last, after the undo checkpoint, so a (rare) export
-    failure never undoes an already-committed, already-recorded intent.
+    every op so a colocated repo stays consistent for bare `git log`/`status`/`push`. Issue 44
+    stage 4d makes git refs a publication artifact instead: only `do_publish`/`do_push` pass
+    `export=True` to `canonical_tx`/`canonical_guard`, so only they call this. Every other
+    mutating intent leaves the colocated `.git` alone — `refs/heads/<trunk>` and lane branches lag
+    jj between local writes by design now, and catch up at the next `publish`/`push` (or a
+    `status` read's best-effort `mirror_snapshot_refs`). `do_seed` still runs `ws.git_export()`
+    inline (bootstrap, before any lane exists to collide).
 
     **Best-effort**, matching the jj CLI: `git::export_refs` writes every ref it can — including
     `<trunk>` — then reports the bookmarks it couldn't (a ref diverged from jj's last-exported
@@ -718,7 +720,12 @@ class Canon:
 
 @contextmanager
 def canonical_tx(
-    session: Session, intent: str, *, lane: str | None = None, lanes: Iterable[str] | None = None
+    session: Session,
+    intent: str,
+    *,
+    lane: str | None = None,
+    lanes: Iterable[str] | None = None,
+    export: bool = False,
 ) -> Iterator[Transaction]:
     """Run a single-transaction intent transactionally under the shared-root lock.
 
@@ -727,6 +734,12 @@ def canonical_tx(
     the postcondition asserts the delta is empty + trunk-unchanged-unless-land (restoring
     `op_before` on violation), then records the undo checkpoint. `lane`/`lanes` are forwarded to
     the subject-scoped precheck (`subjects_for`, stage 3b) for the intents that need them.
+
+    `export` (issue 44 stage 4d — git refs become a publication artifact): most intents leave it
+    `False`, so the colocated `.git` is refreshed only at `publish`/`push`, not after every local
+    write. `_postcondition` still runs unconditionally; a ref left lagging by skipping export
+    classifies as `ref-lagging` (`state.py`), which stage 4c made note-only, so it never rolls
+    this intent back.
     """
     with repo_lock(session.repo_root):
         _assert_fresh(session)
@@ -737,7 +750,8 @@ def canonical_tx(
             yield tx  # body raises ⇒ pyjutsu rolls back, op_before intact
         # Export BEFORE the postcondition so capture_state's colocated_ref_desync
         # check sees synced git refs.
-        _export_colocated_git(session)
+        if export:
+            _export_colocated_git(session)
         _postcondition(session, intent, trunk_before, op_before, before)
         write_undo_checkpoint(session.repo_root, op_before, intent)
 
@@ -753,6 +767,7 @@ def canonical_guard(
     acquire_lock: bool = True,
     lane: str | None = None,
     lanes: Iterable[str] | None = None,
+    export: bool = False,
 ) -> Iterator[Canon]:
     """Run a multi-op intent under the shared-root lock, unwinding partials to `op_before`.
 
@@ -761,6 +776,9 @@ def canonical_guard(
     `op_before` (an earlier non-tx op may have already published) and re-raises. On clean exit, the
     postcondition runs and the undo checkpoint is recorded; `canon.state` carries the post-state.
     `lane`/`lanes` are forwarded to the subject-scoped precheck (`subjects_for`, stage 3b).
+
+    `export` (issue 44 stage 4d): see `canonical_tx`'s docstring — `do_publish`/`do_push` are the
+    only callers that pass `export=True`; every other intent leaves the colocated `.git` alone.
     """
     lock = repo_lock(session.repo_root) if acquire_lock else nullcontext()
     with lock:
@@ -774,6 +792,7 @@ def canonical_guard(
         except Exception:
             session.ws.restore_operation(op_before)  # an earlier op may have already published
             raise
-        canon.notes += _export_colocated_git(session)
+        if export:
+            canon.notes += _export_colocated_git(session)
         canon.state = _postcondition(session, intent, trunk_before, op_before, before)
         write_undo_checkpoint(session.repo_root, op_before, intent)

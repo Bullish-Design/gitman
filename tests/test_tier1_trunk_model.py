@@ -164,6 +164,13 @@ def test_colocated_git_clean_after_land(tmp_path: Path):
     do_save(_sess(tmp_path), "remove gone.txt")
     do_land(_sess(tmp_path), ["rm-gone"])
 
+    # Stage 4d: `land` no longer exports/syncs the colocated checkout on its own — force it so a
+    # raw `git status`/`ls-files` reflects trunk's current tree, matching what every mutating
+    # intent used to do automatically.
+    ws = Workspace.load(tmp_path)
+    ws.git_export()
+    ws.sync_colocated()
+
     status = subprocess.run(["git", "status", "--porcelain"], cwd=tmp_path, capture_output=True, text=True)
     assert status.returncode == 0
     # Ignore jj's own `.jj/` (this bare test repo has no root .gitignore for it); the point is that

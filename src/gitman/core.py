@@ -1050,7 +1050,7 @@ def do_publish(session: Session):
 
     notes: list[str] = []
 
-    with canonical_guard(session, "publish") as canon:
+    with canonical_guard(session, "publish", export=True) as canon:
         lane = require_current_lane(session, trunk)
         ok, out = run_verify(session.config.publish.verify, session.repo_root, session.config.publish.verify_timeout)
         if not ok:
@@ -2234,7 +2234,7 @@ def do_push(session: Session, *, reset_origin: bool = False):
 
     notes: list[str] = []
     try:
-        with canonical_guard(session, "push") as canon:
+        with canonical_guard(session, "push", export=True) as canon:
             try:
                 session.ws.git_push(remote, trunk, allow_new=True)
             except HookAbort as exc:
