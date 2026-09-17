@@ -805,7 +805,7 @@ def capture_state(session: Session) -> RepoState:
     # lane the latter double-counts its whole base chain as its own work. The base is name-derived
     # (Phase 2A, D1 — a pure function of the `/`-path name): `T/api`'s base is `T` iff `T` is live.
     # Resolve every live head once (the liveness set + the parentHead range target).
-    from gitman.lanes import name_parent
+    from gitman.lanes import lane_depth, name_parent
 
     lane_heads = _resolvable_lane_heads(view, trunk_name)
     live = set(lane_heads)
@@ -851,7 +851,7 @@ def capture_state(session: Session) -> RepoState:
         # (a raw out-of-band parent delete) — reported by `status`, never crashes capture (issue 11).
         parent = name_parent(name)
         base = parent if (parent is not None and parent in live) else None
-        depth = name.count("/")
+        depth = lane_depth(session, trunk_name, name)
         orphaned = parent is not None and parent != trunk_name and parent not in local_names
         base_ref = base if base is not None else trunk_name  # parentHead (a bookmark name resolves)
         range_changes = view.log(f"{base_ref}..{name}")
@@ -1062,6 +1062,22 @@ def capture_state(session: Session) -> RepoState:
         # G6 in the flesh (a manual pointer disguised as a repair). It stays advisory-only in 3a.
         for name in orphans:
             anomalies.append(make_anomaly("lane-orphaned", Subject(kind="lane", name=name), detail))
+
+    # Issue 44 stage 4f / project 46 S3 (D-A2): a lane bookmark still using the pre-migration `/`
+    # path separator. `+` is now the only separator the lane-name functions understand (a literal
+    # `/` in a live bookmark is exactly the fingerprint of "predates the flip"), and git forbids
+    # `refs/heads/T`/`refs/heads/T/api` from coexisting, so this lane's `publish` silently fails
+    # whenever a sibling prefix is also live (the whole reason this stage exists — SCOPING.md §2).
+    legacy_slash_lanes = sorted(name for name in local_names - {trunk_name} if "/" in name)
+    if legacy_slash_lanes:
+        detail = (
+            f"lane(s) {', '.join(legacy_slash_lanes)} still use the pre-migration '/' path "
+            f"separator, which git cannot use as a ref name alongside a sibling prefix — "
+            f"`gitman reconcile` renames them to the '+' separator."
+        )
+        notes.append(detail)
+        for name in legacy_slash_lanes:
+            anomalies.append(make_anomaly("lane-legacy-name", Subject(kind="lane", name=name), detail))
 
     anomalies.sort(key=lambda a: ANOMALY_ORDER.index(a.kind))
 

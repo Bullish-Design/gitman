@@ -576,24 +576,25 @@ def _adoptable_work(session: Session, trunk: str) -> bool:
 
 
 def do_subtask(session: Session, name: str, workspace: bool = False):
-    """Fan out a child lane under the current lane (D4): `subtask api` on `T` ≡ `start T/api`.
+    """Fan out a child lane under the current lane (D4): `subtask api` on `T` ≡ `start T+api`.
 
     The ergonomic decomposition verb. Requires being on a lane `cur` (refuse on trunk, exit 1); `name`
-    is a **single segment** — a `/` refuses (exit 3: you decompose the lane you're on, not name a path
-    elsewhere). Delegates to the name-derived `do_start` path with the qualified name `<cur>/<name>`, so
-    validation, the D1 base derivation, and I3′ all apply uniformly. `--workspace` (P3 fan-out) is wired
-    through to the isolated-workspace path; own-work-on-the-parent stays allowed (model §1.6)."""
-    from gitman.lanes import require_current_lane
+    is a **single segment** — a `+` or `/` refuses (exit 3: you decompose the lane you're on, not name
+    a path elsewhere). Delegates to the name-derived `do_start` path with the qualified name
+    `<cur>+<name>`, so validation, the D1 base derivation, and I3′ all apply uniformly. `--workspace`
+    (P3 fan-out) is wired through to the isolated-workspace path; own-work-on-the-parent stays allowed
+    (model §1.6)."""
+    from gitman.lanes import _INPUT_SEP, _SEP, normalise_lane_name, require_current_lane
 
     trunk = require_trunk(session.config)
     cur = require_current_lane(session, trunk)  # exit 1 if @ is on trunk
-    if "/" in name:
+    if _SEP in name or _INPUT_SEP in name:
         raise GitmanError(
-            f"`subtask` takes a single-segment leaf name (got '{name}') — it decomposes the lane you're "
-            f"on. Use `gitman start {name}` for a `/`-path elsewhere.",
+            f"`subtask` takes a single-segment leaf name (got '{name}') — it decomposes the lane "
+            f"you're on. Use `gitman start {normalise_lane_name(name)}` for a path elsewhere.",
             exit_code=3,
         )
-    result = do_start(session, f"{cur}/{name}", workspace, onto=None)
+    result = do_start(session, f"{cur}{_SEP}{name}", workspace, onto=None)
     return result.model_copy(update={"intent": "subtask"})
 
 

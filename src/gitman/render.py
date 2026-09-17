@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from gitman.anomalies import ANOMALY_ORDER, REGISTRY
 from gitman.doctor import FAIL, OK, WARN, DoctorReport
+from gitman.lanes import name_parent
 from gitman.models import IntentResult, Lane, LaneState, RepoState
 
 _GLYPH = {OK: "ok ", WARN: "!! ", FAIL: "XX "}
@@ -100,7 +101,7 @@ def _lane_line(lane: Lane, current: str | None) -> str:
     extra = []
     if lane.orphaned:
         # I3′: name-parent deleted out-of-band — the node is valid but its stack link is dangling.
-        parent = lane.name.rsplit("/", 1)[0]
+        parent = name_parent(lane.name)
         extra.append(f"ORPHANED (name-parent '{parent}' gone — `gitman reconcile`)")
     elif lane.base:
         extra.append(f"↳ on {lane.base}")  # fractal lanes: this lane is stacked on <base>

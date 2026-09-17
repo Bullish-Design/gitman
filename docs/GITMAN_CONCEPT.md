@@ -211,9 +211,13 @@ devenv, no version source) · `3` invalid usage.
 
 **Fractal lanes (recursive task-decomposition), Phase 2 shipped:** the whole model is *making the
 2-level (trunk + lanes) tree n-level by replacing the constant "trunk" with "this node's parent."* A
-lane name is a `/`-path (`T`, `T/api`, `T/api/handler`) and its **base is its name-parent** — a pure
+lane name is a `+`-path (`T`, `T+api`, `T+api+handler`) and its **base is its name-parent** — a pure
 namespace lookup (D1), which retired Phase-1's DAG-ancestry base search and closed its "child-behind-
-its-base" gap by construction (I3′). `subtask <leaf>` fans out a child under the current lane;
+its-base" gap by construction (I3′). **`+`, not `/`, is the separator** (issue 44 stage 4f / project
+46 decision D-A2): it is a legal git ref character, so the lane name, the jj bookmark, the git ref
+and the remote branch are one string with no parent/child collision. `/` is still accepted on
+input (`gitman start T/api`) as sugar, normalised to `+` at the CLI boundary — the rest of this
+section keeps the pre-migration `/` spelling in its examples pending the full doc rewrite (S8). `subtask <leaf>` fans out a child under the current lane;
 `land`/`sync`/`status` are parent-aware (fold a node into its base, `parentHead..node` reporting, the
 indented `↳ on <parent>` tree), and a base with a live child refuses to land/abandon. **`land --all`
 (2B)** folds the whole forest bottom-up (child→parent→trunk) — a *sequence* of one-level folds, each

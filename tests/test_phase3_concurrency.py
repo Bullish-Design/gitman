@@ -68,14 +68,11 @@ def _edit_and_save(wpath: Path, filename: str, content: str, msg: str) -> None:
     (wpath / filename).write_text(content)
     sub_ws = Workspace.load(wpath)
     sub_ws.snapshot()  # the workspace's own on-disk edit → its @
-    # Fractal lane names give git a D/F conflict (refs/heads/T blocks refs/heads/T/api), so
-    # git_export raises. Tolerate it — exactly what gitman does: `_export_colocated_git` reports
-    # the stale ref and points at `gitman reconcile`, and jj stays authoritative.
-    #
-    # Do NOT force-write the blocked refs by hand here. That is an out-of-band writer gitman
-    # never is, and it leaves refs jj cannot retire (deleting refs/heads/T/storage fails on its
-    # reflog, itself D/F-blocked by refs/heads/T's). A later git_import then reads the orphan
-    # back and RESURRECTS a landed lane, which blocks its parent's land as a "live child".
+    # Pre-S3, a fractal lane name gave git a D/F conflict (refs/heads/T blocked refs/heads/T/api),
+    # so this export could raise — tolerated here the same way gitman's own
+    # `_export_colocated_git` does. D-A2's `+` separator is a legal git ref character with no such
+    # collision, so this now succeeds; the try/except is kept as a harmless best-effort guard, not
+    # because it is expected to fire.
     try:
         sub_ws.git_export()
     except Exception:
@@ -118,9 +115,9 @@ def test_fanout_disjoint_edits_clean_fanin(tmp_path: Path):
     do_subtask(_sess(work), "storage", workspace=True)
     do_subtask(_sess(work), "web", workspace=True)
 
-    api_w = work / ".worktrees" / "T" / "api"
-    storage_w = work / ".worktrees" / "T" / "storage"
-    web_w = work / ".worktrees" / "T" / "web"
+    api_w = work / ".worktrees" / "T+api"
+    storage_w = work / ".worktrees" / "T+storage"
+    web_w = work / ".worktrees" / "T+web"
     for w in (api_w, storage_w, web_w):
         assert w.is_dir(), w
 
@@ -132,7 +129,7 @@ def test_fanout_disjoint_edits_clean_fanin(tmp_path: Path):
 
     # Each agent lands its OWN child from its OWN workspace (the self-case — the guard must not
     # over-refuse). Each fold advances the parent `T`; trunk stays frozen (internal folds).
-    for name, w in (("T/api", api_w), ("T/storage", storage_w), ("T/web", web_w)):
+    for name, w in (("T+api", api_w), ("T+storage", storage_w), ("T+web", web_w)):
         r = do_land(_sess(w), [name])
         assert r.outcome == "LANDED", r.messages
         assert _trunk(work) == trunk0, f"trunk moved on internal fold of {name}"
@@ -169,20 +166,20 @@ def test_moved_parent_leaves_sibling_behind_then_sync(tmp_path: Path):
 
     do_subtask(_sess(work), "api", workspace=True)
     do_subtask(_sess(work), "storage", workspace=True)
-    api_w = work / ".worktrees" / "T" / "api"
-    storage_w = work / ".worktrees" / "T" / "storage"
+    api_w = work / ".worktrees" / "T+api"
+    storage_w = work / ".worktrees" / "T+storage"
 
     _edit_and_save(api_w, "api.txt", "api\n", "api work")
     _edit_and_save(storage_w, "storage.txt", "storage\n", "storage work")
 
     # Land storage from ITS workspace → T advances under api.
-    r = do_land(_sess(storage_w), ["T/storage"])
+    r = do_land(_sess(storage_w), ["T+storage"])
     assert r.outcome == "LANDED", r.messages
 
     # api is now behind its base T, but its own commit + file are untouched (not stale, not rebased).
     state = capture_state(_sess(work))
     assert state.canonical, state.off_canonical
-    api_lane = _lane(state, "T/api")
+    api_lane = _lane(state, "T+api")
     assert api_lane is not None
     assert api_lane.behind > 0, "T/api should report as behind the advanced T"
     assert (api_w / "api.txt").read_text() == "api\n"  # undisturbed
@@ -193,7 +190,7 @@ def test_moved_parent_leaves_sibling_behind_then_sync(tmp_path: Path):
     assert r.outcome == "SYNCED", r.notes
     after = capture_state(_sess(work))
     assert after.canonical
-    assert _lane(after, "T/api").behind == 0  # caught up to the moved parent
+    assert _lane(after, "T+api").behind == 0  # caught up to the moved parent
 
 
 # --- scenario 3: overlap at fan-in, non-blocking --------------------------------------
@@ -215,13 +212,13 @@ def test_overlap_at_fanin_is_non_blocking(tmp_path: Path):
 
     do_subtask(_sess(work), "api", workspace=True)
     do_subtask(_sess(work), "storage", workspace=True)
-    api_w = work / ".worktrees" / "T" / "api"
-    storage_w = work / ".worktrees" / "T" / "storage"
+    api_w = work / ".worktrees" / "T+api"
+    storage_w = work / ".worktrees" / "T+storage"
 
     _edit_and_save(api_w, "shared.txt", "api\n", "api edits shared")
     _edit_and_save(storage_w, "shared.txt", "storage\n", "storage edits shared")
 
-    r = do_land(_sess(storage_w), ["T/storage"])
+    r = do_land(_sess(storage_w), ["T+storage"])
     assert r.outcome == "LANDED", r.messages  # T now has shared.txt = "storage\n"
 
     # sync T/api: overlapping edit → non-blocking CONFLICT, api left on its prior base, no markers.
@@ -233,7 +230,7 @@ def test_overlap_at_fanin_is_non_blocking(tmp_path: Path):
 
     # Resolve at fan-in by accepting the incoming (storage's) change, then land folds clean.
     _edit_and_save(api_w, "shared.txt", "storage\n", "api accepts storage's line")
-    r = do_land(_sess(api_w), ["T/api"])
+    r = do_land(_sess(api_w), ["T+api"])
     assert r.outcome == "LANDED", r.messages
 
     r = do_land(_sess(work), ["T"])
@@ -261,8 +258,8 @@ def test_land_all_refuses_live_checkout_then_completes(tmp_path: Path):
 
     do_subtask(_sess(work), "api", workspace=True)
     do_subtask(_sess(work), "storage", workspace=True)
-    api_w = work / ".worktrees" / "T" / "api"
-    storage_w = work / ".worktrees" / "T" / "storage"
+    api_w = work / ".worktrees" / "T+api"
+    storage_w = work / ".worktrees" / "T+storage"
     _edit_and_save(api_w, "api.txt", "api\n", "api work")
     _edit_and_save(storage_w, "storage.txt", "storage\n", "storage work")
 
@@ -274,8 +271,8 @@ def test_land_all_refuses_live_checkout_then_completes(tmp_path: Path):
     assert capture_state(_sess(work)).canonical  # refusing left the repo untouched + canonical
 
     # Land each child from its OWN workspace (the self-case — guard doesn't over-refuse).
-    assert do_land(_sess(api_w), ["T/api"]).outcome == "LANDED"
-    assert do_land(_sess(storage_w), ["T/storage"]).outcome == "LANDED"
+    assert do_land(_sess(api_w), ["T+api"]).outcome == "LANDED"
+    assert do_land(_sess(storage_w), ["T+storage"]).outcome == "LANDED"
 
     # Now only `T` remains and nothing is live elsewhere → land --all completes.
     r = do_land(_sess(work), None, all_=True)
@@ -307,7 +304,7 @@ def test_land_all_partial_progress_then_refuse(tmp_path: Path):
 
     do_switch(_sess(work), "T")  # back onto T in the default workspace
     do_subtask(_sess(work), "web", workspace=True)  # live in .worktrees/T/web
-    web_w = work / ".worktrees" / "T" / "web"
+    web_w = work / ".worktrees" / "T+web"
     _edit_and_save(web_w, "web.txt", "web\n", "web work")
 
     # order [T/api, T/web, T]: T/api (default → safe) folds, T/web (foreign workspace) refuses.
@@ -315,12 +312,12 @@ def test_land_all_partial_progress_then_refuse(tmp_path: Path):
     assert r.outcome == "BLOCKED", r.messages
     assert r.exit_code == 1
     joined = " ".join(r.messages)
-    assert "T/api" in joined  # the safe fold that landed
-    assert "T/web" in joined and "another workspace" in joined  # the refused live fold
+    assert "T+api" in joined  # the safe fold that landed
+    assert "T+web" in joined and "another workspace" in joined  # the refused live fold
     assert capture_state(_sess(work)).canonical
 
     # Land web from its own workspace, then re-run land --all → completes.
-    assert do_land(_sess(web_w), ["T/web"]).outcome == "LANDED"
+    assert do_land(_sess(web_w), ["T+web"]).outcome == "LANDED"
     r = do_land(_sess(work), None, all_=True)
     assert r.outcome == "LANDED", r.messages
     final = capture_state(_sess(work))
@@ -341,13 +338,13 @@ def _build_subtree(work: Path):
 
     do_subtask(_sess(work), "api", workspace=True)
     do_subtask(_sess(work), "storage", workspace=True)
-    api_w = work / ".worktrees" / "T" / "api"
-    storage_w = work / ".worktrees" / "T" / "storage"
+    api_w = work / ".worktrees" / "T+api"
+    storage_w = work / ".worktrees" / "T+storage"
     _edit_and_save(api_w, "api.txt", "api\n", "api work")
     _edit_and_save(storage_w, "storage.txt", "storage\n", "storage work")
 
     do_subtask(_sess(api_w), "handler", workspace=True)  # grandchild on T/api → depth 2
-    handler_w = work / ".worktrees" / "T" / "api" / "handler"
+    handler_w = work / ".worktrees" / "T+api+handler"
     _edit_and_save(handler_w, "handler.txt", "h\n", "handler work")
     return api_w, storage_w, handler_w
 
@@ -414,7 +411,7 @@ def test_abandon_bare_still_refuses_live_child(tmp_path: Path):
         assert exc.exit_code == 1
         assert "--recursive" in str(exc)
     # nothing torn down — the subtree is intact and canonical.
-    assert {"T", "T/api", "T/api/handler", "T/storage"} <= {lane.name for lane in capture_state(_sess(work)).lanes}
+    assert {"T", "T+api", "T+api+handler", "T+storage"} <= {lane.name for lane in capture_state(_sess(work)).lanes}
     assert capture_state(_sess(work)).canonical
 
 
@@ -462,12 +459,12 @@ def test_reconcile_refreshes_stale_grandchild_workspace(tmp_path: Path):
     do_save(_sess(work), "T work")
 
     do_subtask(_sess(work), "api", workspace=True)
-    api_w = work / ".worktrees" / "T" / "api"
+    api_w = work / ".worktrees" / "T+api"
     _edit_and_save(api_w, "api.txt", "api\n", "api work")
 
     # The grandchild: on T/api, fan out T/api/handler in its own workspace (depth 2).
     do_subtask(_sess(api_w), "handler", workspace=True)
-    handler_w = work / ".worktrees" / "T" / "api" / "handler"
+    handler_w = work / ".worktrees" / "T+api+handler"
     assert handler_w.is_dir()
     _edit_and_save(handler_w, "handler.txt", "h\n", "handler work")
 

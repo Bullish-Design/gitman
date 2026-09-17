@@ -85,18 +85,20 @@ def test_workspace_start_leaves_no_stray_change(tmp_path: Path):
     """pyjutsu 0.16 moved `add_workspace`'s default parent off root onto the source `@`'s parents.
     A workspace initial commit on a trunk descendant matches `_stray_revset`, so `status` would
     report the repo as edited outside gitman (I2). `_start_workspace` pins `revisions="root()"`.
-    Covers a flat name and a `/`-path name, whose intermediate dir gitman creates itself."""
+    Covers a flat name and a stacked `+`-path name — every workspace dir is flat under D-A2
+    (`.worktrees/T+api`, not a nested `.worktrees/T/api`), so there is no intermediate dir to create."""
     repo = tmp_path / "repo"
     repo.mkdir()
     _repo(repo)
 
     do_start(_sess(repo), "T", workspace=True)
-    do_start(_sess(repo), "T/api", workspace=True)
+    do_start(_sess(repo), "T+api", workspace=True)
 
     state = capture_state(_sess(repo))
     assert state.canonical, state.off_canonical
     assert state.off_canonical is None
-    assert sorted(lane.name for lane in state.lanes) == ["T", "T/api"]
+    assert sorted(lane.name for lane in state.lanes) == ["T", "T+api"]
+    assert (repo / ".worktrees" / "T+api").is_dir()
 
     # And no leftover initial commit sits off-lane below trunk.
     from gitman.state import find_strays

@@ -55,30 +55,51 @@ def lane_has_content(session: Session, trunk: str, lane: str) -> bool:
 # retires Phase-1's ancestry search (`state._base_of`) and closes its "child-behind-its-base loses the
 # link" gap by construction — the name is authoritative, the head is resolved live. See PLAN_PHASE2 §1.
 
-_SEGMENT_RE = re.compile(r"^[A-Za-z0-9._][A-Za-z0-9._-]*$")  # allowlist; no leading '-', no '@'/space/'/'
-_MAX_SEGMENTS = 8  # generous depth cap (D2) — `T/api/handler/...` up to 8 levels
+_SEGMENT_RE = re.compile(r"^[A-Za-z0-9._][A-Za-z0-9._-]*$")  # allowlist; no leading '-', no '@'/space/'+'
+_MAX_SEGMENTS = 8  # generous depth cap (D2) — `T+api+handler+...` up to 8 levels
+
+# The lane-path separator (issue 44 stage 4f / project 46 D-A2, signed off 2026-09-17). `+` is a
+# legal git ref character, so a fractal lane's bookmark IS its git ref IS its remote branch IS
+# what the user types — one representation, everywhere. `/` was the separator through stage 4a;
+# git forbids `refs/heads/T` and `refs/heads/T/api` from coexisting (a ref is a file, and `/`
+# claims a directory), which made every non-leaf fractal lane unpublishable (SCOPING.md §2). `/`
+# is kept as **input sugar only** (`normalise_lane_name`) — nothing past that boundary ever sees
+# it. The allowlist already forbids `+` in a segment, so the separator can never collide with a
+# segment character.
+_SEP = "+"
+_INPUT_SEP = "/"
 
 
 def name_parent(name: str) -> str | None:
-    """The name-path parent of `name`: the `/`-prefix with the last segment removed, or None for a
-    flat name (no `/`). Pure string op — liveness is the caller's concern (`lane_base`)."""
-    if "/" not in name:
+    """The name-path parent of `name`: the `+`-prefix with the last segment removed, or None for a
+    flat name (no `+`). Pure string op — liveness is the caller's concern (`lane_base`)."""
+    if _SEP not in name:
         return None
-    return name.rsplit("/", 1)[0]
+    return name.rsplit(_SEP, 1)[0]
+
+
+def normalise_lane_name(name: str) -> str:
+    """Accept a `/`-path on input and return the canonical `+`-separated lane name.
+
+    `/` reads better than `+` when typing a task path, and every pre-S3 repo, doc and habit uses
+    it. It is sugar only: nothing downstream of this function ever sees a `/`, which is what keeps
+    the lane name, the jj bookmark, the git ref and the remote branch a single string (issue 44
+    stage 4f / project 46 D-A2)."""
+    return name.replace(_INPUT_SEP, _SEP)
 
 
 def validate_lane_name(name: str) -> None:
-    """Refuse (exit 3) a malformed lane / `/`-path name before any creation (D2).
+    """Refuse (exit 3) a malformed lane / `+`-path name before any creation (D2).
 
-    A name is a `/`-separated path of segments; each segment is an allowlisted `[A-Za-z0-9._-]` token
-    with no leading `-`, no whitespace/`@`, and is never empty, `.`, or `..`. Caps the depth. Called
-    from `ensure_unique`, so every creation path (start / start --onto / subtask / split --into /
-    workspace) is covered by one gate."""
+    A name is a `+`-separated path of segments; each segment is an allowlisted `[A-Za-z0-9._-]`
+    token with no leading `-`, no whitespace/`@`, and is never empty, `.`, or `..`. Caps the depth.
+    Called from `ensure_unique`, so every creation path (start / start --onto / subtask / split
+    --into / workspace) is covered by one gate."""
     if not name:
         raise GitmanError("lane name is empty.", exit_code=3)
     if any(ch.isspace() for ch in name):
         raise GitmanError(f"lane name '{name}' contains whitespace.", exit_code=3)
-    segments = name.split("/")
+    segments = name.split(_SEP)
     if len(segments) > _MAX_SEGMENTS:
         raise GitmanError(
             f"lane name '{name}' is too deep ({len(segments)} segments; max {_MAX_SEGMENTS}).",
@@ -87,7 +108,7 @@ def validate_lane_name(name: str) -> None:
     for seg in segments:
         if seg == "":
             raise GitmanError(
-                f"lane name '{name}' has an empty segment (no leading/trailing/double '/').",
+                f"lane name '{name}' has an empty segment (no leading/trailing/double '{_SEP}').",
                 exit_code=3,
             )
         if seg in (".", ".."):
@@ -98,29 +119,6 @@ def validate_lane_name(name: str) -> None:
                 f"'_', '-'; no leading '-').",
                 exit_code=3,
             )
-
-
-# --- lane name ⇄ colocated git ref name (issue 44 stage 4a) ---------------------------
-# Git forbids `refs/heads/T` and `refs/heads/T/api` from coexisting: a ref is a file, and a `/`
-# in a name claims a directory. A fractal lane name therefore cannot be a git ref directly, and
-# gitman created that condition itself while calling it a desync (issue 43 D6). Encode every `/`
-# as `+` — a character `validate_lane_name` forbids, so the transform is total and reversible and
-# two distinct lane names can never collide onto one ref. `T/api` -> `T+api`.
-_REF_SEP = "+"
-
-
-def ref_for_lane(lane: str) -> str:
-    """The colocated git ref name for `lane` — total, reversible, readable.
-
-    Replaces each `/` in the lane name with `+`. The lane-name allowlist forbids `+`, so the map
-    is injective over valid lane names, and `lane_for_ref` recovers the original exactly. Trunk is
-    a flat name, so its ref is unchanged."""
-    return lane.replace("/", _REF_SEP)
-
-
-def lane_for_ref(ref: str) -> str:
-    """The lane name for a colocated git ref built by `ref_for_lane` — the inverse transform."""
-    return ref.replace(_REF_SEP, "/")
 
 
 def lane_base(session: Session, trunk: str, lane: str) -> str | None:
@@ -143,19 +141,19 @@ def children(session: Session, trunk: str, lane: str) -> set[str]:
 
 
 def lane_depth(session: Session, trunk: str, lane: str) -> int:
-    """Depth in the task tree = the number of `/`-segments below the root (`T`→0, `T/api`→1). A pure
+    """Depth in the task tree = the number of `+`-segments below the root (`T`→0, `T+api`→1). A pure
     name count (D1). Orders multi-lane land/sync: land folds child→parent (deepest first), sync rebases
     parent→child (shallowest first)."""
-    return lane.count("/")
+    return lane.count(_SEP)
 
 
 def subtree(session: Session, trunk: str, lane: str) -> set[str]:
-    """Every live lane in `lane`'s subtree — `lane` itself plus all descendants by `/`-path (`T` →
-    {`T`, `T/api`, `T/api/handler`, `T/storage`}). Name-derived + total (D1): the membership test IS
-    the path prefix (`m == lane or m.startswith(lane + "/")`), never a DAG walk. Drives `abandon
+    """Every live lane in `lane`'s subtree — `lane` itself plus all descendants by `+`-path (`T` →
+    {`T`, `T+api`, `T+api+handler`, `T+storage`}). Name-derived + total (D1): the membership test IS
+    the path prefix (`m == lane or m.startswith(lane + _SEP)`), never a DAG walk. Drives `abandon
     --recursive`'s bottom-up cascade — sort the result by `lane_depth`, deepest first (as `land --all`
     does), so a parent is only torn down after its children are gone (no orphan)."""
-    prefix = lane + "/"
+    prefix = lane + _SEP
     return {m for m in lane_names(session, trunk) if m == lane or m.startswith(prefix)}
 
 

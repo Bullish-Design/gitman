@@ -108,6 +108,14 @@ REGISTRY: dict[str, AnomalyKind] = {
     # wrong, which is what left `doctor`/`reconcile` both blind to a stale colocated HEAD. jj is
     # authoritative and self-consistent regardless, so this is note-only like `ref-lagging`.
     "colocated-record-stale": AnomalyKind(tier="ref", repair="reconcile", blocks=frozenset()),
+    # Issue 44 stage 4f / project 46 S3 (D-A2): a lane bookmark still named with the pre-migration
+    # `/` path separator. Git forbids `refs/heads/T` and `refs/heads/T/api` from coexisting, so a
+    # `/`-named lane's `gitman publish` is rejected by the remote whenever a sibling prefix is also
+    # live (SCOPING.md §2) — this is what makes that silent failure loud. Note-only: jj is
+    # self-consistent (the bookmark resolves fine locally), and blocking would wedge an existing
+    # fractal repo that is already working for everything except publish. `gitman reconcile`
+    # migrates it to the `+` separator (same commit, new name).
+    "lane-legacy-name": AnomalyKind(tier="lane", repair="reconcile", blocks=frozenset()),
     "lane-orphaned": AnomalyKind(
         tier="lane",
         repair=None,
@@ -154,6 +162,7 @@ ANOMALY_ORDER: tuple[str, ...] = (
     "ref-mismatched",
     "ref-lagging",
     "colocated-record-stale",
+    "lane-legacy-name",
     "lane-orphaned",
 )
 
@@ -164,4 +173,4 @@ ANOMALY_ORDER: tuple[str, ...] = (
 # have a repair (stage 4c) — it is note-only because jj is already authoritative for that
 # direction, so surfacing it as a blocking DESYNCHRONIZED would cry wolf on a harmless, self-healing
 # shape.
-NOTE_ONLY_KINDS = frozenset({"lane-orphaned", "ref-lagging", "colocated-record-stale"})
+NOTE_ONLY_KINDS = frozenset({"lane-orphaned", "ref-lagging", "colocated-record-stale", "lane-legacy-name"})

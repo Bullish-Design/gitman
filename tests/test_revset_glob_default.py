@@ -51,14 +51,14 @@ def test_lane_names_cannot_carry_a_glob_metacharacter(name: str):
 
 
 def test_stacked_lane_round_trips_through_status_land_and_abandon(tmp_path: Path):
-    """A `/`-path lane name is a bare symbol. It must resolve unchanged through `status`, `land`,
+    """A `+`-path lane name is a bare symbol. It must resolve unchanged through `status`, `land`,
     and `abandon` under the new glob default."""
     _repo(tmp_path)
 
     do_start(_sess(tmp_path), "T", workspace=False)
     (tmp_path / "t.txt").write_text("parent work\n")
     do_save(_sess(tmp_path), "parent work")
-    do_start(_sess(tmp_path), "T/api", workspace=False)
+    do_start(_sess(tmp_path), "T+api", workspace=False)
     (tmp_path / "api.txt").write_text("child work\n")
     do_save(_sess(tmp_path), "child work")
 
@@ -66,23 +66,23 @@ def test_stacked_lane_round_trips_through_status_land_and_abandon(tmp_path: Path
     state = capture_state(_sess(tmp_path))
     assert state.canonical, state.off_canonical
     lanes = {lane.name: lane for lane in state.lanes}
-    assert set(lanes) == {"T", "T/api"}
-    assert lanes["T/api"].base == "T"
-    assert lanes["T/api"].change_count == 1  # the range `T..T/api`, not `main..T/api`
+    assert set(lanes) == {"T", "T+api"}
+    assert lanes["T+api"].base == "T"
+    assert lanes["T+api"].change_count == 1  # the range `T..T+api`, not `main..T+api`
 
     # land the child into its parent, then the parent into trunk.
-    assert do_land(_sess(tmp_path), ["T/api"]).outcome == "LANDED"
+    assert do_land(_sess(tmp_path), ["T+api"]).outcome == "LANDED"
     assert {lane.name for lane in capture_state(_sess(tmp_path)).lanes} == {"T"}
     assert (tmp_path / "api.txt").exists()
     assert do_land(_sess(tmp_path), ["T"]).outcome == "LANDED"
     assert capture_state(_sess(tmp_path)).lanes == []
 
-    # and abandon reaches a `/`-path lane too.
+    # and abandon reaches a `+`-path lane too.
     do_start(_sess(tmp_path), "T", workspace=False)
-    do_start(_sess(tmp_path), "T/other", workspace=False)
+    do_start(_sess(tmp_path), "T+other", workspace=False)
     (tmp_path / "other.txt").write_text("throwaway\n")
     do_save(_sess(tmp_path), "throwaway")
-    assert do_abandon(_sess(tmp_path), "T/other").outcome == "ABANDONED"
+    assert do_abandon(_sess(tmp_path), "T+other").outcome == "ABANDONED"
     assert {lane.name for lane in capture_state(_sess(tmp_path)).lanes} == {"T"}
 
 

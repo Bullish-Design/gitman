@@ -101,11 +101,11 @@ def test_internal_folds_freeze_trunk_root_fold_moves_it(tmp_path: Path):
 
     trunk0 = _trunk(work)
 
-    do_land(_sess(work), ["T/api/handler"])  # → T/api
+    do_land(_sess(work), ["T+api+handler"])  # → T/api
     assert _trunk(work) == trunk0  # internal fold: trunk frozen
-    do_land(_sess(work), ["T/api"])  # → T
+    do_land(_sess(work), ["T+api"])  # → T
     assert _trunk(work) == trunk0
-    do_land(_sess(work), ["T/storage"])  # → T
+    do_land(_sess(work), ["T+storage"])  # → T
     assert _trunk(work) == trunk0
 
     do_land(_sess(work), ["T"])  # root fold → trunk
@@ -198,14 +198,14 @@ def test_land_all_mid_recursion_conflict_blocks(tmp_path: Path):
     assert r.outcome == "BLOCKED"
     assert r.exit_code == 1
     joined = " ".join(r.messages)
-    assert "T/api" in joined  # what landed
+    assert "T+api" in joined  # what landed
     assert "conflict" in joined.lower()
 
     final = capture_state(_sess(work))
     assert final.canonical, final.off_canonical
     live = {lane.name for lane in final.lanes}
-    assert "T/api" not in live  # committed
-    assert "T/storage" in live and "T" in live  # skipped / not reached
+    assert "T+api" not in live  # committed
+    assert "T+storage" in live and "T" in live  # skipped / not reached
 
 
 def test_bare_land_with_live_child_still_refuses(tmp_path: Path):
@@ -231,9 +231,11 @@ def test_bare_land_with_live_child_still_refuses(tmp_path: Path):
 # --- D7: nested-workspace self-ignore -------------------------------------------------
 
 
-def test_nested_workspace_self_ignores_top_worktrees(tmp_path: Path):
-    """A `/`-path `--workspace` lane (`T/api`) lands at `.worktrees/T/api`; the self-ignore must
-    hit the TOP `.worktrees/`, so colocated git reports no `?? .worktrees/` noise (D7)."""
+def test_workspace_self_ignores_top_worktrees_even_when_flat(tmp_path: Path):
+    """A stacked `--workspace` lane (`T+api`) lands at the FLAT `.worktrees/T+api` — under D-A2
+    every workspace dir is flat (`+` doesn't nest, unlike the pre-S3 `/` separator) — and the
+    self-ignore still hits the TOP `.worktrees/`, so colocated git reports no `?? .worktrees/`
+    noise (D7)."""
     repo = tmp_path / "repo"
     repo.mkdir()
     _init(repo)
@@ -241,13 +243,12 @@ def test_nested_workspace_self_ignores_top_worktrees(tmp_path: Path):
     (repo / "t.txt").write_text("t\n")
     do_save(_sess(repo), "T")
 
-    do_start(_sess(repo), "T/api", workspace=True)
+    do_start(_sess(repo), "T+api", workspace=True)
 
-    wpath = repo / ".worktrees" / "T" / "api"
+    wpath = repo / ".worktrees" / "T+api"
     assert wpath.is_dir()
-    # the TOP `.worktrees/` carries the `*` ignore — not the intermediate `.worktrees/T`.
     assert (repo / ".worktrees" / ".gitignore").read_text() == "*\n"
-    # a fat file under the nested checkout stays invisible to colocated git.
+    # a fat file under the checkout stays invisible to colocated git.
     (wpath / "big.bin").write_text("x" * 1024)
     porcelain = subprocess.run(
         ["git", "status", "--porcelain"], cwd=repo, capture_output=True, text=True, check=True
@@ -255,8 +256,8 @@ def test_nested_workspace_self_ignores_top_worktrees(tmp_path: Path):
     assert ".worktrees" not in porcelain
 
 
-def test_nested_workspace_outside_repo_writes_no_ignore(tmp_path: Path):
-    """An outside-repo `workspace_dir` override for a nested name writes no stray `.gitignore`
+def test_workspace_outside_repo_writes_no_ignore(tmp_path: Path):
+    """An outside-repo `workspace_dir` override for a stacked name writes no stray `.gitignore`
     (the in-repo self-ignore gate is unchanged by D7)."""
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -266,12 +267,11 @@ def test_nested_workspace_outside_repo_writes_no_ignore(tmp_path: Path):
     (repo / "t.txt").write_text("t\n")
     do_save(_sess(repo, cfg), "T")
 
-    do_start(_sess(repo, cfg), "T/api", workspace=True)
+    do_start(_sess(repo, cfg), "T+api", workspace=True)
 
-    wpath = (repo / ".." / "wt" / "T" / "api").resolve()
+    wpath = (repo / ".." / "wt" / "T+api").resolve()
     assert wpath.is_dir()
     assert not (wpath.parent / ".gitignore").exists()
-    assert not ((repo / "..").resolve() / "wt" / ".gitignore").exists()
 
 
 # --- regression: sync --all is unchanged ----------------------------------------------

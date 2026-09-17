@@ -112,5 +112,65 @@ had already been fully argued in `SCOPING.md`, so this stage was a straightforwa
 
 Suite: 401 passed (394 after S2+S9 + 7 new). `ruff check` clean.
 
-**Next:** S3 (fractal ref encoding, D-A2 signed off) — medium, unblocked. Do not run S4 (working
-copy provenance) concurrently with it.
+## S3 — done (landed, pushed)
+
+`GUIDE_S3_fractal_ref_encoding.md`, issue 44 stage 4f / issue 43 D6, decision D-A2 (signed off).
+Build-D-A2-only, as instructed — §6's D-A1 alternative was not implemented.
+
+- `lanes.py`: `_SEP = "+"` is now the lane-path separator everywhere; `_INPUT_SEP = "/"` is input
+  sugar, normalised by the new `normalise_lane_name`. `name_parent`, `validate_lane_name`,
+  `lane_depth`, `subtree` all split/count on `+`. `ref_for_lane`/`lane_for_ref`/`_REF_SEP` (stage
+  4a, never consumed) are **deleted**, along with their tests.
+- `cli.py`: `normalise_lane_name` wired at every lookup/creation entry point that takes a lane
+  name — `start` (name + `--onto`), `switch`, `split --into`, `land` (each of `lanes`), `abandon`.
+  Deliberately NOT `subtask` — its guard must see the raw input to refuse a `+`/`/` leaf correctly.
+- `core.py`: `do_subtask`'s guard checks both `_SEP` and `_INPUT_SEP`; the qualified name it
+  builds is `f"{cur}{_SEP}{name}"`.
+- `state.py`/`render.py`: the lane-building loop's `depth` now calls `lanes.lane_depth` (was a
+  second, independent `name.count("/")` expression); `render.py`'s orphan message calls
+  `lanes.name_parent` (was `lane.name.rsplit("/", 1)[0]`). One implementation each, as required.
+- **New anomaly `lane-legacy-name`** (note-only, tier="lane", repair="reconcile"): a live bookmark
+  whose name still contains `/` — the fingerprint of a pre-migration repo, since every lane
+  created after this lands uses `+` exclusively. Detected in `capture_state` by testing local
+  bookmark names directly (not the "prefix collision" framing the guide's step 1 describes —
+  equivalent under D-A2, since a `/`-named lane can never coexist with a live `+`-named sibling
+  needing the same collision check; the direct test is simpler and exactly as precise).
+- **New repair** `repairs._repair_legacy_lane_names`: renames each `/`-named bookmark to its
+  canonical `+`-name at the same commit (`create_bookmark` + `delete_bookmark` in one tx —
+  `Transaction` has no `rename_bookmark`, confirmed against pyjutsu 0.22.0). Deliberately does
+  **not** move an attached workspace directory/registration automatically — gitman never touches
+  a `@` in a foreign workspace (the same rule `do_land`'s fold-refusal enforces), and this reconcile
+  call may be running from a different workspace than the one holding uncommitted edits. Reports
+  an honest note instead, naming the manual follow-up.
+- Workspace paths are flat under `+` (`.worktrees/T+api`, never nested) — the ancestor-mkdir-walk
+  in `_start_workspace` (issue 43 D2's fix) still works unchanged for a flat name (one loop
+  iteration), so guide step 6's "simplify, in its own commit" cleanup was **not** done — it's a
+  pure win with no correctness stake, left for whoever next touches that function.
+- Docs: one line added to `GITMAN_CONCEPT.md`'s fractal-lanes paragraph (separator + input-sugar
+  note); the rest of that section's `/`-spelled examples are left for S8's full rewrite, per the
+  guide. Issue 43 D6 marked FIXED; issue 44 G4 row marked fully SHIPPED (4a-4f).
+
+**The regression this stage caused, and the real lesson.** The guide's own "Suite green (383 +
+~8)" undercounted badly: **28 existing tests across 6 files** (`test_phase1_stacking.py`,
+`test_phase2b_recursion.py`, `test_phase3_concurrency.py`, `test_revset_glob_default.py`,
+`test_workspace_inrepo.py`, `test_land_hooks.py`) called `do_start`/`do_subtask`/`do_land` etc.
+**directly at the core layer** with `/`-separated lane-name string literals (e.g. `do_start(sess,
+"T/api", False)`), which is BELOW the CLI's new normalisation boundary — after the flip, `/` is a
+reserved character `validate_lane_name` rejects, so every one of those calls started raising. Two
+of the workspace tests (`test_nested_workspace_self_ignores_top_worktrees`,
+`test_nested_workspace_outside_repo_writes_no_ignore`) were testing a nested-workspace shape
+(`.worktrees/T/api`) that is now unreachable by construction (workspace dirs are flat under `+`)
+and were rewritten to test the flat case instead; every other failure was a mechanical `/`→`+`
+literal fix. **Lesson for future stages that touch a name/representation used pervasively in test
+fixtures: grep the WHOLE test tree for the old spelling before trusting a guide's test-count
+estimate** — `test_phase2a_names.py` was the only file the guide named, and it was the smallest of
+the seven that needed changes.
+
+Tests: `tests/test_phase2a_names.py` rewritten (31, was 26 — net new after removing the deleted
+`ref_for_lane`/`lane_for_ref` tests), new `tests/test_issue44_stage4f_fractal_publish.py` (5). Six
+other files patched for the separator flip with no net test-count change. Suite: 401 passed
+(same total as after S5 — new tests roughly offset by deleted `ref_for_lane` tests). `ruff check`
+clean.
+
+**Next:** S4 (working copy provenance) — large, high risk. Do not run concurrently with S3 (moot
+now that S3 is landed) — S6 (verb consolidation) is the one that must wait for S3, which it now has.

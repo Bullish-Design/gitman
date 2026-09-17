@@ -158,6 +158,11 @@ membership, never the blob hash) and `doctor` gained a `colocated-index` row (WA
 OK otherwise). See `.scratch/projects/46-remaining-refactor/GUIDE_S2_doctor_intent_to_add.md` and
 `tests/test_issue41_intent_to_add.py`.
 
-4f (total ref encoding, deferred above) is scoped and decided in project 46:
-`.scratch/projects/46-remaining-refactor/SCOPING.md` §2 (D-A2 signed off) and
-`GUIDE_S3_fractal_ref_encoding.md`.
+4f — **SHIPPED** (2026-09-17, project 46 S3). Decision D-A2 (signed off 2026-09-17,
+`SCOPING.md` §2.2): `+` is the lane-path separator EVERYWHERE — jj bookmark, git ref, remote
+branch, report, and what the user types. `/` is accepted only as input sugar
+(`lanes.normalise_lane_name`), normalised away at the CLI boundary; nothing downstream ever sees
+it. `ref_for_lane`/`lane_for_ref` (stage 4a) are deleted — one representation, not two. A new
+note-only anomaly (`lane-legacy-name`) reports a pre-migration `/`-named bookmark still on disk;
+`gitman reconcile` migrates it (same commit, new name) via the existing repair registry. See
+`GUIDE_S3_fractal_ref_encoding.md` and `tests/test_issue44_stage4f_fractal_publish.py`.

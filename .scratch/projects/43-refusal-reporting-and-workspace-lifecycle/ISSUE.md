@@ -29,7 +29,7 @@ workspace lifecycles do not match what it tells the operator.**
 | D3 | A jj workspace registration outlives its lane, permanently burning the lane name, and no gitman verb forgets it | **high** |
 | D4 | `start <T/leaf>` does **not** adopt a dirty unbookmarked `@`, though `status` says it will | **high** |
 | D5 | `land` folds a change with an empty description without warning | medium |
-| D6 | On fractal lanes the git ref desyncs after essentially every write, so `reconcile` becomes a required prefix to every `save` | medium |
+| D6 | ~~On fractal lanes the git ref desyncs after essentially every write, so `reconcile` becomes a required prefix to every `save`~~ **FIXED (2026-09-17, project 46 S3, issue 44 stage 4f).** Took the first "what I expected" option below: `+` (not `/`) is now the lane-path separator everywhere, a legal git ref character with no parent/child collision — see §7. | medium |
 
 D1 is the root of the expensive one: D6 makes refusals frequent, D1 makes them invisible, and D5
 lets the resulting undescribed change land.
@@ -268,7 +268,16 @@ cannot reach a published lane.
 
 ---
 
-## 7. D6 — fractal lanes desync the git ref after nearly every write (MEDIUM)
+## 7. D6 — fractal lanes desync the git ref after nearly every write (MEDIUM) — FIXED
+
+**Fixed 2026-09-17** (project 46 S3, issue 44 stage 4f, decision D-A2 — signed off, `SCOPING.md`
+§2.2): `+` is now the lane-path separator everywhere — jj bookmark, git ref, remote branch,
+report, and user input (`/` is accepted only as input sugar, normalised away at the CLI boundary).
+`+` is a legal git ref character with no parent/child directory collision, so this is the first
+"what I expected" option below, taken directly rather than the `refs/gitman/` namespace
+alternative. A pre-migration `/`-named repo is detected (note-only `lane-legacy-name` anomaly) and
+migrated by `gitman reconcile` (same commit, new name). The section below is kept as the original
+report.
 
 This is issue 42's / the known slash-path ref collision, filed here for its **operational cost**
 rather than its mechanism. In a repo whose lanes are `/`-paths, the colocated git ref falls behind

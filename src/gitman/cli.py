@@ -221,8 +221,11 @@ def start(
 ) -> None:
     """Create a lane: a `/`-path name (`T/api`) stacks on its name-parent `T`; a flat name roots on trunk."""
     from gitman.core import do_start
+    from gitman.lanes import normalise_lane_name
 
-    _finish_intent(do_start(_session(), name, workspace, onto))
+    _finish_intent(
+        do_start(_session(), normalise_lane_name(name), workspace, normalise_lane_name(onto) if onto else onto)
+    )
 
 
 @app.command()
@@ -242,8 +245,9 @@ def switch(
 ) -> None:
     """Move @ onto an existing lane's change to resume it."""
     from gitman.core import do_switch
+    from gitman.lanes import normalise_lane_name
 
-    _finish_intent(do_switch(_session(), name))
+    _finish_intent(do_switch(_session(), normalise_lane_name(name)))
 
 
 @app.command()
@@ -270,8 +274,9 @@ def split(
 ) -> None:
     """Partition the current lane's change into two sibling lanes (whole-file --paths or --hunks)."""
     from gitman.core import do_split
+    from gitman.lanes import normalise_lane_name
 
-    _finish_intent(do_split(_session(), paths or [], into, message, hunks))
+    _finish_intent(do_split(_session(), paths or [], normalise_lane_name(into), message, hunks))
 
 
 @app.command()
@@ -325,8 +330,9 @@ def land(
 ) -> None:
     """Fold lane(s) into their base (parent lane or trunk); `--all` folds the whole forest bottom-up."""
     from gitman.core import do_land
+    from gitman.lanes import normalise_lane_name
 
-    _finish_intent(do_land(_session(), lanes, all_))
+    _finish_intent(do_land(_session(), [normalise_lane_name(n) for n in lanes] if lanes else lanes, all_))
 
 
 @app.command()
@@ -339,8 +345,9 @@ def abandon(
 ) -> None:
     """Discard a lane (terminal); `--recursive` tears down its whole subtree bottom-up."""
     from gitman.core import do_abandon
+    from gitman.lanes import normalise_lane_name
 
-    _finish_intent(do_abandon(_session(), lane, recursive))
+    _finish_intent(do_abandon(_session(), normalise_lane_name(lane) if lane else lane, recursive))
 
 
 # --- M3 ------------------------------------------------------------------------------

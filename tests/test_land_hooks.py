@@ -120,7 +120,7 @@ def test_land_all_runs_one_pre_and_one_post_hook(tmp_path: Path):
     do_start(_session(tmp_path, config), "base", workspace=False)
     (tmp_path / "base.txt").write_text("base\n")
     do_save(_session(tmp_path, config), "base")
-    do_start(_session(tmp_path, config), "base/dep", workspace=False)
+    do_start(_session(tmp_path, config), "base+dep", workspace=False)
     (tmp_path / "dep.txt").write_text("dep\n")
     do_save(_session(tmp_path, config), "dep")
 

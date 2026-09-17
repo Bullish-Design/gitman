@@ -115,6 +115,41 @@ def _repair_colocated_record(
         actions.append(f"colocated git checkout not re-synced ({exc}) — run `gitman reconcile` again.")
 
 
+def _repair_legacy_lane_names(
+    session: Session, trunk: str, abandon_: bool, keep: KeepSide | None, actions: list[str], before: Survey
+) -> None:
+    """`lane-legacy-name`: rename a pre-migration `/`-path lane bookmark to its canonical `+`-name
+    (project 46 S3, D-A2). Same commit, new name — `Transaction` has no `rename_bookmark` (verified
+    against pyjutsu 0.22.0), so the rename is `create_bookmark` + `delete_bookmark` in one
+    transaction, keyed by commit_id so it can never collide two names onto one bookmark.
+
+    A workspace registered under the OLD name is deliberately **not** moved: gitman never touches
+    a `@` in a foreign workspace (the same rule `do_land`'s fold-refusal enforces), and this
+    reconcile call may be running from a completely different workspace. Reports it as an honest
+    note instead of silently risking uncommitted on-disk edits there.
+    """
+    from gitman.lanes import normalise_lane_name
+
+    view = session.fresh_view()
+    legacy = sorted(b.name for b in view.bookmarks() if b.remote is None and "/" in b.name)
+    if not legacy:
+        return
+    workspace_names = {w.name for w in session.ws.workspaces()}
+    with session.ws.transaction("gitman:reconcile-rename-legacy-lane", auto_snapshot=False) as tx:
+        for old in legacy:
+            new = normalise_lane_name(old)
+            commit_id = view.resolve(old).commit_id
+            tx.create_bookmark(new, commit_id)
+            tx.delete_bookmark(old)
+            actions.append(f"renamed lane '{old}' -> '{new}' (same commit {commit_id[:12]}).")
+            if old in workspace_names:
+                actions.append(
+                    f"lane '{new}' has a workspace still registered as '{old}' — not moved "
+                    f"automatically (its on-disk `@` may hold uncommitted edits); cd there, "
+                    f"`gitman save` any pending work, then re-run `gitman reconcile`."
+                )
+
+
 def _repair_lane_conflicts(
     session: Session, trunk: str, abandon_: bool, keep: KeepSide | None, actions: list[str], before: Survey
 ) -> None:
@@ -276,6 +311,7 @@ REPAIRS: dict[str, Repair] = {
     "ref-mismatched": _repair_refs,
     "ref-lagging": _repair_refs,
     "colocated-record-stale": _repair_colocated_record,
+    "lane-legacy-name": _repair_legacy_lane_names,
     "lane-conflicted": _repair_lane_conflicts,
     "stray-change": _repair_strays,
     "lane-divergent": _repair_lane_twins,
@@ -294,6 +330,7 @@ REPAIRS_ORDER: tuple[str, ...] = (
     "ref-mismatched",
     "ref-lagging",
     "colocated-record-stale",
+    "lane-legacy-name",
     "lane-conflicted",
     "stray-change",
     "lane-divergent",
