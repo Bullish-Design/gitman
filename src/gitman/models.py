@@ -185,8 +185,8 @@ class RepoState(BaseModel):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def canonical(self) -> bool:
-        """All invariants hold. `lane-orphaned` is advisory-only (backlog D3) and never trips
-        this — see `gitman.anomalies.NOTE_ONLY_KINDS`."""
+        """All invariants hold. `lane-orphaned` and `ref-lagging` are advisory-only and never
+        trip this — see `gitman.anomalies.NOTE_ONLY_KINDS`."""
         return not any(a.kind not in NOTE_ONLY_KINDS for a in self.anomalies)
 
     @computed_field  # type: ignore[prop-decorator]

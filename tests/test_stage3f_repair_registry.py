@@ -60,12 +60,13 @@ def test_repairs_order_names_every_repairs_key_exactly_once():
 
 def test_repairs_order_heals_colocated_refs_first():
     """Trap 2 (guide §3.13.2): colocated-ref healing must run before every other repair, since the
-    import it may do can bring git-only history — trunk included — into view. Both ref-repairing
-    kinds sit ahead of every other kind in the declared order."""
-    ref_kinds = {"trunk-conflicted", "ref-mismatched"}
-    first_two = set(REPAIRS_ORDER[:2])
-    assert first_two == ref_kinds, REPAIRS_ORDER
-    assert REPAIRS_ORDER.index("lane-conflicted") > 1
+    import it may do can bring git-only history — trunk included — into view. All three
+    ref-repairing kinds (stage 4c split `ref-mismatched` by direction, adding `ref-lagging`) sit
+    ahead of every other kind in the declared order."""
+    ref_kinds = {"trunk-conflicted", "ref-mismatched", "ref-lagging"}
+    first_three = set(REPAIRS_ORDER[:3])
+    assert first_three == ref_kinds, REPAIRS_ORDER
+    assert REPAIRS_ORDER.index("lane-conflicted") > 2
     assert REPAIRS_ORDER.index("stray-change") > REPAIRS_ORDER.index("lane-conflicted")
     assert REPAIRS_ORDER.index("lane-divergent") == len(REPAIRS_ORDER) - 1
 

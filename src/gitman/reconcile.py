@@ -124,8 +124,9 @@ def do_reconcile(session: Session, abandon_: bool, keep: KeepSide | None = None)
 
             actions: list[str] = gc_notes + list(head_notes) + list(refresh_notes)
             # Dispatch in `REPAIRS_ORDER` — colocated-ref healing first (Trap 2, guide §3.13.2),
-            # then lane conflicts, then strays, then divergent twins. Run every row once (two kinds
-            # share the ref-healing callable), unconditionally: each repair re-surveys its own
+            # then lane conflicts, then strays, then divergent twins. Run every row once (three
+            # kinds share the ref-healing callable — trunk-conflicted, ref-mismatched,
+            # ref-lagging), unconditionally: each repair re-surveys its own
             # precise shape on a fresh view, so one that finds nothing is a cheap no-op rather than
             # a branch this function has to hand-maintain. Adding a kind means adding one row to
             # `repairs.REPAIRS` — nothing here changes, and a forgotten callable is an import error.

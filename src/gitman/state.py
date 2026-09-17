@@ -752,30 +752,41 @@ def capture_state(session: Session) -> RepoState:
     # Only flag genuinely mismatched bookmarks — a git ref that exists but points
     # elsewhere. Leftover refs (no matching jj bookmark) are common after undo/abandon
     # and don't cause split-brain; `doctor` still surfaces them, and `reconcile` heals.
+    #
+    # Issue 44 stage 4c: split into two kinds by direction (31-RC4), not one merged detail —
+    # `classify_ref_desync` already tells adopt from rewrite, and the two calls for opposite
+    # handling. ADOPT (git holds history jj never imported) stays `ref-mismatched`: hiding it
+    # behind CANONICAL would bury git-only commits, the exact honesty issue 31 fixed. REWRITE (jj
+    # moved off a commit git's ref still names — an `undo` rewind, a failed export) is
+    # `ref-lagging`: jj is authoritative, the ref is safe to force, and this is the ordinary shape
+    # between two gitman-driven writes once 4d removes the per-intent export. `ref-lagging` is in
+    # `NOTE_ONLY_KINDS`, so it never flips `canonical` and never rolls back a postcondition delta —
+    # only a surfaced note, healed the same as everything else by `reconcile`.
+    ref_lagging_note: str | None = None
     if mismatched:
-        # Name the *direction* per bookmark, not just the fact of drift (31-RC4): "git has history
-        # jj hasn't imported" and "the git ref lags jj" call for opposite repairs, and the operator
-        # deserves to know which one `reconcile` is about to do. Deliberately no commit count for
-        # the adopt side — jj cannot walk commits it has not imported, so any number here would be
-        # invented.
         adopt, rewrite = classify_ref_desync(pre_view, mismatched)
-        parts = []
         if adopt:
-            parts.append(
-                f"git has history jj hasn't imported on: {', '.join(n for n, _, _ in adopt)} "
-                f"(`gitman reconcile` adopts it — nothing is discarded)"
+            names = ", ".join(n for n, _, _ in adopt)
+            # Deliberately no commit count — jj cannot walk commits it has not imported, so any
+            # number here would be invented.
+            detail = (
+                f"{len(adopt)} bookmark(s) out of sync with git — git has history jj hasn't "
+                f"imported on: {names} (`gitman reconcile` adopts it — nothing is discarded)."
             )
+            for name, _local, _remote in adopt:
+                anomalies.append(make_anomaly("ref-mismatched", Subject(kind="ref", name=name), detail))
         if rewrite:
-            parts.append(f"git ref(s) lag jj: {', '.join(n for n, _, _ in rewrite)}")
-        names = ", ".join(n for n, _, _ in mismatched)
-        detail = (
-            f"{len(mismatched)} bookmark(s) out of sync with git: {names}"
-            f" — {'; '.join(parts)} — run `gitman reconcile`."
-        )
-        for name, _local, _remote in mismatched:
-            anomalies.append(make_anomaly("ref-mismatched", Subject(kind="ref", name=name), detail))
+            names = ", ".join(n for n, _, _ in rewrite)
+            ref_lagging_note = (
+                f"{len(rewrite)} git ref(s) lag jj: {names} — `gitman reconcile` brings them "
+                f"forward (jj is authoritative here; nothing is lost)."
+            )
+            for name, _local, _remote in rewrite:
+                anomalies.append(make_anomaly("ref-lagging", Subject(kind="ref", name=name), ref_lagging_note))
 
     notes: list[str] = list(session.config.deprecations)  # retired config tables — warn, never fail
+    if ref_lagging_note is not None:
+        notes.append(ref_lagging_note)
     if session.is_stale():
         notes.append("working copy is stale — run `gitman reconcile`.")
     if not has_remote(session.ws):

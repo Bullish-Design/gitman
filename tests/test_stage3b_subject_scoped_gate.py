@@ -146,3 +146,33 @@ def test_postcondition_reverts_a_newly_introduced_anomaly(tmp_path: Path):
     # The revert actually happened: back to op_before, canonical again.
     after = capture_state(h1._sess(tmp_path))
     assert after.canonical, after.off_canonical
+
+
+def test_postcondition_does_not_revert_a_note_only_ref_lagging(tmp_path: Path):
+    """Stage 4c, the contrast case: a note-only anomaly (`ref-lagging` — jj moved past a commit
+    the git ref still names) must NOT roll back an otherwise-successful intent, unlike the stray
+    above. `ref-lagging` is the ordinary shape between two gitman-driven writes once 4d removes
+    the per-intent export; treating it as corruption would livelock every `save`."""
+    import tests.test_colocated_refs as cr
+
+    work, ws = cr._colocated(tmp_path)
+    cr._make_lane(ws, work, "feat", "ft.txt")
+    ws.git_export()
+
+    session = cr._sess(work)
+    before = capture_state(session)
+    assert before.canonical, before.off_canonical
+    op_before = ws.head_operation()
+
+    # Move "feat" forward via a raw jj transaction, bypassing gitman's own git_export — the git
+    # ref keeps naming feat's pre-move position, which jj still knows (the rewrite direction).
+    with ws.transaction("advance feat") as tx:
+        tx.new("feat")
+        tx.describe("@", "advance")
+        tx.set_bookmark("feat", "@")
+
+    after = _postcondition(session, "save", before.trunk.commit_id, op_before, before)
+    assert after.canonical, after.off_canonical
+    assert {a.kind for a in after.anomalies} == {"ref-lagging"}
+    # No rollback happened — the head operation still reflects the raw transaction above.
+    assert ws.head_operation() != op_before

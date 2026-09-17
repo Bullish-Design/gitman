@@ -302,7 +302,12 @@ def _postcondition(
     present AFTER but not BEFORE was introduced BY this intent — nothing else could have caused
     it. That makes this check safe to run unconditionally, unlike the precheck: an intent that
     corrupts a subject it never declared still rolls back, which the old absolute `not
-    after.canonical` check could not do once the repo was already off-canonical anywhere."""
+    after.canonical` check could not do once the repo was already off-canonical anywhere.
+
+    Excludes `NOTE_ONLY_KINDS` (stage 4c): a note-only anomaly (e.g. `ref-lagging`, the harmless
+    jj-moved-past-the-ref shape between two gitman-driven writes) must not roll back an otherwise
+    clean intent — the same reasoning that already keeps it out of `RepoState.canonical`."""
+    from gitman.anomalies import NOTE_ONLY_KINDS
     from gitman.state import capture_state
 
     after = capture_state(session)
@@ -318,7 +323,9 @@ def _postcondition(
         and after.trunk.commit_id is not None
         and session.view().working_copy().commit_id == after.trunk.commit_id
     )
-    introduced = {a.key for a in after.anomalies} - {a.key for a in before.anomalies}
+    introduced = {a.key for a in after.anomalies if a.kind not in NOTE_ONLY_KINDS} - {
+        a.key for a in before.anomalies if a.kind not in NOTE_ONLY_KINDS
+    }
     if introduced or trunk_moved or at_on_trunk:
         session.ws.restore_operation(op_before)
         # Re-export git refs — the earlier export in canonical_tx wrote the (now-reverted)

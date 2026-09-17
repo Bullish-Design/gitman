@@ -48,9 +48,11 @@ def test_render_status_matches_ref_mismatched_by_kind(tmp_path: Path):
 
 
 def test_render_status_matches_lane_non_linear_by_kind(tmp_path: Path):
-    """This fixture also trips `ref-mismatched` (it bypasses gitman's own git export) — the render
-    still picks `lane-non-linear`'s own hint, by `ANOMALY_ORDER` priority, not the old substring
-    match (which would have picked ref-mismatched's "out of sync with git" text instead)."""
+    """This fixture also trips `ref-lagging` (it moves a bookmark via raw jj transactions, past
+    the position gitman's own `do_save` last exported to git — the REWRITE direction, stage 4c: jj
+    is authoritative, so it is note-only and does not itself flip canonical). The render still
+    picks `lane-non-linear`'s own hint, by `ANOMALY_ORDER` priority, not the old substring match
+    (which would have picked ref-mismatched's "out of sync with git" text instead)."""
     ws = h1._base(tmp_path)
     do_start(h1._sess(tmp_path), "feat", workspace=False)
     (tmp_path / "app.py").write_text("print(2)\n")
@@ -68,7 +70,7 @@ def test_render_status_matches_lane_non_linear_by_kind(tmp_path: Path):
     ws.snapshot()
 
     state = capture_state(h1._sess(tmp_path))
-    assert {a.kind for a in state.anomalies} == {"lane-non-linear", "ref-mismatched"}
+    assert {a.kind for a in state.anomalies} == {"lane-non-linear", "ref-lagging"}
 
     text = render_status(state)
     assert "Gitman status — OFF-CANONICAL" in text

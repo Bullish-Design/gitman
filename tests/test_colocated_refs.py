@@ -254,6 +254,29 @@ def test_status_names_the_direction_of_the_drift(tmp_path: Path):
     assert "git has history jj hasn't imported on: main" in off
 
 
+def test_ref_lagging_is_note_only(tmp_path: Path):
+    """Stage 4c: the REWRITE direction — jj moved past a commit the git ref still names (an
+    `undo` rewind, a failed export, or here a raw jj transaction that bypasses `git_export`) — is
+    `ref-lagging`, not `ref-mismatched`. jj is authoritative, so it is note-only: it doesn't flip
+    `canonical`, but it still surfaces as a `status` note and is still healed by `reconcile`."""
+    work, ws = _colocated(tmp_path)
+    with ws.transaction("advance") as tx:
+        c = tx.new("main")
+        tx.describe(c.commit_id, "advance")
+        tx.set_bookmark("main", c.commit_id)
+    # git ref not re-exported — it still names the pre-advance commit, which jj already knows.
+
+    state = capture_state(_sess(work))
+    assert {a.kind for a in state.anomalies} == {"ref-lagging"}
+    assert state.canonical, state.off_canonical
+    assert any("git ref(s) lag jj: main" in n for n in state.notes), state.notes
+
+    res = do_reconcile(_sess(work), abandon_=False)
+    assert res.exit_code == 0, res.messages
+    mismatched, leftover = colocated_ref_desync(_sess(work).view(), ws)
+    assert not mismatched and not leftover
+
+
 def test_undo_resyncs_colocated_refs(tmp_path: Path):
     """31-RC3: `undo` restored jj and left `refs/heads/*` pointing at the undone commits, so every
     undo left the repo DESYNCHRONIZED and funnelled the operator back into `reconcile`. jj's own

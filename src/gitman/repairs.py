@@ -58,13 +58,16 @@ Repair = Callable[["Session", str, bool, "KeepSide | None", list[str], "Survey"]
 def _repair_refs(
     session: Session, trunk: str, abandon_: bool, keep: KeepSide | None, actions: list[str], before: Survey
 ) -> None:
-    """`trunk-conflicted` + `ref-mismatched`: the one shared ref-repair path (issue 31).
+    """`trunk-conflicted` + `ref-mismatched` + `ref-lagging`: the one shared ref-repair path
+    (issue 31; the direction split is stage 4c).
 
-    Both rows repair through the same call — `sync_colocated_refs` resolves a conflicted trunk
-    bookmark (`_keep_jj_side_adopt_the_rest`) before it even looks at bookmark/git-ref drift. Safe
-    to call unconditionally: colocated_ref_desync's own scan makes it a no-op when nothing is
-    desynced, and Trap 2 (guide §3.13.2) requires it run before every other repair below, since the
-    import it may do can bring in git-only history — trunk included — that they must see.
+    All three rows repair through the same call — `sync_colocated_refs` resolves a conflicted
+    trunk bookmark (`_keep_jj_side_adopt_the_rest`) before it even looks at bookmark/git-ref
+    drift, then heals both the adopt and rewrite directions structurally (it reads live jj/git
+    state, not which anomaly kind fired). Safe to call unconditionally: colocated_ref_desync's own
+    scan makes it a no-op when nothing is desynced, and Trap 2 (guide §3.13.2) requires it run
+    before every other repair below, since the import it may do can bring in git-only history —
+    trunk included — that they must see.
     """
     from gitman.invariants import sync_colocated_refs
 
@@ -230,6 +233,7 @@ def _repair_lane_twins(
 REPAIRS: dict[str, Repair] = {
     "trunk-conflicted": _repair_refs,
     "ref-mismatched": _repair_refs,
+    "ref-lagging": _repair_refs,
     "lane-conflicted": _repair_lane_conflicts,
     "stray-change": _repair_strays,
     "lane-divergent": _repair_lane_twins,
@@ -246,6 +250,7 @@ REPAIRS: dict[str, Repair] = {
 REPAIRS_ORDER: tuple[str, ...] = (
     "trunk-conflicted",
     "ref-mismatched",
+    "ref-lagging",
     "lane-conflicted",
     "stray-change",
     "lane-divergent",

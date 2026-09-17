@@ -52,33 +52,57 @@ leftover ref that holds git-only, unpushed history survives a `reconcile`.
 Suite: 373 passed. `ruff check` clean. `ruff format --check` still flags only `src/gitman/init.py`
 (pre-existing, out of scope).
 
-## Open decision — what 4c actually means
+## Stage 4c — direction-aware `ref-mismatched` — DONE
 
-The plan says 4c "shrinks `ref-mismatched`'s `blocks` set". **That set is already empty**, and has
-been since stage 3a (`bb11960`). The precheck gate therefore already never blocks a local write on
-ref state. The plan's stated premise for 4c is stale.
+The plan said 4c "shrinks `ref-mismatched`'s `blocks` set". That set was already empty (stage 3a,
+`bb11960`), so the plan's stated premise was stale — see the analysis below, kept for the record.
+The real couplings were `RepoState.canonical` (flips to `DESYNCHRONIZED`, exit 1) and
+`_postcondition`'s delta check (rolls back an intent that leaves a ref mismatch behind). A blanket
+demotion of `ref-mismatched` would have hidden the **adopt** direction (git holds commits jj never
+imported) behind a `CANONICAL` status — the exact honesty issue 31 fixed, and what
+`test_status_names_the_direction_of_the_drift` / `test_render_status_matches_ref_mismatched_by_kind`
+depend on. So the split went in as recommended: direction-aware, not blanket.
 
-The remaining ref-as-state couplings are three:
+`anomalies.classify_ref_desync`'s existing adopt/rewrite split now produces two anomaly kinds
+instead of one merged one:
+- `ref-mismatched` — the ADOPT direction. Unchanged: still off-canonical, still names the git-only
+  history in `status`'s reason line.
+- `ref-lagging` — the REWRITE direction (jj moved off a commit git's ref still names — an `undo`
+  rewind, a failed export, or the ordinary shape once 4d removes the per-intent export). New. Added
+  to `anomalies.NOTE_ONLY_KINDS` alongside `lane-orphaned`, so it never flips `canonical` and is
+  surfaced only as a `status` note. `reconcile` still heals it (`repairs.REPAIRS["ref-lagging"]` →
+  the same `_repair_refs` callable, since `sync_colocated_refs` reads live jj/git state, not the
+  anomaly kind).
 
-1. `RepoState.canonical` — `ref-mismatched` is not note-only, so `status` reports
-   `DESYNCHRONIZED` and exits 1.
-2. `_postcondition` — the delta check includes `ref-mismatched`, so an intent that leaves a ref
-   mismatch rolls back.
-3. `_export_colocated_git` on every mutating intent (4d).
+`invariants._postcondition`'s `introduced` delta now excludes `NOTE_ONLY_KINDS` on both sides
+(`before` and `after`), not just `RepoState.canonical` — the plan's "never rolls back a local
+intent" requirement needed this too; `_postcondition` had never filtered by NOTE_ONLY_KINDS before,
+even for `lane-orphaned`. No existing test relied on the old (never-actually-exercised) behaviour
+of a note-only anomaly triggering a rollback.
 
-The plan says demote `ref-mismatched` to informational. That is correct for the **rewrite**
-direction (a git ref lags jj — the normal state once 4d removes the per-intent export, and the
-43-D6 fractal case). It is **wrong** for the **adopt** direction (git holds commits jj never
-imported). Issue 31's honesty fix, `test_status_names_the_direction_of_the_drift`, and
-`test_render_status_matches_ref_mismatched_by_kind` all depend on the adopt direction staying
-visible. A blanket demotion would hide git-only commits behind a `CANONICAL` status.
+Tests: `test_ref_lagging_is_note_only` (`test_colocated_refs.py`) proves the split at the
+`capture_state` level — canonical stays true, the note names the direction, `reconcile` still
+heals it. `test_postcondition_does_not_revert_a_note_only_ref_lagging`
+(`test_stage3b_subject_scoped_gate.py`) is the direct contrast to the existing
+`test_postcondition_reverts_a_newly_introduced_anomaly`: a note-only anomaly introduced mid-intent
+does NOT roll back. `test_render_status_matches_lane_non_linear_by_kind` updated — its fixture
+trips the rewrite direction (a raw jj move past gitman's last export), so its anomaly-kind
+assertion changed from `ref-mismatched` to `ref-lagging` (that is the point of the test: the
+render still picks `lane-non-linear`'s hint by `ANOMALY_ORDER`, unaffected by which ref kind rides
+along). `test_repairs_order_heals_colocated_refs_first` updated for three ref-repairing kinds
+instead of two.
 
-**Recommendation:** make 4c direction-aware. Keep the adopt direction off-canonical and blocking
-for the trunk-consuming intents (`land`, `push`). Make the rewrite direction note-only, so it
-never flips canonical and never rolls back a local intent. Then 4d can remove the per-intent
-export safely. This is a small model change (two kinds, or a per-anomaly note-only flag), and it
-should be its own reviewable step before 4d.
+Suite: 375 passed (373 + 2 new). `ruff check` clean.
 
-4d and 4e stay open. 4e is blocked on a pyjutsu capability: `GitIndexEntry` carries no
-intent-to-add flag, so `doctor` cannot classify the issue-41 state by porcelain code plus `HEAD`
-presence without a raw-git subprocess. Ask pyjutsu for the flag first.
+## What's next — 4d, 4e
+
+4d (remove the per-intent `_export_colocated_git`, consume stage 4a's total ref encoding) is now
+safely unblocked: `ref-lagging` — the shape 4d will make the ordinary steady-state between two
+gitman-driven writes — is note-only and rollback-safe.
+
+4e is still blocked on a pyjutsu capability: `GitIndexEntry` carries no intent-to-add flag, so
+`doctor` cannot classify the issue-41 state (`git add -N`) by porcelain code plus `HEAD` presence
+without a raw-git subprocess. A kickoff prompt for that pyjutsu-side change (add `intent_to_add:
+bool` to `GitIndexEntry`, sourced from `gix_index::entry::Flags::INTENT_TO_ADD`, confirmed present
+in the `gix-index` 0.53.0 this repo already pins) was handed off separately, to run from
+`/home/andrew/Documents/Projects/pyjutsu`.

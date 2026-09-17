@@ -90,7 +90,17 @@ REGISTRY: dict[str, AnomalyKind] = {
         blocks=frozenset({"land", "publish", "push"}),
         manual="`gitman reconcile --keep local|origin`",
     ),
+    # Issue 44 stage 4c: split by direction (state.classify_ref_desync). `ref-mismatched` is the
+    # ADOPT direction — git holds history jj never imported. It stays off-canonical: hiding it
+    # behind CANONICAL would bury git-only commits, the exact honesty issue 31 fixed.
     "ref-mismatched": AnomalyKind(tier="ref", repair="reconcile", blocks=frozenset()),
+    # `ref-lagging` is the REWRITE direction — jj moved off a commit git's ref still names (an
+    # `undo` rewind, a failed export). jj is authoritative and the ref is safe to force, so this
+    # is the ordinary, harmless shape between two gitman-driven writes (4d removes the per-intent
+    # export that used to erase it immediately). NOTE_ONLY_KINDS below keeps it out of
+    # `canonical`/`off_canonical` and out of `_postcondition`'s rollback delta; `reconcile` still
+    # heals it (`repairs.REPAIRS["ref-lagging"]`).
+    "ref-lagging": AnomalyKind(tier="ref", repair="reconcile", blocks=frozenset()),
     "lane-orphaned": AnomalyKind(
         tier="lane",
         repair=None,
@@ -135,10 +145,15 @@ ANOMALY_ORDER: tuple[str, ...] = (
     "lane-non-linear",
     "lane-divergent",
     "ref-mismatched",
+    "ref-lagging",
     "lane-orphaned",
 )
 
 # Kinds that are advisory only — `capture_state` detects and reports them (`status`/`doctor`
-# surface them as notes), but they must NOT flip `RepoState.canonical` (backlog D3: `lane-orphaned`
-# has no repair yet, and issue 42 G6 is precisely the mistake of gating on a shape nothing can fix).
-NOTE_ONLY_KINDS = frozenset({"lane-orphaned"})
+# surface them as notes), but they must NOT flip `RepoState.canonical` and must NOT roll back a
+# postcondition delta (`invariants._postcondition`). `lane-orphaned` has no repair yet (backlog D3;
+# issue 42 G6 is precisely the mistake of gating on a shape nothing can fix). `ref-lagging` DOES
+# have a repair (stage 4c) — it is note-only because jj is already authoritative for that
+# direction, so surfacing it as a blocking DESYNCHRONIZED would cry wolf on a harmless, self-healing
+# shape.
+NOTE_ONLY_KINDS = frozenset({"lane-orphaned", "ref-lagging"})
