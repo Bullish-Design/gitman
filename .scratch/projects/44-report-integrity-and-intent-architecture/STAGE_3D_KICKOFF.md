@@ -47,8 +47,8 @@ table silently inverts (a "genuine fork" and an "origin ahead" would swap).
 The guide's table gives the four content relations and a one-line action each, but the concrete
 mechanics need deciding — that's most of the actual work:
 
-- **`lane-divergent` is detected more broadly than "lane vs its own remote twin.while state.py's
-  ."** Any repo-wide change-id collision within `trunk..` trips it (see `state.py:537`) — that
+- **`lane-divergent` is detected more broadly than "lane vs its own remote twin."** Any repo-wide
+  change-id collision within `trunk..` trips it (see `state.py:537`) — that
   includes the unrelated shape this codebase's own tests manufacture
   (`test_h1_lane_linearity.py`'s `_forge_divergent_twin`, an *unbookmarked* twin, which is really
   a `stray-change` that reconcile's existing stray-adoption loop already partially handles). The
