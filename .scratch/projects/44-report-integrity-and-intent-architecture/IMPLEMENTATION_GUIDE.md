@@ -714,6 +714,8 @@ Land each separately.
 | **3b** | Precheck subject-scoped; postcondition delta-based (§3.6); ungate `abandon`; fold in §3.7's three rules. Ship the no-seal test. | high — the behaviour change |
 | **3c** | `render.py` matches on kind; remedy-is-permitted test; drop stored `off_canonical`. | low |
 | **3d** | `lane-divergent` repair via the content classifier; abandon the stale lane. | medium — **landed** |
+| **3e** | Repair hygiene found reviewing 3d: one `adopted-` minter, drop the per-twin `capture_state`, type `ContentRelation`/`KeepSide` (§3.12). | low |
+| **3f** | `repairs.py` — the registry dispatches, and a two-way assertion makes a detected-but-unfixable kind an import error (§3.13). | medium |
 
 3a is a safe, self-contained foundation. The import-time assertion immediately documents the four
 no-repair kinds as a visible fact rather than a latent one.
@@ -730,6 +732,256 @@ no-repair kinds as a visible fact rather than a latent one.
   unrelated lane mid-intent.
 - `reconcile` on the issue-42 divergent shape reports the content relation and resolves it.
 
+---
+
+### 3.12 Stage 3e — repair hygiene (three fixes found reviewing 3d)
+
+Stage 3d landed correct and tested. A review of it found one latent defect and two pieces of
+friction. None of them change behaviour that a passing test covers today, so **land 3e on its own,
+before 3f** — it is the cheap half, and 3f rewrites the code these fixes touch.
+
+#### 3e.1 — one `adopted-<commit>` minting site (the defect)
+
+Four sites mint this lane name, with three different collision policies:
+
+| Site | Policy |
+|---|---|
+| `reconcile.py:259-261` (stray loop) | `adopted-<8>`, widens to `<12>` when taken, tracks an `existing` set |
+| `reconcile.py:94` (`_resolve_lane_twin`) | `adopted-<8>`, **no collision check** |
+| `invariants.py:423` (ref desync adopt) | `adopted-<8>`, no check |
+| `invariants.py:534` (`_keep_jj_side_adopt_the_rest`) | `adopted-<8>`, no check |
+
+Measured, not assumed: `tx.create_bookmark` on an existing name raises
+`PyjutsuError: bookmark '<name>' already exists`. Inside `do_reconcile` that propagates to the
+`except Exception: session.ws.restore_operation(op_before); raise` wrapper, so **the recovery verb
+aborts and rolls back**. No content is lost, but a recovery verb that errors out is the failure
+mode issue 42 is about.
+
+The trigger is narrow (the losing side of a fork already carries an `adopted-<8>` lane). The smell
+is not: the same name, four ways, is how the next divergence between them gets written.
+
+**Do this.** Add one minter to `lanes.py` (the lane-registry module owns bookmark naming):
+
+```python
+def adopted_lane_name(commit_id: str, taken: Container[str]) -> str | None:
+    """The free `adopted-<commit>` name for `commit_id`, or None when it already has one.
+
+    Widens the prefix until the name is free. `None` means the *full* commit id is already
+    bookmarked — this exact commit is adopted, so the caller must skip it rather than mint a
+    second lane for the same content.
+    """
+```
+
+Route all four sites through it. Each caller keeps its own `taken` set and adds to it inside the
+loop, as the stray loop already does. A `None` return is a skip, not an error.
+
+**Test.** Adopt a commit, then run the same repair again and assert the verb still reports
+cleanly instead of raising — one test per site is overkill; one over `reconcile --keep` (the
+unchecked site) plus a unit test of the minter is enough.
+
+#### 3e.2 — stop capturing full repo state once per twin
+
+`reconcile.py:107` ends `_resolve_lane_twin` with
+
+```python
+return not any(a.kind == "lane-divergent" and a.subject.name == twin.lane
+               for a in capture_state(session).anomalies)
+```
+
+That is a full `capture_state` — every lane enumerated, a `diff_stat` per commit in every lane
+range, the op log — run once **per twin**, to answer a question about one lane. It is also
+redundant: `do_reconcile` already captures state at the end for the G0 check.
+
+**Do this.** Make `_resolve_lane_twin` return "did I act" (a `bool`, or nothing — it already
+appends its own report lines to `actions`). After the loop, re-survey **once**:
+
+```python
+unresolved = find_divergent_lane_twins(session, session.fresh_view(), trunk, lanes=flagged)
+```
+
+Anything still returned is unresolved. This is both cheaper and *more* honest: it tests the real
+postcondition (the twin is gone) rather than a proxy read of the anomaly list.
+
+#### 3e.3 — one content-relation vocabulary, and a typed `--keep`
+
+Two small type gaps:
+
+* `TrunkRef.relation` is `str | None` with the four legal words in a comment (`models.py:91-93`).
+  `LaneTwin.relation` restates the same four as a `Literal`, plus a fifth word `"unknown"`
+  (`models.py:146`). One vocabulary, two spellings, two conventions for "could not tell".
+* `do_reconcile(session, abandon_, keep: str | None)` accepts any string. Only `cli.py:508`
+  validates it; `_resolve_lane_twin` silently degrades an unrecognised value to "repair nothing".
+
+**Do this.**
+
+```python
+# models.py
+ContentRelation = Literal["in-sync", "local-ahead", "forge-ahead", "diverged"]
+KeepSide = Literal["local", "origin"]
+```
+
+Use `ContentRelation | None` in **both** models, with `None` meaning "the content check could not
+run" — trunk's existing convention. Drop `LaneTwin`'s `"unknown"` member and render the word
+`unknown` at the report boundary instead, so the model carries one convention and the prose carries
+the other. Type `do_reconcile`'s parameter `KeepSide | None`. Keep the `typer.BadParameter` guard in
+`cli.py` — that is the user-input boundary and it stays.
+
+Check before changing `TrunkRef.relation`: `_trunk_content_relation` (`state.py:200`) only ever
+returns those four words or `None`, so the tightened annotation cannot reject a live value.
+
+#### 3e.4 — Done when
+
+- One `adopted_lane_name`; no site mints the name itself; a second `reconcile --keep` over an
+  already-adopted commit does not raise.
+- `capture_state` is called once per `do_reconcile`, not once per twin.
+- `ContentRelation` is declared once and used by both models; `keep` is `KeepSide | None`.
+- Suite green (343 at trunk `43ef935`, plus the new tests); `ruff check` clean.
+
+---
+
+### 3.13 Stage 3f — the registry dispatches the repair
+
+This is the stage that pays off. Stage 3d added the fifth hand-maintained repair to `reconcile`,
+and made `REGISTRY["lane-divergent"].repair == "reconcile"` true — but nothing *reads* that field.
+It is an assertion about the world, not a wiring into it. Issue 42 §4a is the warning that applies:
+*"each new predicate is another way to be detected-but-unfixable."*
+
+#### 3.13.1 What is actually wrong
+
+`do_reconcile` hand-maintains a survey list, an early-return gate and a repair branch per shape:
+
+| Anomaly kind | `REGISTRY.repair` | The code that repairs it |
+|---|---|---|
+| `trunk-conflicted` | `reconcile` | `invariants._keep_jj_side_adopt_the_rest` (via `sync_colocated_refs`) |
+| `lane-conflicted` | `reconcile` | `core._resolve_conflicted_lane` (`core.py:1702`) |
+| `stray-change` | `reconcile` | the stray loop, `reconcile.py:240-268` |
+| `lane-divergent` | `reconcile` | `reconcile._resolve_lane_twin` (`reconcile.py:50`) |
+| `ref-mismatched` | `reconcile` | `invariants.sync_colocated_refs` (`invariants.py:343`) |
+| `trunk-diverged` | `pull` | `core.do_pull` — not reconcile's business |
+| `lane-non-linear`, `lane-orphaned`, `dirty-trunk-wc` | `None` | nothing, by design |
+
+Adding a kind today means editing three places — the survey tuple, the early-return `and not X`
+chain, and a new branch — and nothing fails if you forget one. Forgetting the gate is exactly how
+3d's first draft would have early-returned `PARTIAL` without ever running its own repair.
+
+#### 3.13.2 The target shape — and the two traps in it
+
+Build a **`src/gitman/repairs.py`**: a table from anomaly kind to the callable that repairs it,
+plus an import-time assertion that the table and `REGISTRY` agree in both directions.
+
+```python
+REPAIRS: dict[str, Repair] = { ... }
+
+for _slug, _kind in REGISTRY.items():
+    assert (_kind.repair == "reconcile") == (_slug in REPAIRS), (
+        f"{_slug}: REGISTRY says repair={_kind.repair!r} but REPAIRS {'has' if _slug in REPAIRS else 'lacks'} it"
+    )
+```
+
+That assertion is the whole point. It turns "detected but unfixable" from a runtime livelock into
+an import error — the same trick `anomalies.py:112` already plays with `repair or manual`.
+
+`repairs.py` imports `state`, `invariants` and `core`; `anomalies.py` must stay dependency-free
+(pydantic only) or the import cycle closes. Do **not** put the callables in `anomalies.py`.
+
+**Trap 1 — the dispatch selects repairs; it must not supply their data.**
+`Subject(kind="change", name=c.change_id)` (`state.py:704`) carries the **change_id**. The stray
+loop deliberately targets and names by **commit_id**, because two divergent sides share a change_id
+— issue 06 §G2, with the comment still in place at `reconcile.py:242-247`. A dispatch that handed each
+repair its subjects and nothing else would reintroduce that exact bug.
+
+So: the anomaly list decides **which** repairs run. Each repair still does its own precise survey
+(`find_strays`, `find_divergent_lane_twins`, `_conflicted_lanes`). The gain is the gate, the table
+and the residue report, not the removal of every survey.
+
+**Trap 2 — `ANOMALY_ORDER` is a prose order, not a repair order.**
+`ANOMALY_ORDER` (`anomalies.py:127`) exists so `off_canonical` composes in a fixed severity order.
+The repair order is different and load-bearing: colocated refs must be healed **first**, because the
+import can bring in git-only history that every later step must see (the comment at
+`reconcile.py:204-208` explains it, and 31-RC6 is what happens when it is wrong). Dispatching in
+`ANOMALY_ORDER` would run `lane-conflicted` before `ref-mismatched` and invert that.
+
+Give `REPAIRS` its **own explicit order**, and document why it differs from `ANOMALY_ORDER` at the
+one site that declares it.
+
+#### 3.13.3 Nest the two divergence surveys instead of running them in parallel
+
+`capture_state` answers "lane X is divergent" from a repo-wide change-id count (`state.py:614`).
+`find_divergent_lane_twins` independently re-derives conflicted lanes, the lane index and the
+visible set to answer "lane X is divergent **and** in the repairable twin shape". Two questions, so
+two implementations is defensible — but they are parallel, and can drift.
+
+**Do this.** Give the survey an optional filter and pass it the flagged subjects:
+
+```python
+def find_divergent_lane_twins(session, view, trunk, lanes: Iterable[str] | None = None) -> list[LaneTwin]:
+```
+
+With `lanes` given, only those are considered. `reconcile` passes the subject names of the
+`lane-divergent` anomalies. The repair can then never claim a lane the gate did not flag, and never
+miss one it did — structurally, not by review.
+
+#### 3.13.4 What must not change
+
+Read each of these before touching the function; every one of them is a landed fix with an issue
+number behind it.
+
+- **The G0 rule.** `reconcile` never reports `RECONCILED`/`CLEAN` without asking `state.canonical`.
+  Both exits stay honest (stage 1).
+- **`_repair_orphaned_head` stays first.** It is invisible to `capture_state`, and while `.git/HEAD`
+  is unusable every `git_export` raises, so no other repair can land (project 29).
+- **The non-anomaly steps keep their places**: `ws.gc()` inside the lock and before everything
+  (project 34 lane 5), `_refresh_stale_working_copy` next, and the best-effort `session.sync_colocated()`
+  last, after the undo checkpoint.
+- **commit_id targeting in the stray loop** (issue 06 §G2).
+- **Immutability.** `explain_immutable` at every rewrite site; `ignore_immutable=True` appears
+  nowhere in gitman, and a test enforces that (project 34 lane 6c).
+- **`sync_colocated_refs` stays the one shared ref-repair path** — `reconcile`, `undo` and
+  `_export_colocated_git` all route through it (issue 31 had three near-duplicate loops, two
+  destructive).
+
+#### 3.13.5 Suggested order of work
+
+1. Write `repairs.py` with the table, the order, and the two-way assertion. Register the five
+   existing repairs as thin adapters over the code that already exists. Do not move logic yet.
+2. Replace `do_reconcile`'s survey tuple + early-return chain with a table-driven pass: capture
+   state once, ask which kinds are present, intersect with `REPAIRS`.
+3. Replace the five branches with the dispatch loop, in the `REPAIRS` order.
+4. Nest the twin survey (§3.13.3).
+5. Derive the residue report from an anomaly-key delta — the same `Anomaly.key` the stage-3b
+   postcondition uses (`anomalies.py:48-51`) — instead of the ad-hoc `unresolved` list.
+
+Steps 1-2 land green on their own and are worth a separate save.
+
+#### 3.13.6 Done when
+
+- `repairs.py` declares every reconcile-repairable kind, and the two-way assertion fails the import
+  if `REGISTRY` and `REPAIRS` disagree. A test proves the assertion bites (register a bogus kind,
+  expect the failure).
+- `do_reconcile` has no per-shape `and not X` early-return chain and no per-shape branch.
+- The repair order is declared once, with its reason, and a test pins colocated-ref healing first.
+- Adding a new anomaly kind with `repair="reconcile"` and no callable is an **import error**.
+- Every existing test still passes, unchanged — this is a refactor. 343 at trunk `43ef935`, plus
+  whatever 3e added.
+
+---
+
+### 3.14 An open question neither stage closes
+
+Nobody has established **how the `devman` repo actually reached** the `lane-divergent` shape.
+Stage 3d proved the shape is reachable and built a fixture for it, but by reconstruction: a
+throwaway `refs/heads/*` ref, imported and removed. Two facts measured while building it:
+
+* A plain amend after a publish does **not** diverge. jj records the rewrite and hides the
+  predecessor, so `<lane>@<remote>` pointing at it is the ordinary "local is ahead" state — which
+  contradicts issue 42 §2's stated trigger.
+* Amending locally **and** re-hashing the forge side produces a *conflicted* bookmark
+  (`lane-conflicted`), not `lane-divergent`. That shape has a different repair.
+
+So the production route is still unknown. If a `devman` snapshot from the incident still exists,
+reading its op log would settle it — and might show that the repairable shape needs widening, or
+that a *different* shape is the common one. Worth an hour before assuming the fixture is
+representative. Not a blocker for either stage.
 ---
 
 ## Stage 4 — G4: git refs become a publication artifact
