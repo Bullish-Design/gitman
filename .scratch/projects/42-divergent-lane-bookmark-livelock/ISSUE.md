@@ -162,6 +162,29 @@ recorded having to do.
 
 ## 3b. `reconcile` and `status` disagree about what canonical means (D0b, HIGH)
 
+> **⚠ DIAGNOSIS SUPERSEDED (2026-09-16) — see
+> `.scratch/projects/44-report-integrity-and-intent-architecture/ISSUE.md` §4.**
+>
+> The **symptom below is real and reproduces**. The **cause named below is wrong**, and the fix it
+> proposes (G0, "unify the canonical predicate") targets a problem that does not exist. Do not
+> build it.
+>
+> There is only **one** definition of canonical. `capture_state` (`state.py:437-712`) is its sole
+> author; `invariants.py`, `reconcile.py` and `render.py` all consume it. Nothing recomputes it.
+>
+> The real bug is one line. `reconcile` has **two** exits. The late one (`reconcile.py:203-211`)
+> is honest — it reads `state.canonical` and reports `PARTIAL`. The early one
+> (`reconcile.py:104-118`) fires when reconcile's four *repair surveys* come back empty and
+> returns `CLEAN` with the message *"already canonical"* — **without ever reading
+> `state.canonical`**. At that point in the function `state` is not even bound; only `view` is.
+>
+> So `reconcile` reports its own **repair coverage** and labels it as **repo state**. A divergent
+> change-id is detected by `capture_state` but sits in none of the four survey buckets, so the
+> early path fires.
+>
+> **Fix:** gate that early return on `state.canonical`, or delete its claim. See issue 44's
+> `IMPLEMENTATION_GUIDE.md` Stage 1.
+
 Back to back, same repository, seconds apart:
 
 ```
@@ -175,13 +198,17 @@ Reason: lane(s) 021-changelog have a divergent change-id — run `gitman reconci
 Exit: 1
 ```
 
-This is the livelock's root cause in two commands. `reconcile`'s completion test is *no strays +
-refs in sync* (`reconcile.py:105-115`). `status`'s gate additionally includes the divergence scan
-(`state.py:529-535`). **`reconcile` does not evaluate the condition it is told to fix**, so it can
-sincerely report success while the repository stays gated.
+This is the livelock's root cause in two commands. **`reconcile` does not evaluate the condition
+it is told to fix**, so it can sincerely report success while the repository stays gated. That
+sentence still holds and is the heart of the defect.
 
-Any fix to D1 must unify these two definitions, or the next shape that lands in the gap reproduces
-this exactly.
+~~`reconcile`'s completion test is *no strays + refs in sync* (`reconcile.py:105-115`).
+`status`'s gate additionally includes the divergence scan (`state.py:529-535`).~~
+~~Any fix to D1 must unify these two definitions, or the next shape that lands in the gap
+reproduces this exactly.~~
+
+**Struck through: the two-definitions framing is wrong.** The predicate is shared. `reconcile`'s
+early exit simply never calls it — see the banner at the top of this section and issue 44 §4.
 
 ## 4a. The in-flight fix does not cover this shape
 
@@ -230,12 +257,14 @@ twice in one session. This is its third and most expensive occurrence.
 | G5 | Report divergence in `doctor` | `doctor.py` | medium |
 | G6 | Stop printing `run gitman reconcile` as the remedy for a condition `reconcile` cannot fix | `state.py` / status rendering | medium |
 | G7 | Have `start` summarise what it adopted and confirm when the change set exceeds expectation | `start.py` | medium |
-| **G0** | **Unify the canonical predicate.** `reconcile`'s completion test and `status`'s gate must be the same function. Today `reconcile` can report CLEAN while `status` reports OFF-CANONICAL (§3b) | `reconcile.py:105-115` + `state.py:529-535` | **highest** |
+| ~~**G0**~~ | ~~**Unify the canonical predicate.**~~ **SUPERSEDED — do not build.** The predicate is already unified in `capture_state`. The real fix is to gate `reconcile`'s early return on `state.canonical`, which it never reads. See §3b banner and issue 44 §4 / Stage 1. | `reconcile.py:104-118` | **highest** |
 | **G0b** | **Let `abandon` run while off-canonical**, or stop naming it in the `Recover:` line. It is currently advertised as a remedy and refuses (§3a) | `cli.py` / gate | **highest** |
 | G8 | Exclude commits made immutable *only* by a gitman- or operator-placed recovery tag from the rewrite guard, or tell the operator to drop the tag (§7 trap) | immutable-set config | medium |
 
-G0 is the root: while the two definitions differ, every other fix is a patch over a verb that does
-not evaluate the condition it is told to fix. G6 is the cheapest and removes the livelock as
+G0 is the root — but **not for the reason stated above**. The definitions do not differ; the
+early exit never consults the one definition there is. Until `reconcile` evaluates the condition
+it is told to fix, every other fix is a patch over a verb that reports its own coverage as repo
+state. See the §3b banner and issue 44 §4. G6 is the cheapest and removes the livelock as
 *experienced*, even before G1 lands.
 
 ---
