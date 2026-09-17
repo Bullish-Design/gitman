@@ -80,8 +80,7 @@ needs to know jj is in use.
   friction decide additions.
 - **Versioning + release tagging in v1** (semver major/minor/patch).
 - **The lane model is *the* workflow** (§5): structured multiplicity — parallel work is
-  supported, but only as well-formed, named lanes. Stacked PRs and `shape`/`switch` are
-  still deferred.
+  supported, but only as well-formed, named lanes. Stacked forge PRs are still deferred.
 
 ## 5. The lane model (the canonical workflow)
 
@@ -106,31 +105,34 @@ repo-global, and auto-following the change across rewrites.
 | I2 | **Every change belongs to exactly one named lane; no anonymous/stray changes.** | Stranded work — every change is *listable*; `status` is a uniform enumeration, not a triage. |
 | I3 | **Branch name = the lane's readable name**, unique-checked at creation, stable via the bookmark. | Branch-name generation / collision / freeze logic. |
 | I4 | **Gitman is the sole writer; mutating ops are serialized by a brief repo lock.** | Concurrent-rewrite divergence (parallel work lives in separate workspaces). |
-| I5 | **Each lane is linear on trunk (rebase-always); trunk advances only via `land` (local) or `pull` (integrating a moved origin).** | Merge-commit states; "which base?" ambiguity. |
-| I3′ | **A lane name is a task-tree `/`-path; its base is its name-parent (`T/api` → `T`), which must be a live lane or trunk** (fractal lanes, Phase 2A). Enforced *by construction* at `start`/`subtask` (parent-must-be-live) + refuse-with-child at `land`/`abandon`. | DAG base-ambiguity; a stacked lane's base is a namespace lookup, not a graph search. |
+| I5 | **Each lane is linear on trunk (rebase-always); trunk advances only via `land` (local) or `sync --trunk` (integrating a moved origin).** | Merge-commit states; "which base?" ambiguity. |
+| I3′ | **A lane name is a task-tree `+`-path; its base is its name-parent (`T+api` → `T`), which must be a live lane or trunk** (fractal lanes, Phase 2A). Enforced *by construction* at `start` (parent-must-be-live) + refuse-with-child at `land`/`abandon`. | DAG base-ambiguity; a stacked lane's base is a namespace lookup, not a graph search. |
 
 The principle: **resolve variability once, at a well-defined moment (init, lane
 creation), not repeatedly at runtime.** An out-of-band parent delete (a raw `jj`/`git`
 edit) is the sole way to violate I3′ → an **orphaned** node, which `status` reports (with a
-`gitman reconcile` pointer), never a crash — the same "external edits handled in one place"
+`gitman repair` pointer), never a crash — the same "external edits handled in one place"
 discipline as every other off-canonical state.
 
 ### Lane lifecycle
 
 ```
-start ──▶ draft ──(edit · save · sync · resolve)──▶ published ──▶ landed
-              │                                                      ▲
-              └──────────────── abandon ◀─────────────────────── (or)┘
+start ──▶ draft ──(edit · describe · sync · resolve)──▶ published ──▶ merged
+              │                                                          ▲
+              └──────────────── abandon ◀────────────────────────── (fold in)┘
 ```
 
 A lane is always in exactly one of three states — **draft** (being edited), **published**
-(pushed / PR open), **landed/abandoned** (terminal). That bounds everything `status` must
-render. When `@` leaves a lane without ending it (a sibling `start` in the same workspace, a
-landed neighbour), **`switch <lane>`** moves `@` back onto an existing lane to resume it —
-navigation *between* lanes, never a trunk mutation. And when two concerns entangle in one draft,
-**`split --paths <sel> --into <lane>`** divides that change into two sibling lanes on trunk (the
-carved paths onto a new lane, the remainder on the original) — a partition *within* the lane set,
-also never a trunk mutation.
+(pushed / PR open), **merged** (the forge merged the PR; `sync --trunk` or `repair` retires
+it locally). The terminal states *landed* and *abandoned* are **not** lane states: `land` and
+`abandon` delete the lane bookmark, so a finished lane has no row to render. That bounds
+everything `status` must render. When `@` leaves a lane without ending it (a sibling `start` in
+the same workspace, a landed neighbour), **`switch <lane>`** moves `@` back onto an existing
+lane to resume it — navigation *between* lanes, never a trunk mutation. And when two concerns
+entangle in one draft, **`split --paths <sel> --into <lane>`** divides that change into two
+sibling lanes on trunk (the carved paths onto a new lane, the remainder on the original) — a
+partition *within* the lane set, also never a trunk mutation. `split --hunks` carves at hunk
+level instead of whole-file.
 
 ## 6. Architecture
 
@@ -140,10 +142,19 @@ Agent → devenv shell → gitman CLI → Intent planner → Executor (jj / git)
                             → op-log (undo + transactional rollback)   → --json
 ```
 
-- **Intent planner** — deterministic; turns intent + flags + config + current RepoState
-  into a sequence of pyjutsu operations.
+- **Intent planner** — deterministic; turns intent + flags + config + current `RepoState`
+  into a *plan*: a sequence of pyjutsu operations.
+- **`Plan` value** (`plan.py`) — the declared step list plus its postcondition, built from a
+  captured `RepoState` and executed by `invariants.run_plan`. `describe`, `switch`, `start`
+  (the non-`--workspace` path), `split` and `land` are migrated onto it (project 46 S7); each
+  accepts `--dry-run`, which builds the plan from the recorded head view and mutates nothing.
 - **Executor** — runs pyjutsu transactions, records facts (op id before/after, change IDs).
-  Never interprets results. Wraps each mutating intent transactionally (§11).
+  Never interprets results. Wraps each mutating intent transactionally (§11). Two executors
+  coexist: `run_plan` for the migrated verbs, and `canonical_tx`/`canonical_guard` for the
+  callback-style verbs (`publish`, `sync`, `shape`, `seed`, `abandon`, `push`, `release`,
+  `start --workspace`, ...). **`sync --trunk` is deliberately not migrated**: it runs a trial
+  merge as planning input, the one shape that does not fit "plan, then execute", and every
+  recovery path leans on it. A doc must not claim a uniformity the code does not have.
 - **Lane registry** — the set of Gitman-managed bookmarks; near-zero extra state since jj
   already tracks bookmarks. Workspace ↔ lane mapping via `ws.workspaces()`.
 - **State adapter** (`session.py` + `state.py`) — `Session` is the boundary onto pyjutsu
@@ -165,100 +176,114 @@ src/gitman/
   state.py      RepoState capture (composes one pyjutsu view + lanes.py)
   models.py     Pydantic: RepoState, Lane, Change, Conflict, Op, TrunkRef, ...
   config.py     [tool.gitman] policy (Pydantic-validated)
-  invariants.py canonical checks + transactional rollback wrapper
+  plan.py       the Step/Plan values + the declarative step interpreter
+  invariants.py canonical checks + transactional rollback (run_plan/canonical_tx/guard) + lock
+  anomalies.py  the typed anomaly registry (kind -> subject, repair, blocks)
+  repairs.py    one detect/repair registry served by `repair`
   version.py    semver math + version-source read/write
   release.py    tag + push flow
   render.py     compact agent reports (plain Python)
-  init.py doctor.py reconcile.py
+  init.py doctor.py repair.py
   advanced/     optional forge extra (github) — base never imports it
 ```
 
-Base deps kept lean: `pydantic`, `typer`. `jj` and `git` binaries come from devenv.
+Base deps kept lean: `pydantic`, `typer`, `pyjutsu` (which embeds jj-lib); `git` comes from
+devenv as the colocated interop layer.
 
 ## 7. Intent vocabulary
 
-The core intent set. Lane lifecycle verbs (`start`/`switch`/`split`/`land`/`abandon`) are the additions
-the lane model requires; the trunk↔origin verbs (`pull`/`push`/`remote add`/`untrack`) are the
-single-model interop surface (§8); `doctor`/`init`/`reconcile` are the boundary/bootstrap/recovery
-verbs. Anything not listed is deferred until friction proves it.
+The intent set. Lane lifecycle verbs (`start`/`switch`/`split`/`shape`/`land`/`abandon`) are the
+additions the lane model requires; the trunk↔origin verbs (`sync`/`push`/`remote add`/`untrack`)
+are the single-model interop surface (§8); `doctor`/`init`/`repair` are the
+boundary/bootstrap/recovery verbs. Anything not listed is deferred until friction proves it.
+
+Every intent accepts `--json`; `describe`, `switch`, `start`, `split` and `land` also accept
+`--dry-run`. Five older verbs survive as **hidden, warning aliases**: `save`→`describe`,
+`reconcile`→`repair`, `subtask`→`start`, `pull`→`sync --trunk`, `catchup`→`sync --trunk --all`.
+They forward every option and exit code and name the replacement in the report's notes.
 
 | Intent | Signature | What it does | Underneath |
 |---|---|---|---|
-| `status` | `gitman status [--json]` | Canonical/off-canonical report: trunk + the lane **tree** (stacked lanes indented by `/`-path depth; `--json` stays a flat list with `base`+`depth`). | `jj log`/`op log`/`workspace list` (+git numstat) |
-| `start` | `gitman start <name> [--workspace] [--onto <lane>]` | Create a lane. A **`/`-path name** (`T/api`) **stacks** on its name-parent `T` — the base is derived from the name (fractal lanes, D1); a flat name roots on trunk. `--workspace` isolates it; `--onto` is an optional assertion that must equal the name-parent. | `jj new <trunk\|parent-head>` + `jj bookmark create` (+ `jj workspace add`) |
-| `subtask` | `gitman subtask <leaf> [--workspace]` | Fan out a child lane under the current lane: `subtask api` on `T` ≡ `start T/api` (stacks on `T`, carries its tree). Single-segment leaf; refuses on trunk. The ergonomic task-decomposition verb (fractal lanes, D4). | `do_start(<cur>/<leaf>)` |
-| `switch` | `gitman switch <lane>` | Move `@` onto an existing lane's change to resume it (navigation, never mutates trunk). Refuses to strand an unnamed dirty `@`; reports a lane checked out in another workspace. | `jj edit <lane>` |
-| `split` | `gitman split --paths <sel>… --into <lane> [-m <desc>]` | Partition the current lane's single change into two sibling lanes on trunk: the carved paths onto new lane `<into>`, the remainder on the original. `@` stays on the remainder; never mutates trunk. Path-scoped (whole files); refuses a multi-change/non-trunk-rooted lane, an empty match, or a whole-change match. | `jj new <trunk>` + `jj restore` ×2 + bookmark |
-| `save` | `gitman save [-m <desc>]` | Describe the current lane's change. | `jj describe` |
+| `status` | `gitman status` | Canonical/off-canonical report: trunk + the lane **tree** (stacked lanes indented by `+`-path depth; `--json` stays a flat list with `base`+`depth`), plus notes. | pyjutsu view: log / op-log / workspaces (+ git numstat via `ws.git`) |
+| `log` | `gitman log --revset <revset>` | List the changes in a revset, oldest first (`--json` emits an array). The one read verb that takes a raw revset, so a consumer never imports pyjutsu itself. | `view.log(revset)` |
+| `start` | `gitman start <name> [--workspace] [--onto <lane>] [--adopt-all\|--adopt-mine] [--dry-run]` | Create a lane. A **`+`-path name** (`T+api`) **stacks** on its name-parent `T`; a flat name roots on trunk. `/` is input sugar. `--workspace` isolates it; `--onto` must equal the name-parent. | `jj new <base>` + `jj bookmark create` (+ `jj workspace add`) |
+| `switch` | `gitman switch <lane> [--dry-run]` | Move `@` onto an existing lane's change to resume it (navigation, never mutates trunk). Refuses to strand an unnamed dirty `@`; reports a lane checked out in another workspace. | `jj edit <lane>` |
+| `split` | `gitman split --paths <sel>… \| --hunks <sel> --into <lane> [-m <desc>] [--dry-run]` | Partition the current lane's single change into two sibling lanes on trunk: the carved paths onto new lane `<into>`, the remainder on the original. `--paths` selects whole files/dirs/globs; `--hunks` selects hunks (`file:i,j;…`). `@` stays on the remainder; never mutates trunk. | `jj new <trunk>` + `jj restore` ×2 + bookmark, or one `tx.split` |
+| `shape` | `gitman shape --squash <rev> [--into <rev>] [-m <desc>] \| --reorder <rev>…` | Tidy the current lane's own `base..head` range: fold one change into a neighbour, or re-stack the listed changes. Never crosses the base, so trunk is unchanged. | `tx.squash` / `tx.rebase` + `tx.set_bookmark` |
+| `describe` | `gitman describe [-m <desc>] [--dry-run]` | Describe the current lane's change. With no `-m`, print the current description. | `jj describe` |
 | `seed` | `gitman seed -m <desc>` | One-shot: make a fresh repo's first commit on trunk, leaving a clean `@`. Refuses once trunk has history. | `jj describe` @ + bookmark trunk |
-| `sync` | `gitman sync [--all]` | Fetch **lane** branches + rebase the current lane (or `--all` lanes) onto its **base** (parent lane head, or **local** trunk — never advances trunk). `--all` orders parent→child. A conflicting stacked rebase is left on its prior base (non-blocking). | `jj git fetch <lanes>` + `jj rebase` |
 | `publish` | `gitman publish` | Push the current lane; branch = lane name. Verify hook first. | `jj git push` (forge extra: + open/update PR) |
-| `land` | `gitman land [<lane>…] [--all]` | Fold lane(s) into their **base** — the parent lane (advance the parent bookmark) or **local** trunk (advance trunk, the one local trunk-advance). Refuses a lane with a live child (fold the child in first); multi-arg orders child→parent. **`--all`** folds the whole forest **bottom-up** (child→parent→trunk), each level its own tx/undo checkpoint (fractal lanes, D3). | rebase + ff base/trunk + bookmark/workspace cleanup |
-| `abandon` | `gitman abandon [<lane>] [--recursive]` | Discard a lane (terminal); abandons only the lane's **own** commits (`base..lane`, so a stacked lane's parent survives). **`--recursive`** tears down the whole `/`-path subtree **bottom-up** (child→parent), each node its own tx/undo checkpoint; a foreign workspace an agent may still be in is forgotten but its dir is **kept** (never rmtree'd) (fractal lanes, D6). | `jj abandon` (`base..lane`) + bookmark delete + workspace cleanup |
-| `pull` | `gitman pull [--dry-run]` | Integrate a genuinely-moved `origin/<trunk>`: fetch, content-aware FF / rebase un-pushed lands onto origin (never dropping work), rebase/retire surviving lanes, repark `@`. | `jj git fetch` + content relation + explicit trunk FF/rebase + survivor retire + repark |
-| `push` | `gitman push [--reset-origin]` | Publish local trunk → origin as a strict fast-forward (refuses non-FF → `pull`). `--reset-origin` lifts the gate (lease-safe migration escape). | `ws.git_push(<remote>, <trunk>)` (force-with-lease engine; strict-FF is a gitman policy) |
+| `land` | `gitman land [<lane>…] [--all] [--dry-run]` | Fold lane(s) into their **base** — the parent lane (advance the parent bookmark) or **local** trunk (advance trunk, the one local trunk-advance). Refuses a lane with a live child (fold the child in first); multi-arg orders child→parent. **`--all`** folds the whole forest **bottom-up** (child→parent→trunk) and records **one** undo checkpoint for the invocation (fractal lanes, D3). | rebase + ff base/trunk + bookmark/workspace cleanup |
+| `abandon` | `gitman abandon [<lane>] [--recursive]` | Discard a lane (terminal); abandons only the lane's **own** commits (`base..lane`, so a stacked lane's parent survives). **`--recursive`** tears down the whole `+`-path subtree **bottom-up** (child→parent), each node its own undo checkpoint; a foreign workspace an agent may still be in is forgotten but its dir is **kept** (never rmtree'd) (fractal lanes, D6). | `jj abandon` (`base..lane`) + bookmark delete + workspace cleanup |
+| `sync` | `gitman sync [--all] [--trunk] [--dry-run]` | Fetch + rebase. Plain: rebase the current lane (or `--all` lanes, parent→child) onto its **base** (parent lane head, or **local** trunk — never advances trunk). `--trunk` integrates a genuinely-moved `origin/<trunk>`: advance or rebase local trunk, retire/rebase surviving lanes, repark `@`; with `--all`, refresh every stale workspace too. | `jj git fetch` + `jj rebase` (+ content relation and trial merge for `--trunk`) |
+| `push` | `gitman push [--reset-origin]` | Publish local trunk → origin under **two gates**: content (the remote holds nothing local lacks) and push safety (the push would not drop a commit object the remote names). A refusal names the commits `--reset-origin` would drop. | `ws.git_push(<remote>, <trunk>)` (force-with-lease engine; both gates are gitman policy) |
 | `remote add` | `gitman remote add <url> [--name origin]` | Add a git remote (in-process; never touches git HEAD), bootstrapping trunk toward its first `push`. | `ws.add_remote` |
 | `untrack` | `gitman untrack <path>…` | Stop tracking machine-local file(s): add to `.gitignore` + drop from the tree (files kept on disk; on the current lane). | `.gitignore` + `ws.untrack_paths` |
-| `undo` | `gitman undo [--op <id>] [--list]` | Revert the last intent, or to a chosen op. | `jj undo` / `jj op restore` |
 | `resolve` | `gitman resolve [--list]` | Surface remaining conflicts / confirm cleared. | `jj resolve --list` |
-| `version` | `gitman version [bump <major\|minor\|patch>]` | Show or bump the repo's semver. | version-source read/write |
+| `undo` | `gitman undo [--op <id>] [--list]` | Revert the last intent, or to a chosen op. | `jj undo` / `jj op restore` |
+| `doctor` | `gitman doctor` | Validate the execution boundary and toolchain (pyjutsu/jj-lib version, git, colocation, remote, frozen trunk, uv, colocated HEAD/refs/index) and report canonicity. | preflight checks |
+| `init` | `gitman init [--trunk <name>] [--colocate]` | Resolve + freeze trunk; scaffold `gitman.toml` + the agent skill. `--colocate` adopts an existing `.git` or creates one first. | colocation + trunk freeze + config write |
+| `repair` | `gitman repair [--abandon] [--keep local\|origin]` | The one recovery path: adopt stray changes into lanes (or `--abandon` discard them) and heal jj↔git ref/HEAD drift, never discarding history unless asked. | anomaly registry + ref repair + `git_import` |
+| `version` | `gitman version [bump <major\|minor\|patch>]` | Show or bump the repo's semver. | uv version read/write |
 | `release` | `gitman release [<level> \| --version X.Y.Z]` | (bump →) tag `vX.Y.Z` → push tag. Verify hook first; refuses a stale `uv.lock`. Normally called with no level, after `land` + `push`. | version write + `git tag` + push |
+| `workspace list` | `gitman workspace list` | List workspace registrations; mark the ones with no live lane. | `ws.workspaces()` |
+| `workspace forget` | `gitman workspace forget <name>` | Drop a jj workspace registration; never removes the directory. | `ws.forget_workspace` |
+| `workspace prune` | `gitman workspace prune` | Retire every registration with no live lane and an empty `@`. | `ws.forget_workspace` |
 
 **Global flags:** `--json`, `--repo <path>`.
 **Exit codes:** `0` ok · `1` VC decision needed (conflict / push rejected / verify
 blocked / off-canonical) · `2` infra/config (no remote, auth, jj/git missing, outside
 devenv, no version source) · `3` invalid usage.
 
-**Fractal lanes (recursive task-decomposition), Phase 2 shipped:** the whole model is *making the
-2-level (trunk + lanes) tree n-level by replacing the constant "trunk" with "this node's parent."* A
+**Fractal lanes (recursive task-decomposition), Phase 2 shipped:** the whole model *makes the
+2-level (trunk + lanes) tree n-level by replacing the constant "trunk" with "this node's parent".* A
 lane name is a `+`-path (`T`, `T+api`, `T+api+handler`) and its **base is its name-parent** — a pure
 namespace lookup (D1), which retired Phase-1's DAG-ancestry base search and closed its "child-behind-
 its-base" gap by construction (I3′). **`+`, not `/`, is the separator** (issue 44 stage 4f / project
 46 decision D-A2): it is a legal git ref character, so the lane name, the jj bookmark, the git ref
 and the remote branch are one string with no parent/child collision. `/` is still accepted on
-input (`gitman start T/api`) as sugar, normalised to `+` at the CLI boundary — the rest of this
-section keeps the pre-migration `/` spelling in its examples pending the full doc rewrite (S8). `subtask <leaf>` fans out a child under the current lane;
-`land`/`sync`/`status` are parent-aware (fold a node into its base, `parentHead..node` reporting, the
-indented `↳ on <parent>` tree), and a base with a live child refuses to land/abandon. **`land --all`
-(2B)** folds the whole forest bottom-up (child→parent→trunk) — a *sequence* of one-level folds, each
-its own tx/undo checkpoint; internal folds move no trunk, only the root fold advances it (no new
-invariant exemption). **Parallel agents (3A) shipped:** N agents fan out subtasks into their own
-workspaces (`subtask --workspace`) and fold in from their own workspace — `land` refuses to fold a
-lane whose `@` is live in another workspace (never yanks a working dir), siblings left `N behind`
-catch up with their own `sync`, and `reconcile` refreshes a workspace whose `@` was rewritten out
-from under it. **`abandon --recursive` (3B) shipped:** the teardown mirror of `land --all` — a
-*sequence* of one-level `base..node` abandons, ordered deepest-first, each its own tx/undo checkpoint;
-bottom-up so no child is orphaned, trunk frozen throughout (no new invariant exemption), and a foreign
-workspace an agent may still be in is kept (never rmtree'd). **The fractal-lanes model is complete.**
+input (`gitman start T/api`) as sugar, normalised to `+` at the CLI boundary. `start T+api` fans out
+a child under the lane `T`; `land`/`sync`/`status` are parent-aware (fold a node into its base,
+`parentHead..node` reporting, the indented `↳ on <parent>` tree), and a base with a live child
+refuses to land/abandon. **`land --all` (2B)** folds the whole forest bottom-up
+(child→parent→trunk); internal folds move no trunk, only the root fold advances it (no new
+invariant exemption), and the invocation records **one** undo checkpoint. **Parallel agents (3A)
+shipped:** N agents fan out child lanes into their own workspaces (`start T+api --workspace`) and
+fold in from their own workspace — `land` refuses to fold a lane whose `@` is live in another
+workspace (never yanks a working dir), siblings left `N behind` catch up with their own `sync`, and
+`repair` refreshes a workspace whose `@` was rewritten out from under it. **`abandon --recursive`
+(3B) shipped:** the teardown mirror of `land --all` — a *sequence* of one-level `base..node`
+abandons, ordered deepest-first, each its own tx/undo checkpoint; bottom-up so no child is orphaned,
+trunk frozen throughout (no new invariant exemption), and a foreign workspace an agent may still be
+in is kept (never rmtree'd). **The fractal-lanes model is complete:** the publish path now works for
+every non-leaf tree (D-A2), which the pre-D-A2 `/` encoding could not do.
 
-**Deferred:** the forge extra's PR `land`/`pr-status`; a `decompose <task> --into a,b,c` batch fan-out
-wrapper (loop `subtask` for now); a `reconcile` *repair* that re-roots an orphaned child; `shape`
-(squash/reorder + **hunk-level/interactive**
-split — the path-scoped `split` above shipped; partial-file selection is unbuilt but **no longer
-blocked**: pyjutsu binds `tx.split(commit, selection, mode)` with hunk-level selection, so the work is
-gitman-side only — see `.scratch/projects/27-implementation-guides/D5_HUNK_SPLIT_GUIDE.md`),
-pre-release version metadata, pluggable forges. Three further items are
-**designed and unbuilt** — a write mode for `resolve`, `gitman absorb`, and a signing-visibility
-`doctor` check; see `.scratch/projects/24-deferred-backlog/BACKLOG.md` D8–D10.
+**Deferred:** the forge extra's PR-backed fold and PR status; a `decompose <task> --into a,b,c`
+batch fan-out wrapper (loop `start` for now); an interactive, prompt-driven `split` selection
+(hunk-level selection ships as `split --hunks`; see `.scratch/projects/27-implementation-guides/
+D5_HUNK_SPLIT_GUIDE.md`); re-rooting an orphaned child (a `repair` extension); pre-release version
+metadata; pluggable forges. Three further items are **designed and unbuilt** — a write mode for
+`resolve`, `gitman absorb`, and a signing-visibility check in `doctor`; see
+`.scratch/projects/24-deferred-backlog/BACKLOG.md` D8–D10.
 
 ## 8. Lane & workspace flow (parallel agents)
 
-The motivating case: several agents chase several subtasks of one task simultaneously, then fold back.
-The fractal fan-out/fan-in (Phase 3A) is the shipped shape:
+The motivating case: several agents chase several child lanes of one task simultaneously, then fold
+back. The fractal fan-out/fan-in (Phase 3A) is the shipped shape:
 
 ```bash
-# a task lane `T`, three subtasks, three isolated working copies (one agent each)
+# a task lane `T`, three children, three isolated working copies (one agent each)
 $ gitman start T                                    # the task lane (own work allowed on it)
-$ gitman subtask api     --workspace                # → .worktrees/T/api/,     lane "T/api"
-$ gitman subtask storage --workspace                # → .worktrees/T/storage/, lane "T/storage"
-$ gitman subtask web     --workspace                # → .worktrees/T/web/,     lane "T/web"
+$ gitman start T+api     --workspace                # → .worktrees/T+api/,     lane "T+api"
+$ gitman start T+storage --workspace                # → .worktrees/T+storage/, lane "T+storage"
+$ gitman start T+web     --workspace                # → .worktrees/T+web/,     lane "T+web"
 
 # each agent works in its own workspace dir — no contention over @
-agent-api$     cd .worktrees/T/api     && …edit… && gitman save -m "api handler"
+agent-api$     cd .worktrees/T+api     && …edit… && gitman describe -m "api handler"
 # fold in FROM YOUR OWN WORKSPACE — advances the shared parent T under the others
-agent-api$     gitman land                          # T/api → T (from inside .worktrees/T/api)
-agent-storage$ cd .worktrees/T/storage && gitman sync   # catch up: T moved; rebase onto it
-agent-storage$ gitman land                          # T/storage → T
+agent-api$     gitman land                          # T+api → T (from inside .worktrees/T+api)
+agent-storage$ cd .worktrees/T+storage && gitman sync   # catch up: T moved; rebase onto it
+agent-storage$ gitman land                          # T+storage → T
 # the coordinator folds the finished task up
 $ gitman land T                                     # T → trunk (the root fold; trunk advances only here)
 ```
@@ -266,7 +291,7 @@ $ gitman land T                                     # T → trunk (the root fold
 - **`--workspace`** runs the lane in its own `jj workspace` — an isolated in-repo
   `.worktrees/<lane>/` checkout (self-ignored so colocated git never reports it), sharing the one
   repo. That's how true parallelism avoids stepping on a single `@`, and it matches how parallel
-  agents are spawned anyway (separate working dirs). Without `--workspace`, `subtask`/`start` creates
+  agents are spawned anyway (separate working dirs). Without `--workspace`, `start` creates
   the lane in the current working copy (serial, single-agent flow).
 - **The brief repo lock** (I4) only bites on operations that touch shared state (trunk
   advance, op-log head, bookmark namespace) and is anchored at the **shared** repo root, so every
@@ -279,11 +304,11 @@ $ gitman land T                                     # T → trunk (the root fold
   locally); the sweep names and skips any lane it can't safely fold. gitman **never** reaches into
   another workspace's `@`: a sibling left `N behind` the advanced parent refreshes itself with its
   own `gitman sync`; a workspace whose `@` was rewritten out from under it (a sibling's fold, a
-  `pull`) shows stale and is repaired by `gitman reconcile` **from inside it**.
+  `sync --trunk`) shows stale and is repaired by `gitman repair` **from inside it**.
 - **`land`** is the sanctioned local trunk-advance (I5): it folds the lane into its base (parent lane
   or trunk), advancing the base by change-id, then retires the lane. Folding a `--workspace` lane
   from its own dir keeps that (now parked, reusable) workspace — `cd` out and delete it, or start the
-  next subtask in it. A reviewed flow opens a PR for CI/audit, but the trunk advance is still the
+  next child lane in it. A reviewed flow opens a PR for CI/audit, but the trunk advance is still the
   local `land` (§8.1), not a forge merge button.
 - **Tear down a whole branch with `abandon <node> --recursive`.** When a subtree is a dead end, the
   opt-in cascade discards it **bottom-up** (deepest child → … → the node), each node its own tx/undo
@@ -296,13 +321,13 @@ $ gitman land T                                     # T → trunk (the root fold
   Bare `abandon <node>` stays one-level: it refuses while the node has a live child (no implicit
   cascade).
 
-### 8.1 Trunk ↔ origin — the single local-authored model (`push` / `pull`)
+### 8.1 Trunk ↔ origin — the single local-authored model (`push` / `sync --trunk`)
 
 **Trunk is local-authored: gitman is the sole writer of trunk SHAs.** Lanes fold into local trunk via
 `land`; origin is a **mirror** you reach by fast-forward `push`. Because a sole author never seeds a
 divergence, every `push` stays a fast-forward — no re-hash twins, no force-push in the normal path.
-There is **one** origin-integration verb (`pull`) and **one** trunk-push verb (`push`); the old
-two-door `adopt`/forge-authored-trunk path is gone.
+There is **one** origin-integration verb (`sync --trunk`) and **one** trunk-push verb (`push`); the
+old two-door `adopt`/forge-authored-trunk path is gone.
 
 **The review flow is `publish → (open PR) → land → push`:** `publish` the lane and open a PR so CI runs
 and reviewers see the diff (as *information*, not a gate); then `land` locally and `push`. The pushed
@@ -310,23 +335,27 @@ trunk contains the PR head, so GitHub auto-marks the PR **Merged** — review an
 trunk advance is local. (If trunk moved between publish and land, the rebase re-hashes the lane and you
 close the PR by hand — rare under single authorship.)
 
-`gitman push` — publish local trunk to `origin`:
-- **Content-gated strict fast-forward, as a gitman *policy*.** It classifies local trunk vs
-  `origin/<trunk>` by *content* (§10) and pushes only when local is `in-sync`/`local-ahead`; a
-  `forge-ahead`/`diverged` origin **refuses → `gitman pull` first** (never clobbers real forge work).
-- **The engine is an unconditional force-with-lease** (`ws.git_push`): jj-lib always force-pushes with
-  a lease (= the remote-tracking ref). So strict-FF is *gitman's* gate, not the engine's — and
-  **`push --reset-origin`** is the *same* call with that gate lifted: the lease-safe migration escape
-  for legacy re-hash residue. The lease still refuses to clobber genuinely out-of-band work, so even
-  `--reset-origin` cannot overwrite a collaborator's push made since your last fetch.
+`gitman push` — publish local trunk to `origin` under **two gates**, both gitman policy (issue 45):
+- **Content** (§10): does `origin/<trunk>` hold content local lacks? `in-sync` → NOOP; `local-ahead`
+  → pass; `forge-ahead`/`diverged`/unknown → **refuse, `gitman sync --trunk` first** (never clobbers
+  real forge work).
+- **Push safety**: would the push drop a commit *object* the remote still names? Content alone cannot
+  answer this — it downgrades an ancestry divergence to `local-ahead` when the remote's content is
+  contained locally (right for a re-hash twin, wrong for a foreign commit a rebase absorbed). When it
+  would, the refusal **names the commits** `--reset-origin` would drop.
+- **The engine is an unconditional force-with-lease** (`ws.git_push`): jj-lib always force-pushes
+  with a lease (= the remote-tracking ref). So both gates are *gitman's*, not the engine's — and
+  **`push --reset-origin`** is the *same* call with both gates lifted: the lease-safe migration
+  escape for legacy re-hash residue. The lease still refuses to clobber genuinely out-of-band work,
+  so even `--reset-origin` cannot overwrite a collaborator's push made since your last fetch.
 
-`gitman pull` — integrate a genuinely-moved `origin/<trunk>`:
+`gitman sync --trunk` — integrate a genuinely-moved `origin/<trunk>`:
 1. **Fetches**, then **classifies by content** (§10). `in-sync`/`local-ahead` (incl. a re-hash twin) →
-   trunk does **not** move (lanes-only reconcile). `forge-ahead` → **FF** local trunk to origin.
+   trunk does **not** move (a lanes-only integration). `forge-ahead` → **FF** local trunk to origin.
    `diverged` (un-pushed local lands **and** origin genuinely moved) → **rebase the un-pushed lands
    onto origin** — the single model **never drops local work** (there is no `--force`).
 2. **The conflicted trunk bookmark is the normal divergence shape:** jj marks the local trunk bookmark
-   conflicted whenever a fetch finds real both-sides divergence; `pull` resolves it structurally
+   conflicted whenever a fetch finds real both-sides divergence; `sync --trunk` resolves it structurally
    (rebase the local side onto the origin side, set the bookmark to the new head). A rebase that
    *conflicts* is rolled back non-blocking (never commits markers into tracked source) → `gitman
    resolve`.
@@ -337,11 +366,11 @@ close the PR by hand — rare under single authorship.)
 Mutating intents mirror jj's bookmarks into the colocated git after each op. If a stuck
 `refs/heads/<lane>` (e.g. an abandoned lane's leftover ref) makes that export partially fail, the
 desync is **surfaced** (a report note + a `gitman doctor` `colocated-refs` check) rather than
-swallowed, and `gitman reconcile` heals it (re-sync refs to jj, drop leftovers) — see §11.
+swallowed, and `gitman repair` heals it (re-sync refs to jj, drop leftovers) — see §11.
 
 Every trunk↔origin op stays CANONICAL and is a single `gitman undo` step (a `push` is one-way — undo
 reverts local only). **`sync` never advances trunk** (it fetches lanes-only and rebases onto *local*
-trunk) — trunk advancement is `land`'s (local) or `pull`'s (integrating origin) job, by design. Keep
+trunk) — trunk advancement is `land`'s (local) or `sync --trunk`'s (integrating origin) job, by design. Keep
 `gitman.toml` / VC wiring on **trunk**, never only in a lane, so retiring a lane can never delete it.
 
 ## 9. The `RepoState` model (the Pydantic heart)
@@ -357,17 +386,21 @@ RepoState
   off_canonical: str | None         # reason, if not canonical
   trunk: TrunkRef                   # frozen, from config (name, change_id, commit_id)
   current_lane: str | None          # the lane of this workspace's @
+  foreign_paths: list[str]          # paths in @ this session did not write (advisory, S4)
+  session_identity: str | None      # GITMAN_SESSION or the workspace name
   lanes: list[Lane]
   recent_ops: list[Op]              # tail of op-log → powers undo affordances
   notes: list[str]                  # honesty notes ("not done" / staleness)
 
 Lane
   name: str                         # = bookmark = git branch (readable)
-  state: draft | published | landed
-  head: Change                      # tip change (lane = head + linear ancestors to trunk)
+  state: draft | published | merged # `merged`: head is an ancestor of <trunk>@<remote>; no `landed`
+  head: Change                      # tip change (lane = head + linear ancestors to base)
   workspace: str | None             # isolated workspace dir, if any
   conflict: bool
-  ahead: int · behind: int          # vs trunk
+  ahead: int · behind: int          # vs the lane's base
+  created_at: datetime | None       # oldest in-range commit's author time (survives a rebase)
+  updated_at: datetime | None       # head's committer time (moves on a rebase)
   pr: PRRef | None                  # populated only by the github extra
 
 Change
@@ -483,7 +516,7 @@ All jj reads/mutations now go through a `Session` over pyjutsu (typed models, ty
 the git side through `ws.git`. No raw git subprocess remains. The conflict-marker gotcha above
 still applies — pyjutsu surfaces jj-form markers verbatim.
 
-### 10.8 The trunk↔origin content relation (drives `status`/`push`/`pull`)
+### 10.8 The trunk↔origin content relation (drives `status`/`push`/`sync --trunk`)
 
 `TrunkRef` carries a **content-aware** relation between local trunk and `origin/<trunk>`, not an
 ancestry count. The one honest question: *does `origin/<trunk>` hold a commit whose **content** is
@@ -495,8 +528,8 @@ Four outcomes drive the verbs:
 |---|---|---|
 | `in-sync` | same content (incl. a re-hash **twin** — same tree, different SHA) | `push` is a NOOP |
 | `local-ahead` | local has content origin lacks; origin has none local lacks | `gitman push` (FF) |
-| `forge-ahead` | origin has content local lacks; local has no un-pushed lands | `gitman pull` (FF) |
-| `diverged` | **both** hold content the other lacks | `gitman pull` (rebase un-pushed lands onto origin) |
+| `forge-ahead` | origin has content local lacks; local has no un-pushed lands | `gitman sync --trunk` (FF) |
+| `diverged` | **both** hold content the other lacks | `gitman sync --trunk` (rebase un-pushed lands onto origin) |
 
 Because it compares **diffs, not SHAs**, a re-hash twin reads `in-sync` — never the old hash-based
 "N behind → integrate" nag that could discard un-pushed lands. This is what makes the single
@@ -506,20 +539,38 @@ local-authored model safe under an occasional forge merge or collaborator push.
 
 Constraints that are only *documented* drift. The lane model holds by construction:
 
-- **Per-intent invariant precheck.** Each mutating intent first asserts the repo is
-  canonical (one lane per change, trunk where config says, no divergence). Cheap; reuses
-  the §10 capture. A violated precondition refuses with the single recovery instruction.
-- **Transactional rollback.** Each mutating intent captures the op-id before acting, then
-  asserts the **postcondition "still canonical"**; if violated, it auto-`jj op restore`s
-  to the captured op. **Every Gitman command either lands in a canonical state or didn't
-  happen.** (Same op-log lever as `undo`, §12, used as rollback.)
+- **Per-intent invariant precheck.** Before acting, each mutating intent asserts the repo is
+  canonical **scoped to what it touches**: a typed anomaly blocks an intent only when its
+  subject is in the intent's subject set (`invariants.subjects_for`). An anomaly on lane A no
+  longer blocks work on lane B. Cheap; reuses the §10 capture, and refuses with the recovery
+  instruction.
+- **Transactional rollback, delta-based.** Each mutating intent captures the op-id before
+  acting, then re-captures the state and compares **the anomaly set after against the set
+  before**. An anomaly present after but not before was introduced *by this intent* (the repo
+  lock makes gitman the sole writer for the whole intent), so it rolls back — even when the repo
+  was already off-canonical elsewhere. This replaced the absolute `not after.canonical` check,
+  which could not roll back a new anomaly once any anomaly existed. A rollback auto-`jj op
+  restore`s to the captured op. **Every Gitman command either lands in a canonical state or did
+  not happen.** (Same op-log lever as `undo`, §12, used as rollback.)
+- **Some anomaly kinds are note-only.** `ref-lagging`, `colocated-record-stale`,
+  `lane-orphaned` and `lane-legacy-name` are reported but never block or roll back an intent.
+  `ref-lagging` is the normal shape between two `publish`/`push` calls, so treating it as a
+  failure would roll back a healthy intent; the others are advisory or await `repair`.
+- **Git refs are a publication artifact.** Since stage 4d only `publish` and `push` export jj
+  bookmarks to `refs/heads/*`; every other local write leaves the colocated `.git` alone, and
+  the refs catch up at the next `publish`/`push` (or a `status` read's best-effort mirror).
+  Nothing gates on a git ref. `repair` heals jj↔git drift in whichever direction it runs:
+  git-only history is imported into jj, never reset away (issue 31).
 - **One deviation handler, not N.** External mutation (raw `jj`/`git`, a human) is the one
   thing Gitman can't prevent. So `status` classifies the repo as **canonical** or
-  **off-canonical** and there is exactly one recovery path — `gitman reconcile` — which
-  adopts stray changes into lanes or abandons them. No per-deviant-state handling. `reconcile`
-  also heals **colocated git-ref drift** (jj bookmark ≠ `refs/heads/<name>`, or an abandoned
-  lane's leftover ref that makes `git_export` fail): it re-syncs the refs to jj — the source of
-  truth — and drops the leftovers. `gitman doctor`'s `colocated-refs` check surfaces the drift.
+  **off-canonical** and there is exactly one recovery path — `gitman repair` — which adopts
+  stray changes into lanes or abandons them, and heals the colocated ref/HEAD drift. `gitman
+  doctor` surfaces that drift in its `colocated-refs`/`colocated-head` rows.
+- **An irreversible network call runs after the guard closes, not inside its body.** `push` and
+  `land`'s lane-retiring delete-push perform their remote call *after* `canonical_guard` closes
+  (issue 45 F2): a postcondition rollback runs `restore_operation`, which unwinds local jj state
+  and cannot retract a sent push. The guard proves local state canonical and publishes the refs
+  first; only then does gitman touch the remote. The repo lock stays held across both.
 
 ## 12. The undo model (the headline feature)
 
@@ -561,14 +612,14 @@ push_tag   = true
 
 - **Semver:** `major`→`(X+1).0.0` · `minor`→`X.(Y+1).0` · `patch`→`X.Y.(Z+1)`. v1 is
   `MAJOR.MINOR.PATCH` only (pre-release/build metadata deferred).
-- `version bump` writes the new number into the current lane and `save`s a "Bump version
+- `version bump` writes the new number into the current lane and `describe`s a "Bump version
   to X.Y.Z" change — local, undoable.
 - `release` is atomic: optionally bump, create an **annotated git tag** on the lane's
   commit (tags live on the git side — colocated; jj tag support is read-only) and push it.
   The **verify hook runs before any write**, so a blocked release leaves no tag and no
   bump. Release normally happens from a landed change on trunk.
 - **The canonical release is six steps**, because `release <level>` refuses to tag a lane
-  commit that `land` will later rewrite: `start` → `version bump` → `save` → `land` → `push`
+  commit that `land` will later rewrite: `start` → `version bump` → `describe` → `land` → `push`
   → `release` (no level; tags trunk). The inline `release <level>` bump still works, but only
   from clean trunk. The refusal names the sequence — project 32, G4.
 - **Agent angle:** `gitman init` scaffolds `.agents/skills/gitman/SKILL.md` documenting
@@ -577,14 +628,15 @@ push_tag   = true
 
 ## 14. Safety & policy
 
-- **Protected trunk.** Trunk advances only via `land` (local) or `pull` (integrating a moved
-  origin) — I5. The everyday `push` is a strict fast-forward **policy** (content-check → refuse
-  non-FF → `pull`), so it never rewrites shared history in the normal path. The engine's
-  force-with-lease is the out-of-band backstop, surfaced only as the explicit `push --reset-origin`
-  migration escape — and even that cannot clobber genuine out-of-band work (the lease blocks it).
+- **Protected trunk.** Trunk advances only via `land` (local) or `sync --trunk` (integrating a
+  moved origin) — I5. The everyday `push` is a two-gate **policy** (content-check + push-safety
+  check → refuse non-FF → `sync --trunk`), so it never rewrites shared history in the normal path.
+  The engine's force-with-lease is the out-of-band backstop, surfaced only as the explicit `push
+  --reset-origin` migration escape — and even that cannot clobber genuine out-of-band work (the
+  lease blocks it).
 - **No raw destructive primitive** in the intent surface (no `reset --hard`, no blind
   force-push). Lane branches force-push via `publish`; trunk reaches origin only through the
-  content-gated `push`.
+  two-gated `push`.
 - **Everything undoable**, always surfaced inline; every command transactional (§11).
 - **Policy is Pydantic-validated config** — trunk, protected refs, verify hook
   (same discipline as `[tool.testee]`).
@@ -642,13 +694,13 @@ Next: edit · `gitman publish` · `gitman land fix-billing-test`
 ```
 
 The trunk line is **content-aware** (§10): `(in sync with origin)` · `(local-ahead — `gitman push`)` ·
-`(forge-ahead — `gitman pull`)` · `(diverged — `gitman pull` to rebase)`. It compares *content*, not
-SHAs, so a re-hash twin reads `in sync`, never a data-losing "N behind → integrate" nag.
+`(forge-ahead — `gitman sync --trunk`)` · `(diverged — `gitman sync --trunk` to rebase)`. It compares
+*content*, not SHAs, so a re-hash twin reads `in sync`, never a data-losing "N behind → integrate" nag.
 
 ```text
 Gitman status — OFF-CANONICAL
 Reason: change `pqrs` belongs to no lane (edited outside Gitman?).
-Recover: `gitman reconcile`  — adopt it into a lane, or abandon it.
+Recover: `gitman repair`  — adopt it into a lane, or abandon it.
 Exit: 1
 ```
 
@@ -662,28 +714,28 @@ name the lane.
 
 `gitman init` scaffolds `.agents/skills/gitman/SKILL.md` (mirrors Testee's skill): route
 *all* version control through Gitman, never raw `jj`/`git` (it breaks canonicity);
-documents the lane loop, the trunk↔origin verbs (`push`/`pull`), and the safety net; explains exit
-codes; points at `gitman undo` and `gitman reconcile` (off-canonical); and records the repo's
+documents the lane loop, the trunk↔origin verbs (`push`/`sync --trunk`), and the safety net; explains exit
+codes; points at `gitman undo` and `gitman repair` (off-canonical); and records the repo's
 version-bump procedure.
 
 ## 18. Execution boundary
 
-Runs only inside a `devenv.sh` shell (consistent with Testee). `jj`, `git`, and `gh` (for
-the extra) resolve to pinned versions — no host drift. `gitman doctor` validates the
-toolchain (jj present + **version assert**, colocated `.git`, remote, frozen trunk exists,
-version source) and reports canonicity.
+Runs only inside a `devenv.sh` shell (consistent with Testee). jj-lib is embedded in-process via
+pyjutsu, so there is no `jj` CLI; `git` and `gh` (for the extra) resolve to pinned versions — no
+host drift. `gitman doctor` validates the toolchain (embedded jj-lib version, colocated `.git`,
+remote, frozen trunk, uv) and reports canonicity.
 
 ## 19. Scope — v1 vs deferred
 
-**v1 (this concept):** the lane model + invariants + transactional enforcement (§5, §11);
-the eleven intents (§7) incl. lane lifecycle + workspaces (§8); `RepoState` + capture
-(§9–10); undo (§12); versioning + release (§13); config + policy (§14–15); compact reports
-(§16); the agent skill (§17); `init`/`doctor`/`reconcile`; devenv boundary.
+**Shipped (this concept):** the lane model + invariants + transactional enforcement (§5, §11);
+the intent set (§7), incl. lane lifecycle, `shape`, `split --hunks` and workspaces (§8);
+`RepoState` + capture (§9–10); undo (§12); versioning + release (§13); config + policy (§14–15);
+compact reports (§16); the agent skill (§17); `init`/`doctor`/`repair`; the devenv boundary.
 
-**Deferred until dogfooding demands it:** the forge extra (PR `publish`/`land`/`pr-status`),
-stacked PRs, `shape` (squash/reorder + hunk-level/interactive split — path-scoped `split` shipped;
-the hunk binding exists, so this is gitman-side work), pre-release/build version metadata, pluggable forges
-(GitLab/Gitea), a write mode for `resolve`, `gitman absorb`, and signing visibility in `doctor`.
+**Deferred until dogfooding demands it:** the forge extra (PR-backed fold and PR status),
+stacked PRs, an interactive prompt-driven `split` (hunk-level `split --hunks` shipped),
+pre-release/build version metadata, pluggable forges (GitLab/Gitea), a write mode for
+`resolve`, `gitman absorb`, and signing visibility in `doctor`.
 
 ## 20. Resolved questions
 
@@ -713,7 +765,8 @@ The four prior open questions are now resolved by the lane model + the spike:
   live in *another* workspace is **refused** outright (you never yank a working agent's dir).
 - **`land` ordering** — landing several lanes that touch overlapping files: sequential rebase with
   per-lane conflict surfacing; the fold **stops** at the first conflict (partial-progress `BLOCKED`,
-  prior folds committed, undo one level at a time — `land --all` §8/§7).
+  prior folds committed). `land --all` records **one** undo checkpoint for the invocation, so one
+  `gitman undo` rewinds every lane it landed; `abandon --recursive` keeps per-node checkpoints.
 
 **Resolved during implementation (Phase 3B — recursive teardown):**
 
@@ -734,5 +787,5 @@ The four prior open questions are now resolved by the lane model + the spike:
 
 **Genuinely still open (decide during implementation):**
 
-- **`reconcile` UX** — how much it decides automatically vs asks, given it runs in an
+- **`repair` UX** — how much it decides automatically vs asks, given it runs in an
   agent (non-interactive) context.

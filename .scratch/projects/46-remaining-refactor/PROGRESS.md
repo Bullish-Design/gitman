@@ -372,3 +372,59 @@ still deliberately untouched (S8).
 `start --workspace` on the Plan executor.
 
 **Next:** S8 (`GITMAN_CONCEPT.md` rewrite + drift test) — last, by construction.
+
+## S8 — done (landed, pushed)
+
+`GUIDE_S8_concept_doc_drift.md`, issue 44 G8, closes issue 44. Suite: 450 passed (446 after S7
++ 4 new). `ruff check` clean.
+
+**Measurement re-run first (guide step 1).** After S6 the shipped surface is **21 visible
+verbs + 4 group subcommands** (`remote add`; `workspace list`/`forget`/`prune`), not the 24/19
+in `SCOPING.md` §4. Five more names in `registered_commands` are the **hidden** deprecation
+aliases (`save`, `reconcile`, `subtask`, `pull`, `catchup`), so the drift test excludes hidden
+commands — they are the migration channel, not the surface. S6 *reduced* the surface and *added*
+registrations; a test that counted raw registrations would have gone the wrong way.
+
+**The test, written first (`tests/test_concept_doc_drift.py`, 4 tests).**
+- `test_concept_doc_matches_cli_verbs` — §7's table equals the shipped set, both directions.
+  It parses the table only (never prose), asserts a non-zero row count and no duplicate rows,
+  and handles groups generically: every `registered_groups` sub-Typer contributes
+  `<group> <command>` rows, so a future subgroup cannot slip through a string exception.
+- `test_no_shipped_verb_is_listed_as_deferred` — §7's Deferred paragraph must not *lead* a
+  clause with a shipped verb (the `shape` failure). A mention inside a deferred item is allowed,
+  a clause head is not; the deferred text is phrased so that every clause head is a noun phrase.
+- `test_tutorial_docs_do_not_name_deprecated_verbs` — `USING_GITMAN.md` and `JUJUTSU_PRIMER.md`
+  carry no migration prose, so a backticked `save`/`reconcile`/`catchup`/`pull`/`subtask` there
+  is stale. It caught the one real hit (`JUJUTSU_PRIMER.md` invariant row: "trunk advances only
+  via `land` or `pull`").
+- `test_concept_doc_does_not_invoke_a_deprecated_verb` — no doc shows `gitman <deprecated>` as a
+  command. The concept doc keeps the rename lineage in prose by design, so a *mention* is fine.
+
+**The doc rewrite (the deliverable).**
+- §7: a 25-row table (21 verbs + `remote add` + 3 `workspace` rows) replacing the 19-row one.
+  `save`/`subtask`/`pull` are gone as rows and now appear in a prose alias note; the six
+  undocumented shipped verbs (`doctor`, `init`, `log`, `repair`, `shape`, and `describe` from
+  `save`) gained rows. The `push` row now describes **two gates** (content and push safety) and
+  that a refusal names the commits `--reset-origin` would drop.
+- §7 Deferred: `shape` moved out (it ships: `--squash`/`--reorder`). **Hunk-level split is
+  already shipped as `split --hunks`** — the old text called partial-file selection unbuilt,
+  which was stale before this stage began (project 27's D5 landed it). The deferred item is named
+  precisely now: an *interactive, prompt-driven* split.
+- §7 fractal paragraph: done in the `+` spelling, and the "model is complete" claim is now
+  **true** (D-A2 fixed the publish path for non-leaf trees); the note that the section awaited a
+  rewrite is deleted.
+- §6: documents the `Plan` executor for the five migrated verbs and `sync --trunk`'s deliberate
+  exclusion; layout gains `plan.py`, `anomalies.py`, `repairs.py`; `reconcile.py` → `repair.py`.
+- §5: I3′ restated in the `+` spelling (I3 itself is unchanged under D-A2 — one representation,
+  so branch = lane name needs no translation). The lifecycle diagram and prose drop the
+  unobservable `landed` state and gain `merged`.
+- §11: rewritten for the four changes since it was written — the delta-based postcondition, the
+  note-only anomaly kinds, git refs as a publication artifact, and the post-guard network call.
+- The rest of the doc swept for the S6 renames and the `+` separator (§8, §8.1, §9, §10.8, §13,
+  §14, §16, §17, §18, §19, §20); `USING_GITMAN.md` had one stray leading space; `JUJUTSU_PRIMER.md`
+  had the one `pull` row.
+
+**Issue 44 is closed.** G8 marked shipped in §10; the issue header records the closure and what
+was deliberately left (`sync --trunk` on the callback executor; issue 33's ledger unbuilt).
+
+**Next:** none — project 46's nine stages are all landed.

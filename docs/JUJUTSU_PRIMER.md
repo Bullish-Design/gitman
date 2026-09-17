@@ -154,7 +154,7 @@ The invariants Gitman enforces are just jj's sharp edges, sanded off:
 | Every change is in exactly one **named** lane | anonymous heads / stray commits (§5) |
 | Branch name = lane name, unique-checked | branch-name churn |
 | Gitman is the sole writer, under a brief lock | concurrent-rewrite divergence |
-| Each lane is linear; trunk advances only via `land` (local) or `pull` (integrating origin) | merge-commit tangles, "which base?" |
+| Each lane is linear; trunk advances only via `land` (local) or `sync --trunk` (integrating origin) | merge-commit tangles, "which base?" |
 
 ## Concept-to-Gitman map
 
@@ -181,9 +181,9 @@ you name an *intent*, it picks and safely runs the *jj operations*.
 | `gitman switch <lane>` | Resume an existing lane | `jj edit <lane>` (moves `@`; never touches trunk) |
 | `gitman split …` | Carve one lane's change into two sibling lanes | `jj new <trunk>` + `jj restore` ×2 + bookmark |
 | `gitman describe -m …` | Name/redescribe the current change | `jj describe` |
-| `gitman sync [--all]` | Get on top of latest trunk | `jj git fetch` + `jj rebase` |
+| `gitman sync [--all] [--trunk]` | Get on top of the latest base (or integrate origin with `--trunk`) | `jj git fetch` + `jj rebase` (+ content relation and trial merge for `--trunk`) |
 | `gitman publish` | Share this lane | `jj git push` (branch = lane name) |
-| `gitman land [<lane>…]` | Fold lane(s) into trunk, advance trunk, retire | rebase + fast-forward trunk + bookmark/workspace cleanup |
+| `gitman land [<lane>…]` | Fold lane(s) into their base (parent lane or trunk), advance it, retire | rebase + fast-forward base/trunk + bookmark/workspace cleanup |
 | `gitman abandon [<lane>]` | Discard a lane (terminal) | `jj abandon` + bookmark delete + workspace cleanup |
 | `gitman undo [--op\|--list]` | Take it back | `jj undo` / `jj op restore` |
 | `gitman resolve [--list]` | Deal with conflicts | `jj resolve --list` |

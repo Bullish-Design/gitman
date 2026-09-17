@@ -123,7 +123,7 @@ They print the exact steps the intent would perform and change nothing.
 
 Trunk is **local-authored**: gitman is the sole writer of trunk SHAs. `land` folds a lane into local
 trunk; origin is a mirror you reach by fast-forward `push`. `sync --trunk` integrates a
- genuinely-moved origin.
+genuinely-moved origin.
 
 ```bash
 devenv shell -- gitman remote add <url>        # bootstrap a remote (in-process; never touches git HEAD)
