@@ -487,7 +487,7 @@ timestamps and an auditable lifecycle history for free.
 
 | # | Fix | Where | Severity |
 |---|---|---|---|
-| **G0** | **Gate `reconcile`'s early return on `state.canonical`, or delete its claim.** It asserts "already canonical" without asking. One line. Supersedes issue 42's G0. | `reconcile.py:103-118` | **highest** |
+| **G0** | ~~**Gate `reconcile`'s early return on `state.canonical`, or delete its claim.**~~ **SHIPPED (2026-09-16, Stage 1).** It asserts "already canonical" without asking. One line. Supersedes issue 42's G0. | `reconcile.py:103-118` | **highest** |
 | **G1** | **One closed `Outcome` sum type returned by every intent.** Replace 101 `raise GitmanError` with `Declined`. One renderer, one JSON shape, exit code derived. Exceptions mean bugs only. | `models.py`, `core.py`, `cli.py`, `render.py` | **highest** |
 | G2 | Typed anomalies with subjects; one detect/repair registry; subject-scoped gate; verified `remedies` | `state.py`, `reconcile.py`, `invariants.py` | high |
 | G3 | Per-invocation path fingerprint; `start`/`describe` report and scope by provenance | `.gitman/`, `core.py` | high |

@@ -110,11 +110,29 @@ def do_reconcile(session: Session, abandon_: bool):
                 and not refresh_notes
                 and not head_notes
             ):
+                # The four surveys above cover reconcile's *repair* scope, which is narrower than
+                # the canonical predicate in `capture_state`. Reporting survey-emptiness as
+                # "canonical" is how issue 42 livelocked: CLEAN + exit 0 while `status` said
+                # OFF-CANONICAL, so the operator was told to re-run the verb that had just
+                # declined to act. Ask the predicate, then answer.
+                state = capture_state(session)
+                if state.canonical:
+                    return IntentResult(
+                        intent="reconcile",
+                        outcome="CLEAN",
+                        messages=["already canonical — no strays, refs in sync."],
+                        notes=gc_notes,
+                    )
                 return IntentResult(
                     intent="reconcile",
-                    outcome="CLEAN",
-                    messages=["already canonical — no strays, refs in sync."],
-                    notes=gc_notes,
+                    outcome="PARTIAL",
+                    messages=["no strays, refs in sync — but the repo is still off-canonical."],
+                    notes=gc_notes
+                    + [
+                        f"still off-canonical: {state.off_canonical}",
+                        "reconcile has no repair for this shape — this is a gap, not your mistake.",
+                    ],
+                    exit_code=1,
                 )
 
             actions: list[str] = gc_notes + list(head_notes) + list(refresh_notes)
