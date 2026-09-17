@@ -74,6 +74,47 @@ def _repair_refs(
     actions.extend(sync_colocated_refs(session))
 
 
+def _repair_colocated_record(
+    session: Session, trunk: str, abandon_: bool, keep: KeepSide | None, actions: list[str], before: Survey
+) -> None:
+    """`colocated-record-stale`: re-establish jj's own record of git's `HEAD`/ref state (issue 44 S9).
+
+    Distinct from `_repair_refs`: that repairs `refs/heads/*` disagreeing with jj's bookmarks, and
+    is a no-op here because the ref already agrees — only jj's *memory* of the git side (its `HEAD`
+    compare-and-swap base, a bookmark's `<name>@git` row) is stale, left behind by a
+    `restore_operation` that rewound jj's records of git-side writes that had really happened.
+    `git_import` re-reads git's current `HEAD`/refs into jj's view, which re-establishes both;
+    `sync_colocated` can then move the checkout. Runs after `_repair_refs` (Trap 2, guide §3.13.2 —
+    its own possible import must land first) and is best-effort throughout: a repo that cannot
+    self-heal here must still let `reconcile` finish its other repairs.
+
+    Every row in `REPAIRS_ORDER` runs unconditionally whenever `reconcile` has ANY work to do
+    (`do_reconcile`'s dispatch loop, not gated per-kind) — so, unlike `_repair_refs`, this one must
+    survey its OWN condition before doing anything: `git_import` is not a no-op like
+    `sync_colocated_refs` is when nothing is desynced, and running it unconditionally disturbed
+    unrelated repairs (lane-divergent's careful duplicate-then-abandon sequencing) unless nothing
+    was actually stale.
+    """
+    from pyjutsu import PyjutsuError
+
+    from gitman.state import colocated_record_stale
+
+    head_note, stale_bookmarks = colocated_record_stale(session.fresh_view(), session.ws)
+    if head_note is None and not stale_bookmarks:
+        return
+
+    try:
+        session.ws.git_import()
+    except PyjutsuError as exc:
+        actions.append(f"could not re-import colocated git state ({exc}) — jj's record may still be stale.")
+        return
+    try:
+        session.sync_colocated()
+        actions.append("re-synced jj's record of the colocated git HEAD/refs.")
+    except PyjutsuError as exc:
+        actions.append(f"colocated git checkout not re-synced ({exc}) — run `gitman reconcile` again.")
+
+
 def _repair_lane_conflicts(
     session: Session, trunk: str, abandon_: bool, keep: KeepSide | None, actions: list[str], before: Survey
 ) -> None:
@@ -234,6 +275,7 @@ REPAIRS: dict[str, Repair] = {
     "trunk-conflicted": _repair_refs,
     "ref-mismatched": _repair_refs,
     "ref-lagging": _repair_refs,
+    "colocated-record-stale": _repair_colocated_record,
     "lane-conflicted": _repair_lane_conflicts,
     "stray-change": _repair_strays,
     "lane-divergent": _repair_lane_twins,
@@ -251,6 +293,7 @@ REPAIRS_ORDER: tuple[str, ...] = (
     "trunk-conflicted",
     "ref-mismatched",
     "ref-lagging",
+    "colocated-record-stale",
     "lane-conflicted",
     "stray-change",
     "lane-divergent",

@@ -1,6 +1,8 @@
 # ISSUE — a colocated snapshot stages every new file as the empty blob, and raw-git tooling reads that as data loss
 
-> **Status:** open / diagnosed, not started. Captured 2026-09-15 from a devman
+> **Status:** SHIPPED (2026-09-17, project 46 S2 — `gitman doctor`'s `colocated-index` row +
+> `state.intent_to_add_entries`; see `GUIDE_S2_doctor_intent_to_add.md` and
+> `tests/test_issue41_intent_to_add.py`). Captured 2026-09-15 from a devman
 > Project 038 cleanup session that measured the state across 53 repositories.
 > **gitman version at capture:** 0.6.2 (jj-lib in-process through pyjutsu).
 > **Scope:** gitman itself, plus one documentation change. The underlying

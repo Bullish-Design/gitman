@@ -485,6 +485,134 @@ def colocated_ref_desync(view: RepoView, ws: Workspace) -> tuple[list[tuple[str,
     return mismatched, leftover
 
 
+def intent_to_add_entries(view: RepoView, ws: Workspace) -> tuple[list[str], list[str]]:
+    """`(expected, diverged)` — the colocated index's intent-to-add paths, split by consequence
+    (issue 41 / issue 44 stage 4e).
+
+    jj's snapshot stages a jj-tracked, git-uncommitted file as an intent-to-add entry: the empty
+    blob with `CE_INTENT_TO_ADD`. That is correct and load-bearing (Nix flake evaluation reads the
+    git tree), and it reads to any agent inspecting git as a file about to be committed empty.
+
+    `expected` — intent-to-add and **absent** from git `HEAD`. A plain `git commit` ignores the
+    path entirely; the working tree is never at risk. Informational, and the overwhelming majority.
+
+    `diverged` — intent-to-add and **present** in git `HEAD`. A plain `git commit` would record a
+    deletion, because jj's parent and git's `HEAD` disagree about the path. This is the case worth
+    catching, and it is 2-in-140 rare, which is why it must be separated rather than counted.
+
+    Classified by index flag + `HEAD` membership, never by the blob hash: keying on the empty blob
+    is what produced issue 41's fleet-wide false alarm, and reproducing it inside the tool would
+    make the tool the next source of it. Returns `([], [])` on any failure — a diagnostic never
+    raises.
+    """
+    from pyjutsu import PyjutsuError
+
+    try:
+        entries = ws.git.index_entries()
+        head = ws.git.head()
+        head_paths = set(view.file_list(head.oid)) if head.oid is not None else set()
+    except PyjutsuError:
+        return [], []
+    candidates = [e.path for e in entries if e.intent_to_add]
+    expected = sorted(p for p in candidates if p not in head_paths)
+    diverged = sorted(p for p in candidates if p in head_paths)
+    return expected, diverged
+
+
+def colocated_head_lag(view: RepoView, ws: Workspace) -> tuple[str, str, int | None] | None:
+    """`(head_oid, parent_oid, distance)` when git `HEAD` does not match ANY bookmark's `<name>@git`
+    record (issue 44 S9) — jj's own memory of the colocated git state disagreeing with the actual
+    on-disk `.git/HEAD`, not merely lagging `@`.
+
+    **Not** "HEAD != `@`'s parent" — that comparison alone is nearly always true under ordinary
+    operation: `HEAD`/the on-disk index only move via `sync_colocated` (issue 44 stage 4d: a
+    publish/push-only side effect), so between two publishes `HEAD` legitimately lags every local
+    write, and flagging that would fire on almost every actively-developed repo. `HEAD` and every
+    `<name>@git` row only ever move TOGETHER, written by the same export+`sync_colocated` combo —
+    so under that ordinary lag, `HEAD` still matches whichever bookmark's position it was last
+    synced to, however far behind `@` that now is. Only a `restore_operation` that rewinds one
+    record and not the other (issue 45's incident; `.scratch/projects/46-remaining-refactor/
+    GUIDE_S9_colocated_head_blindspot.md` §2) breaks that pairing — which is what this detects.
+
+    `distance` is the commit count `head_oid..parent_oid` when `head_oid` is an ancestor of `@`'s
+    parent (the common, recoverable shape); `None` when it is not (rarer, worth a louder report).
+    Returns `None` when `HEAD` matches a `<name>@git` record, is stranded (`orphaned_git_head` owns
+    that), there is no `<name>@git` record at all to compare against (nothing exported yet — no
+    baseline, so no claim), or on any engine failure — a diagnostic never raises.
+    """
+    from pyjutsu import PyjutsuError
+
+    try:
+        head = ws.git.head()
+        if head is None or head.oid is None or not head.detached:
+            return None
+        if orphaned_git_head(view, ws) is not None:
+            return None  # stranded — doctor's own FAIL row owns this, not a mere lag
+        git_targets = {t for b in view.bookmarks() if b.remote == "git" for t in b.target_ids}
+        if not git_targets or head.oid in git_targets:
+            return None
+        parent_ids = view.working_copy().parent_ids
+        if not parent_ids:
+            return None
+        parent_oid = parent_ids[0]
+        if view.is_ancestor(head.oid, parent_oid):
+            return head.oid, parent_oid, len(view.log(f"{head.oid}..{parent_oid}"))
+        return head.oid, parent_oid, None
+    except PyjutsuError:
+        return None
+
+
+def colocated_record_stale(view: RepoView, ws: Workspace) -> tuple[str | None, list[str]]:
+    """`(head_note, stale_bookmarks)` — jj's OWN records of colocated-git state disagreeing with
+    reality, which a plain ref/bookmark comparison cannot see (issue 44 S9).
+
+    `colocated_ref_desync` compares jj bookmarks against the actual `refs/heads/*` — the two can
+    agree (so `reconcile` reports CLEAN) while jj's *records* of them are still stale:
+    `restore_operation` (an `undo`, or a rolled-back postcondition) rewinds jj's memory of git-side
+    writes that genuinely happened, leaving `sync_colocated` unable to move `HEAD` (no
+    compare-and-swap base) even though the ref itself already matches. Both conditions heal the
+    same way (`git_import` re-reads git's `HEAD`/refs into jj's view), so they are reported
+    together here — but kept OUT of `colocated_ref_desync`'s `(mismatched, leftover)`, which three
+    callers already depend on meaning ref/bookmark divergence, not jj-record staleness.
+
+    `head_note` mirrors `colocated_head_lag`'s condition (a stranded `HEAD` is excluded — that is
+    `orphaned_git_head`'s FAIL, repaired differently). `stale_bookmarks` are local bookmark names
+    whose `<name>@git` row (jj's own memory of the colocated ref) disagrees with the actual
+    `refs/heads/<name>`. Returns `(None, [])` on any engine failure — a diagnostic never raises.
+    """
+    from pyjutsu import PyjutsuError
+
+    head_note: str | None = None
+    try:
+        lag = colocated_head_lag(view, ws)
+        if lag is not None:
+            head_oid, parent_oid, distance = lag
+            head_note = (
+                f"git HEAD {head_oid[:12]} lags @'s parent {parent_oid[:12]}"
+                + (f" ({distance} commit(s) behind)" if distance is not None else " (unrelated)")
+                + " — jj's own record of the colocated git state is stale, not a ref/bookmark "
+                "disagreement; `gitman reconcile` re-imports and re-syncs it."
+            )
+    except PyjutsuError:
+        head_note = None
+
+    stale_bookmarks: list[str] = []
+    try:
+        actual = _git_refs_heads(ws)
+        for b in view.bookmarks():
+            if b.remote == "git" and b.target_ids:
+                real = actual.get(b.name)
+                # `_known_to_jj` excludes the ADOPT direction (`ref-mismatched`): a ref moved by a
+                # raw git commit points at a commit jj has genuinely never seen, which is git-only
+                # history to import, not a stale record of something jj already knew about. Only
+                # flag a ref jj DOES know but whose tracking record didn't follow it.
+                if real is not None and real not in b.target_ids and _known_to_jj(view, real):
+                    stale_bookmarks.append(b.name)
+    except PyjutsuError:
+        pass
+    return head_note, sorted(stale_bookmarks)
+
+
 def _known_to_jj(view: RepoView, commit_id: str) -> bool:
     """Whether jj's index holds `commit_id` — the one bit that classifies colocated ref drift.
 
@@ -838,9 +966,34 @@ def capture_state(session: Session) -> RepoState:
             for name, _local, _remote in rewrite:
                 anomalies.append(make_anomaly("ref-lagging", Subject(kind="ref", name=name), ref_lagging_note))
 
+    # S9: jj's OWN records of colocated-git state (HEAD's compare-and-swap base, a bookmark's
+    # `<name>@git` row) can go stale while `colocated_ref_desync` above reports clean — that check
+    # only compares bookmarks against actual refs, not jj's memory of them. Note-only (same
+    # reasoning as `ref-lagging`): jj is authoritative and self-consistent, this only misleads
+    # raw-git readers, so it must not block anything.
+    record_head_note, record_stale_bookmarks = colocated_record_stale(pre_view, session.ws)
+    if record_head_note is not None:
+        anomalies.append(make_anomaly("colocated-record-stale", Subject(kind="ref", name="HEAD"), record_head_note))
+    if record_stale_bookmarks:
+        names = ", ".join(record_stale_bookmarks)
+        record_bookmarks_note = (
+            f"jj's git-tracking record for {names} disagrees with the actual ref (a rewound "
+            f"`undo`/rollback) — `gitman reconcile` re-imports and re-syncs it."
+        )
+        for name in record_stale_bookmarks:
+            anomalies.append(
+                make_anomaly("colocated-record-stale", Subject(kind="ref", name=name), record_bookmarks_note)
+            )
+    else:
+        record_bookmarks_note = None
+
     notes: list[str] = list(session.config.deprecations)  # retired config tables — warn, never fail
     if ref_lagging_note is not None:
         notes.append(ref_lagging_note)
+    if record_head_note is not None:
+        notes.append(record_head_note)
+    if record_bookmarks_note is not None:
+        notes.append(record_bookmarks_note)
     if session.is_stale():
         notes.append("working copy is stale — run `gitman reconcile`.")
     if not has_remote(session.ws):

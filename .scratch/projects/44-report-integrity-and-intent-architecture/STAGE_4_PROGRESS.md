@@ -149,14 +149,15 @@ described the pre-4d "every mutating intent exports" behavior.
 
 Suite: 377 passed (375 + 2 new in `test_colocated_git_sync.py`). `ruff check` clean.
 
-## What's next — 4e, 4f
+## What's next — 4f
 
-4e is still blocked on a pyjutsu capability: `GitIndexEntry` carried no intent-to-add flag — this
-landed in pyjutsu 0.22.0 (commit `5700f6e`, `intent_to_add: bool` sourced from
-`gix::index::entry::Flags::INTENT_TO_ADD`), but **0.22.0 is not yet published** (no GitHub
-release/wheel; `pyjutsu:publish` needs `vendomat publish pyjutsu` for the wheel and currently
-refuses on that repo's dirty `devenv.lock`/`devenv.nix`/`devenv.yaml`, pre-existing and unrelated).
-Once published, bump gitman's `[tool.uv.sources]` pin, then implement 4e's `doctor` classification.
+4e — **SHIPPED** (2026-09-17, project 46 S2). The pyjutsu 0.22.0 blocker cleared (`gitman doctor`
+reports `pyjutsu 0.22.0`), so `state.intent_to_add_entries` classifies the colocated index's
+intent-to-add paths by consequence (`expected` vs `diverged`, keyed on the flag + `HEAD`
+membership, never the blob hash) and `doctor` gained a `colocated-index` row (WARN on `diverged`,
+OK otherwise). See `.scratch/projects/46-remaining-refactor/GUIDE_S2_doctor_intent_to_add.md` and
+`tests/test_issue41_intent_to_add.py`.
 
-4f (total ref encoding, deferred above) needs its own scoping pass: decide between a pyjutsu
-capability and a bookmark-rename migration before writing any gitman code against it.
+4f (total ref encoding, deferred above) is scoped and decided in project 46:
+`.scratch/projects/46-remaining-refactor/SCOPING.md` §2 (D-A2 signed off) and
+`GUIDE_S3_fractal_ref_encoding.md`.

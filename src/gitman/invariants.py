@@ -497,8 +497,13 @@ def sync_colocated_refs(session: Session, *, preserve_orphans: bool = False) -> 
             notes += _keep_jj_side_adopt_the_rest(session)
     try:
         session.ws.git_export()  # re-sync jj's own record of the refs (clears the stale-export state)
-    except Exception:
-        pass
+    except Exception as exc:
+        # Everything above already resolved the ref/bookmark drift this function knows how to fix,
+        # so a failure here means something ELSE is still stuck (e.g. a fractal D/F name collision —
+        # issue 44 stage 4f) that no further retry of THIS function would clear. Surface it the same
+        # way `_export_colocated_git` does rather than swallow it silently — an operator or the next
+        # `gitman doctor` needs to know the export still isn't clean.
+        notes.append(f"colocated git export still failing after repair ({type(exc).__name__}: {exc}).")
 
     if adopt:
         notes.append(f"imported git-only history into jj: {', '.join(n for n, _, _ in adopt)}.")

@@ -127,11 +127,14 @@ def run_doctor(repo_root: Path, config: GitmanConfig | None = None) -> DoctorRep
     # its own row (project 29).
     if ws is not None and _is_colocated(repo_root):
         try:
-            from gitman.state import orphaned_git_head
+            from gitman.state import colocated_head_lag, orphaned_git_head
 
-            stranded = orphaned_git_head(ws.head(), ws)
+            view = ws.head()
+            stranded = orphaned_git_head(view, ws)
+            lag = None if stranded is not None else colocated_head_lag(view, ws)
         except Exception:  # noqa: BLE001 — a diagnostic must never crash doctor
             stranded = None
+            lag = None
         if stranded is not None:
             checks.append(
                 Check(
@@ -139,6 +142,17 @@ def run_doctor(repo_root: Path, config: GitmanConfig | None = None) -> DoctorRep
                     "colocated-head",
                     f"git HEAD is stranded at {stranded[:12]} (no bookmark reaches it) — every "
                     "colocated export is failing; run `gitman reconcile`",
+                )
+            )
+        elif lag is not None:
+            head_oid, parent_oid, distance = lag
+            where = f"({distance} commit(s) behind)" if distance is not None else "(unrelated to @'s parent)"
+            checks.append(
+                Check(
+                    WARN,
+                    "colocated-head",
+                    f"git HEAD is at {head_oid[:12]} but @'s parent is {parent_oid[:12]} {where} — "
+                    "raw `git status` will report committed files as modified; run `gitman reconcile`",
                 )
             )
         else:
@@ -163,6 +177,42 @@ def run_doctor(repo_root: Path, config: GitmanConfig | None = None) -> DoctorRep
             if leftover:
                 bits.append(f"{len(leftover)} leftover git ref(s): {', '.join(leftover)}")
             checks.append(Check(WARN, "colocated-refs", "; ".join(bits) + " — run `gitman reconcile`"))
+
+    # Colocated index intent-to-add entries (issue 41 / issue 44 stage 4e): jj's snapshot stages a
+    # jj-tracked, git-uncommitted file as an intent-to-add entry (the empty blob) — correct and
+    # load-bearing, but indistinguishable to a raw-git reader from index corruption. WARN only the
+    # 2-in-140 case that matters: a path intent-to-add AND present in git HEAD, where a plain `git
+    # commit` would record a deletion because jj's parent and git's HEAD disagree about the path.
+    if ws is not None and _is_colocated(repo_root):
+        try:
+            from gitman.state import intent_to_add_entries
+
+            expected, diverged = intent_to_add_entries(ws.head(), ws)
+        except Exception:  # noqa: BLE001 — a diagnostic must never crash doctor
+            expected, diverged = [], []
+        if diverged:
+            shown = ", ".join(diverged[:5]) + (f" (+{len(diverged) - 5} more)" if len(diverged) > 5 else "")
+            checks.append(
+                Check(
+                    WARN,
+                    "colocated-index",
+                    f"{len(diverged)} path(s) intent-to-add AND in git HEAD: {shown} — a plain `git "
+                    "commit` would record a deletion (jj's parent and git's HEAD disagree about "
+                    "the path); run `gitman reconcile`, or commit through gitman so they reconverge",
+                )
+            )
+        elif expected:
+            checks.append(
+                Check(
+                    OK,
+                    "colocated-index",
+                    f"{len(expected)} file(s) tracked by jj and not yet committed to git show as "
+                    "intent-to-add in the git index. Expected in a colocated repo; the working "
+                    "tree is intact.",
+                )
+            )
+        else:
+            checks.append(Check(OK, "colocated-index", "no intent-to-add entries"))
 
     # Conflicted lane bookmark (issue 11): a lane whose local + pushed positions diverged (typically a
     # forge PR merge) names two commits, so any revset on it raises and used to wedge every command.

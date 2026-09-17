@@ -119,8 +119,11 @@ class Session:
         **Why the caller opts in.** Only `status` calls this, at the very end, after its report
         is rendered. Doing it inside `fresh_view()` instead puts a git write in the middle of
         every mutating intent's precheck, which changed `land --all`'s behaviour on a fractal
-        forest (`test_land_all_multiple_roots`). Mutating intents keep their own loud export,
-        which classifies failures and returns surfacing notes; do not route those through here.
+        forest (`test_land_all_multiple_roots`). `publish`/`push` — the only two intents that pass
+        `export=True` since stage 4d — keep their own loud export, which classifies failures and
+        returns surfacing notes; do not route those through here. Every other mutating intent
+        exports nothing at all (git refs are a publication artifact, not kept in lockstep with
+        every local write), which is exactly the lag this method exists to catch at read time.
 
         **Why swallowing is safe here.** The export is best-effort by design — with fractal lane
         names, `refs/heads/A` blocks `refs/heads/A/x` and the whole call raises. The report has

@@ -112,3 +112,8 @@ left open in this file.
   for `push`/`publish`, so it is no longer reachable from them.
 - Stage 4f (total ref encoding for fractal lanes) and stage 4e are untouched by this work — both
   are scoped separately under `.scratch/projects/46-remaining-refactor/`.
+- `restore_operation` rewinds jj's records of git-side writes that had really happened — not just
+  `<trunk>@<remote>` (repaired by the issue-45 fix above), but also `view`'s notion of git `HEAD`
+  and a bookmark's `<name>@git` row. Only the first had a cure until project 46 S9
+  (`colocated_record_stale`, `gitman doctor`'s `colocated-head` WARN, and a `reconcile` repair) —
+  see `GUIDE_S9_colocated_head_blindspot.md`.

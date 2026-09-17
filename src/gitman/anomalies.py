@@ -101,6 +101,13 @@ REGISTRY: dict[str, AnomalyKind] = {
     # `canonical`/`off_canonical` and out of `_postcondition`'s rollback delta; `reconcile` still
     # heals it (`repairs.REPAIRS["ref-lagging"]`).
     "ref-lagging": AnomalyKind(tier="ref", repair="reconcile", blocks=frozenset()),
+    # Issue 44 S9: jj's OWN record of colocated-git state (HEAD's compare-and-swap base, a
+    # bookmark's `<name>@git` row) gone stale — distinct from `ref-lagging`, which is about the
+    # actual `refs/heads/*` disagreeing with jj's bookmarks. Here the ref/bookmark comparison
+    # already agrees (so `colocated_ref_desync` sees nothing); only jj's memory of the git side is
+    # wrong, which is what left `doctor`/`reconcile` both blind to a stale colocated HEAD. jj is
+    # authoritative and self-consistent regardless, so this is note-only like `ref-lagging`.
+    "colocated-record-stale": AnomalyKind(tier="ref", repair="reconcile", blocks=frozenset()),
     "lane-orphaned": AnomalyKind(
         tier="lane",
         repair=None,
@@ -146,6 +153,7 @@ ANOMALY_ORDER: tuple[str, ...] = (
     "lane-divergent",
     "ref-mismatched",
     "ref-lagging",
+    "colocated-record-stale",
     "lane-orphaned",
 )
 
@@ -156,4 +164,4 @@ ANOMALY_ORDER: tuple[str, ...] = (
 # have a repair (stage 4c) — it is note-only because jj is already authoritative for that
 # direction, so surfacing it as a blocking DESYNCHRONIZED would cry wolf on a harmless, self-healing
 # shape.
-NOTE_ONLY_KINDS = frozenset({"lane-orphaned", "ref-lagging"})
+NOTE_ONLY_KINDS = frozenset({"lane-orphaned", "ref-lagging", "colocated-record-stale"})
