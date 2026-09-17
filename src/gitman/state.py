@@ -28,6 +28,7 @@ from gitman.models import (
     LaneState,
     LaneTwin,
     Op,
+    PushSafety,
     RepoState,
     TrunkRef,
 )
@@ -251,6 +252,59 @@ def _trunk_content_relation(
     if local_has_new:
         return "local-ahead", behind, ahead, remote
     return "in-sync", behind, ahead, remote
+
+
+def trunk_push_safety(session: Session, view: RepoView, trunk: str) -> tuple[PushSafety, list[Commit]]:
+    """`(safety, dropped)` — whether pushing local `trunk` would drop a commit **object** that
+    `<trunk>@<remote>` still names (issue 45 F1).
+
+    This is deliberately NOT `_trunk_content_relation`. That function answers a *content* question
+    ("who holds more content") and `capture_state`/`render` depend on those words. This one answers
+    the only question a force-with-lease push needs: would the push remove a commit from the
+    remote's reachable history? One word for one meaning.
+
+    Why both are needed. `_trunk_content_relation` downgrades an ancestry divergence to
+    `local-ahead` whenever the remote contributes no new content — correct for a **re-hash twin**
+    (a rebase re-hashed a commit; the remote still names the pre-rebase sha; dropping it is right),
+    and wrong for a **foreign commit whose content was absorbed** by a rebase. Those two are
+    content-identical and only the change-id tells them apart. `find_divergent_lane_twins` already
+    requires matching change-ids before it calls two sides twins; trunk had no such requirement,
+    which is how issue 45's push dropped `295f0ad` from `origin/main`.
+
+    The words:
+
+      * `fast-forward` — the remote names no commit local lacks. Nothing can be dropped.
+      * `twin-rewrite` — every remote-only commit's change-id also appears among the commits local
+        holds beyond the remote, so each one is a re-hash predecessor of local work. Dropping those
+        shas loses no change.
+      * `drops-remote-commits` — at least one remote-only commit is a change local does not carry.
+        `dropped` names exactly those. Refuse unless the caller asked for it (`--reset-origin`).
+      * `unknown` — no remote, or the remote trunk was never fetched. `dropped` is empty; the
+        caller handles the first-push bootstrap itself.
+
+    No network — reads the last fetch's tracking ref, the same input jj's push lease uses.
+    """
+    from gitman.core import pick_remote
+
+    if not has_remote(session.ws):
+        return "unknown", []
+    remote = pick_remote(session.ws)
+    try:
+        view.resolve(f"{trunk}@{remote}")
+    except RevsetError:
+        return "unknown", []  # remote trunk not fetched yet → first push creates it
+    try:
+        remote_only = view.log(f"{trunk}..{trunk}@{remote}")
+        local_only = view.log(f"{trunk}@{remote}..{trunk}")
+    except RevsetError:
+        return "unknown", []
+    if not remote_only:
+        return "fast-forward", []
+    local_changes = {c.change_id for c in local_only}
+    dropped = [c for c in remote_only if c.change_id not in local_changes]
+    if not dropped:
+        return "twin-rewrite", []
+    return "drops-remote-commits", dropped
 
 
 def lane_twin_relation(view: RepoView, local_sha: str, forge_sha: str) -> tuple[ContentRelation | None, list[str]]:

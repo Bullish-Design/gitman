@@ -1038,36 +1038,75 @@ def do_seed(session: Session, message: str):
 
 
 def do_publish(session: Session):
-    from pyjutsu import HookAbort, PyjutsuError
+    """Publish the current lane to the forge.
 
-    from gitman.invariants import canonical_guard
+    **The network push runs after `canonical_guard` closes** (issue 45 F2) — same reasoning as
+    `do_push`: `restore_operation` unwinds local jj state and cannot retract a sent push, so no
+    rollback site may follow the push. The guard's body keeps the lane lookup and the verify gate
+    (both local, both reversible); only `git_push` moved out.
+    """
+    from pyjutsu import HookAbort, PostHookError, PyjutsuError
+
+    from gitman.invariants import canonical_guard, repo_lock
     from gitman.lanes import require_current_lane
     from gitman.models import IntentResult
 
     trunk = require_trunk(session.config)
     if not has_remote(session.ws):
         raise GitmanError("no git remote configured — cannot publish.", exit_code=2)
+    remote = pick_remote(session.ws)
 
     notes: list[str] = []
 
-    with canonical_guard(session, "publish", export=True) as canon:
-        lane = require_current_lane(session, trunk)
-        ok, out = run_verify(session.config.publish.verify, session.repo_root, session.config.publish.verify_timeout)
-        if not ok:
-            if session.config.publish.on_fail == "block":
-                raise GitmanError(f"verify failed — publish blocked:\n{out}", exit_code=1)
-            notes.append("verify failed (on_fail=warn) — publishing anyway.")
+    # One lock across the guard AND the push (`do_land`'s pattern: outer lock, `acquire_lock=False`).
+    with repo_lock(session.repo_root):
         try:
-            session.ws.git_push(pick_remote(session.ws), lane, allow_new=True)
+            with canonical_guard(session, "publish", acquire_lock=False, export=True) as canon:
+                lane = require_current_lane(session, trunk)
+                ok, out = run_verify(
+                    session.config.publish.verify, session.repo_root, session.config.publish.verify_timeout
+                )
+                if not ok:
+                    if session.config.publish.on_fail == "block":
+                        raise GitmanError(f"verify failed — publish blocked:\n{out}", exit_code=1)
+                    notes.append("verify failed (on_fail=warn) — publishing anyway.")
+        except GitmanError as exc:
+            # Every failure inside the guard now precedes all network I/O, so we can say so.
+            raise GitmanError(f"{exc}\nnothing changed on the remote.", exit_code=exc.exit_code) from exc
+        notes += canon.notes
+
+        try:
+            session.ws.git_push(remote, lane, allow_new=True)
         except HookAbort as exc:
-            # Named for what it is, so the lane's own verify gate and a pre-push hook
-            # are distinguishable in the report.
-            raise GitmanError(f"publish blocked by a pre-push hook (.pyjutsu-hooks.toml):\n{exc}", exit_code=1) from exc
+            # Named for what it is, so the lane's own verify gate and a pre-push hook are
+            # distinguishable in the report. A pre-push veto precedes all network I/O.
+            raise GitmanError(
+                f"publish blocked by a pre-push hook (.pyjutsu-hooks.toml):\n{exc}\nnothing changed on the remote.",
+                exit_code=1,
+            ) from exc
+        except PostHookError as exc:
+            # pyjutsu says it explicitly: the push LANDED, only the post-hook failed. Never imply a
+            # rollback (issue 45 F3).
+            return IntentResult(
+                intent="publish",
+                outcome="PUBLISHED-HOOK-FAILED",
+                lane=lane,
+                messages=[str(map_pyjutsu_error(exc))],
+                notes=[
+                    f"lane '{lane}' LANDED on {remote} — only the post-push hook failed. "
+                    f"`gitman undo` would not retract it."
+                ],
+                exit_code=1,
+            )
         except PyjutsuError as exc:
-            # Same rule as `push`: name the failure, do not diagnose it. "rejected" said
-            # the remote refused the push, which is wrong for a missing remote or a
-            # network drop.
-            raise GitmanError(f"publish failed:\n{exc}", exit_code=1) from exc
+            # Same rule as `push`: name the failure, do not diagnose it. "rejected" said the remote
+            # refused the push, which is wrong for a missing remote or a network drop. And say
+            # nothing about the remote's state — the engine failed mid-call and we cannot know.
+            raise GitmanError(
+                f"publish failed:\n{exc}\nrun `gitman status` to see whether '{lane}' reached {remote}.",
+                exit_code=1,
+            ) from exc
+
     notes.append("push is one-way: `gitman undo` reverts local state only, not the remote branch.")
     return IntentResult(
         intent="publish",
@@ -2183,90 +2222,182 @@ def do_catchup(session: Session, *, dry_run: bool = False):
 # --- push / remote add / untrack (Tier 2, project 21) ---------------------------------
 
 
-def do_push(session: Session, *, reset_origin: bool = False):
-    """Push local trunk to origin — content-gated strict fast-forward (a gitman *policy*: pyjutsu's
-    `git_push` is an unconditional force-with-lease, so gitman itself refuses a non-FF → `pull`).
+def _push_gate(session: Session, view, trunk: str, remote: str):
+    """The `push` safety gate — `None` means "go ahead", else the `IntentResult` to return.
 
-    Gate (everyday): `in-sync` → nothing to push; `local-ahead` → push; `forge-ahead`/`diverged`/
-    unknown → refuse → `pull`. `--reset-origin` lifts the gate (same `git_push` call) for a deliberate
-    one-shot overwrite of divergent origin residue — the engine's lease still blocks an out-of-band
-    clobber. The first push of a never-pushed trunk creates `origin/<trunk>` (bootstrap, project 18).
-    See PLAN §3. `@`-dirty-trunk is guarded in the precheck (extended to `push`)."""
-    from pyjutsu import HookAbort, PyjutsuError
+    Two independent questions, both of which must pass (issue 45 F1):
+
+      * **content** (`_trunk_content_relation`) — does the remote hold content local lacks?
+        `in-sync` → nothing to push; `forge-ahead`/`diverged`/unknown → `pull` first.
+      * **push safety** (`trunk_push_safety`) — would the push drop a commit *object* the remote
+        still names? The content check alone cannot answer this: it downgrades an ancestry
+        divergence to `local-ahead` whenever the remote's content is already contained locally,
+        which is right for a re-hash twin and wrong for a foreign commit a rebase absorbed. Issue
+        45's push dropped `295f0ad` from `origin/main` through exactly that hole.
+
+    Called twice per push — once as a pre-flight refusal before any work, and again on a fresh view
+    immediately before the network call, because the guard's export can `git_import` in between.
+    """
     from pyjutsu.errors import RevsetError
 
-    from gitman.invariants import canonical_guard
     from gitman.models import IntentResult
-    from gitman.state import _trunk_content_relation
+    from gitman.state import _trunk_content_relation, trunk_push_safety
+
+    try:
+        view.resolve(f"{trunk}@{remote}")
+    except RevsetError:
+        # Trunk was never pushed → this push creates `origin/<trunk>` (bootstrap, project 18).
+        # There is nothing to be ahead of and nothing to drop. The rule lives here so the
+        # pre-flight and pre-network calls can never disagree about it.
+        return None
+
+    relation, _behind, _ahead, _remote = _trunk_content_relation(session, view, trunk)
+    if relation == "in-sync":
+        return IntentResult(
+            intent="push",
+            outcome="NOOP",
+            messages=[f"{trunk} is already in sync with {remote} — nothing to push."],
+        )
+    if relation != "local-ahead":  # forge-ahead / diverged / unknown → never lease-force over forge work
+        return IntentResult(
+            intent="push",
+            outcome="BLOCKED",
+            exit_code=1,
+            messages=[
+                f"refusing to push: {remote}/{trunk} holds work local lacks ({relation or 'unknown'}) "
+                f"— run `gitman pull` first (or `gitman push --reset-origin` to deliberately overwrite it)."
+            ],
+        )
+    safety, dropped = trunk_push_safety(session, view, trunk)
+    if safety == "drops-remote-commits":
+        # Content says local-ahead, ancestry + change-id says the remote carries changes local does
+        # not. Name them: `--reset-origin` should be an informed choice, not a shrug.
+        listed = [
+            f"  {c.commit_id[:8]}  {((c.description or '').strip().splitlines() or ['(no description)'])[0][:72]}"
+            for c in dropped
+        ]
+        return IntentResult(
+            intent="push",
+            outcome="BLOCKED",
+            exit_code=1,
+            messages=[
+                f"refusing to push: {remote}/{trunk} names {len(dropped)} commit(s) local lacks —",
+                *listed,
+                f"their content is already on local {trunk}, but gitman's push is a force-with-lease: "
+                f"it would drop the commit(s) themselves from {remote}/{trunk}'s history. Run "
+                f"`gitman pull` first, or `gitman push --reset-origin` to drop them deliberately.",
+            ],
+        )
+    return None
+
+
+def do_push(session: Session, *, reset_origin: bool = False):
+    """Push local trunk to origin — gated so the push can neither drop remote content nor drop a
+    remote commit (pyjutsu's `git_push` is an unconditional force-with-lease, so the refusal has to
+    be gitman's own). See `_push_gate` for the two questions; `--reset-origin` lifts both for a
+    deliberate one-shot overwrite of divergent origin residue — the engine's lease still blocks an
+    out-of-band clobber. The first push of a never-pushed trunk creates `origin/<trunk>`
+    (bootstrap, project 18). See PLAN §3. `@`-dirty-trunk is guarded in the precheck (extended to
+    `push`).
+
+    **The network push runs after `canonical_guard` closes** (issue 45 F2). `push` runs no local
+    transaction, so nothing local depends on it, and a postcondition rollback must never follow a
+    completed push: `restore_operation` unwinds local jj state and cannot retract a sent push. The
+    guard proves local state is canonical and publishes the refs first; only then does gitman touch
+    the remote. This mirrors `do_land`, whose delete-push is placed after its postcondition for the
+    same reason.
+    """
+    from pyjutsu import HookAbort, PostHookError, PyjutsuError
+
+    from gitman.invariants import canonical_guard, repo_lock
+    from gitman.models import IntentResult
 
     trunk = require_trunk(session.config)
     if not has_remote(session.ws):
         raise GitmanError("no git remote — run `gitman remote add <url>` first.", exit_code=2)
     remote = pick_remote(session.ws)
 
-    # Read the pre-push relation from the head view (NO snapshot — the precheck's dirty-`@` guard must
-    # still see an unsnapshotted dirty trunk-`@`). The relation compares trunk vs its tracking ref, so
-    # a dirty `@` doesn't affect it.
-    view = session.view()
-    try:
-        origin_tip = view.resolve(f"{trunk}@{remote}").commit_id
-    except RevsetError:
-        origin_tip = None  # trunk never pushed → first push creates it (allow_new)
-    relation, _behind, ahead, _remote = _trunk_content_relation(session, view, trunk)
+    # Pre-flight refusal from the head view (NO snapshot — the precheck's dirty-`@` guard must still
+    # see an unsnapshotted dirty trunk-`@`). The gate compares trunk vs its tracking ref, so a dirty
+    # `@` doesn't affect it.
+    if not reset_origin:
+        refusal = _push_gate(session, session.view(), trunk, remote)
+        if refusal is not None:
+            return refusal
 
-    if not reset_origin and origin_tip is not None:
-        if relation == "in-sync":
-            return IntentResult(
-                intent="push",
-                outcome="NOOP",
-                messages=[f"{trunk} is already in sync with {remote} — nothing to push."],
-            )
-        if relation != "local-ahead":  # forge-ahead / diverged / unknown → never lease-force over forge work
+    notes: list[str] = []
+    # One lock across the guard AND the push, so nothing slips in between the final gate and the
+    # network call (`do_land`'s pattern: outer lock, `acquire_lock=False` guard).
+    with repo_lock(session.repo_root):
+        try:
+            with canonical_guard(session, "push", acquire_lock=False, export=True) as canon:
+                pass  # no local mutation: precheck → export → postcondition → undo checkpoint
+        except GitmanError as exc:
+            # Raised before any network I/O, so this note is true by construction now.
             return IntentResult(
                 intent="push",
                 outcome="BLOCKED",
-                exit_code=1,
-                messages=[
-                    f"refusing to push: {remote}/{trunk} holds work local lacks ({relation or 'unknown'}) "
-                    f"— run `gitman pull` first (or `gitman push --reset-origin` to deliberately overwrite it)."
-                ],
+                messages=[str(exc)],
+                notes=["nothing changed on the remote."],
+                exit_code=exc.exit_code,
             )
+        notes += canon.notes
 
-    notes: list[str] = []
-    try:
-        with canonical_guard(session, "push", export=True) as canon:
-            try:
-                session.ws.git_push(remote, trunk, allow_new=True)
-            except HookAbort as exc:
-                # A pre-push hook vetoed, before any network I/O. This is NOT a lease
-                # failure: origin has not moved, and `gitman pull` would be useless
-                # advice for a hook that is doing its job. HookAbort subclasses
-                # PyjutsuError, so it MUST be caught first or the branch below claims
-                # the wrong cause — which is exactly the bug this ordering fixes.
-                raise GitmanError(
-                    f"push blocked by a pre-push hook (.pyjutsu-hooks.toml):\n{exc}",
-                    exit_code=1,
-                ) from exc
-            except PyjutsuError as exc:
-                # Do NOT assert a cause. This used to claim every failure was a stale
-                # lease and prescribe `gitman pull` — which is a dead end for a missing
-                # remote, a refused credential or a dropped network, and those are
-                # indistinguishable here: pyjutsu raises a bare PyjutsuError for all of
-                # them, with no typed "push rejected". Report what the engine said and
-                # offer the lease case as a possibility the reader can check.
-                raise GitmanError(
+        # Re-gate on a fresh view: `_export_colocated_git`'s repair path can `git_import` and move
+        # bookmarks between the pre-flight gate and here (that import is what adopted the stray in
+        # issue 45's incident). Last chance before the irreversible call.
+        if not reset_origin:
+            refusal = _push_gate(session, session.view(), trunk, remote)
+            if refusal is not None:
+                # Carry the guard's export notes (stale colocated refs) onto the refusal too.
+                refusal.notes = notes + refusal.notes + ["nothing changed on the remote."]
+                return refusal
+
+        try:
+            session.ws.git_push(remote, trunk, allow_new=True)
+        except HookAbort as exc:
+            # A pre-push hook vetoed, before any network I/O. This is NOT a lease failure: origin
+            # has not moved, and `gitman pull` would be useless advice for a hook that is doing its
+            # job. HookAbort subclasses PyjutsuError, so it MUST be caught first or the branch below
+            # claims the wrong cause — which is exactly the bug this ordering fixes.
+            return IntentResult(
+                intent="push",
+                outcome="BLOCKED",
+                messages=[f"push blocked by a pre-push hook (.pyjutsu-hooks.toml):\n{exc}"],
+                notes=notes + ["nothing changed on the remote — a pre-push veto precedes all network I/O."],
+                exit_code=1,
+            )
+        except PostHookError as exc:
+            # pyjutsu says this explicitly: the push LANDED, only the post-hook failed. Never imply
+            # a rollback (issue 45 F3) — `map_pyjutsu_error` already words it correctly.
+            return IntentResult(
+                intent="push",
+                outcome="PUSHED-HOOK-FAILED",
+                messages=[str(map_pyjutsu_error(exc))],
+                notes=notes
+                + [
+                    f"the push LANDED on {remote}/{trunk} — only the post-push hook failed. "
+                    f"`gitman undo` would not retract it."
+                ],
+                exit_code=1,
+            )
+        except PyjutsuError as exc:
+            # Do NOT assert a cause. This used to claim every failure was a stale lease and
+            # prescribe `gitman pull` — which is a dead end for a missing remote, a refused
+            # credential or a dropped network, and those are indistinguishable here: pyjutsu raises
+            # a bare PyjutsuError for all of them, with no typed "push rejected". Report what the
+            # engine said and offer the lease case as a possibility the reader can check. Say
+            # nothing about the remote's state: the engine failed mid-call and we cannot know.
+            return IntentResult(
+                intent="push",
+                outcome="BLOCKED",
+                messages=[
                     f"push failed:\n{exc}\n"
-                    f"If {remote} has moved since your last fetch, run `gitman pull`, then `gitman push`.",
-                    exit_code=1,
-                ) from exc
-    except GitmanError as exc:
-        return IntentResult(
-            intent="push",
-            outcome="BLOCKED",
-            messages=[str(exc)],
-            notes=["nothing changed on the remote."],
-            exit_code=exc.exit_code,
-        )
+                    f"If {remote} has moved since your last fetch, run `gitman pull`, then `gitman push`."
+                ],
+                notes=notes + [f"run `gitman status` to see whether {remote}/{trunk} moved."],
+                exit_code=1,
+            )
 
     tip = canon.state.trunk.commit_id if canon.state else None
     notes.append("push is one-way: `gitman undo` reverts local state only, not the remote branch.")

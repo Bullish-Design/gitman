@@ -19,6 +19,10 @@ from gitman.anomalies import NOTE_ONLY_KINDS, Anomaly
 # `LaneTwin.relation` name the same four words. `None` is the one convention for "could not
 # tell" — never a fifth string member; render the word `unknown` at the report boundary instead.
 ContentRelation = Literal["in-sync", "local-ahead", "forge-ahead", "diverged"]
+# Would a force-with-lease push of trunk drop a commit object the remote still names?
+# The push-safety axis (issue 45 F1) — ancestry + change-id, deliberately separate from the
+# content axis above. See `state.trunk_push_safety`.
+PushSafety = Literal["fast-forward", "twin-rewrite", "drops-remote-commits", "unknown"]
 
 # The operator's explicit choice on a genuine fork (`reconcile --keep`).
 KeepSide = Literal["local", "origin"]
