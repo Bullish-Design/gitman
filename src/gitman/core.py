@@ -348,10 +348,10 @@ def _cleanup_workspace(session: Session, lane: str, keep_foreign: bool = False) 
 
 
 def _resolve_base(session: Session, trunk: str, name: str, onto: str | None) -> tuple[str | None, str | None]:
-    """Derive the new lane's base from its `/`-path NAME (D1, sole-source), cross-checking `--onto`.
+    """Derive the new lane's base from its `+`-path NAME (D1, sole-source), cross-checking `--onto`.
 
     Returns `(base_lane_name, base_head_commit_id)` for a stacked lane, or `(None, None)` for a trunk
-    root (a flat name). The name is authoritative: `start T/api` bases on `T` — `--onto` is an optional
+    root (a flat name). The name is authoritative: `start T+api` bases on `T` — `--onto` is an optional
     *assertion* that must AGREE with the name-parent (D2, explicit tree), never a way to stack a
     differently-named lane.
 
@@ -364,7 +364,7 @@ def _resolve_base(session: Session, trunk: str, name: str, onto: str | None) -> 
     from gitman.state import _conflicted_lanes
 
     view = session.view()
-    parent = name_parent(name)  # pure, name-derived: `T/api` → `T`; flat → None
+    parent = name_parent(name)  # pure, name-derived: `T+api` → `T`; flat → None
 
     if onto is not None:
         resolved = onto
@@ -381,17 +381,17 @@ def _resolve_base(session: Session, trunk: str, name: str, onto: str | None) -> 
         if resolved == name:
             raise GitmanError("a lane can't stack on itself.", exit_code=3)
         # D2: `--onto` must agree with the name-parent — the NAME is the base. A bare child + `--onto`
-        # is refused (name it `<onto>/<name>`), not silently auto-qualified.
+        # is refused (name it `<onto>+<name>`), not silently auto-qualified.
         if parent is None:
             raise GitmanError(
-                f"to stack '{name}' under '{resolved}', name the lane '{resolved}/{name}' — the "
-                f"`/`-path name is the base (then `--onto` is optional).",
+                f"to stack '{name}' under '{resolved}', name the lane '{resolved}+{name}' — the "
+                f"`+`-path name is the base (then `--onto` is optional).",
                 exit_code=3,
             )
         if parent != resolved:
             raise GitmanError(
                 f"`--onto {onto}` disagrees with the name-parent '{parent}' of '{name}' — the name is "
-                f"the base; drop `--onto`, or name the lane '{resolved}/…' to stack under '{resolved}'.",
+                f"the base; drop `--onto`, or name the lane '{resolved}+…' to stack under '{resolved}'.",
                 exit_code=3,
             )
 
@@ -433,10 +433,37 @@ def do_start(
         raise GitmanError("`--adopt-all` and `--adopt-mine` are mutually exclusive.", exit_code=3)
     trunk = require_trunk(session.config)
     if workspace:
+        from gitman.lanes import resolve_workspace_path
         from gitman.state import capture_state
 
+        if dry_run:
+            # Real dry run, not the `Plan` executor: `_start_workspace` mutates through a
+            # SECOND workspace's own transaction, a shape `run_plan`'s single-transaction model
+            # does not cover. `capture_state(session, snapshot=False)` reads the recorded head
+            # view (no snapshot of a dirty `@`, which would publish an op), then
+            # `_start_workspace_precheck` runs the same read-only checks the real path runs —
+            # one implementation, so a dry run refuses exactly what a real run would refuse.
+            state = capture_state(session, snapshot=False)
+            wpath = resolve_workspace_path(session.repo_root, session.config, name)
+            base_name, _ = _start_workspace_precheck(session, trunk, name, onto, wpath)
+            stacked = base_name is not None
+            messages = [
+                f"would create lane '{name}' stacked on '{base_name}'."
+                if stacked
+                else f"would create lane '{name}' on {trunk}.",
+                f"would create workspace at {wpath}.",
+            ]
+            note = "dry run — nothing changed; the plan is from the recorded state (unsnapshotted edits excluded)."
+            return IntentResult(
+                intent="start",
+                outcome="DRY-RUN",
+                lane=name,
+                messages=messages,
+                notes=[note],
+                state=state,
+            )
         notes: list[str] = []
-        messages: list[str] = []
+        messages = []
         _start_workspace(session, trunk, name, onto, messages, notes)
         return IntentResult(
             intent="start",
@@ -479,7 +506,7 @@ def do_start(
             # and name the fix, the way the `status` note promises.
             where = f"lane '{base_name}'" if base_name is not None else f"trunk '{trunk}'"
             raise GitmanError(
-                f"@ holds uncommitted work that is not based on {where} — save/land it first, "
+                f"@ holds uncommitted work that is not based on {where} — describe/land it first, "
                 f"or start a lane on its own base (`gitman start <flat-name>` adopts it onto {trunk}).",
                 exit_code=1,
             )
@@ -560,6 +587,30 @@ def do_start(
     )
 
 
+def _start_workspace_precheck(
+    session: Session, trunk: str, name: str, onto: str | None, wpath: Path
+) -> tuple[str | None, str | None]:
+    """The read-only checks `start --workspace` runs before it mutates anything: name validity
+    and uniqueness, an empty destination, and base/parent resolution (D1/D2).
+
+    Shared by the real path (`_start_workspace`, inside the canonical guard) and the
+    `--dry-run` path (`do_start`, which calls this with no guard and no lock) so there is one
+    implementation and a dry run refuses exactly what a real run would refuse. Returns
+    `(base_name, base_commit)`, the same pair `_resolve_base` returns.
+    """
+    from gitman.lanes import ensure_unique
+
+    ensure_unique(session, trunk, name)
+    # Refuse a non-empty destination BEFORE touching it (issue 43 D2). `add_workspace` refuses
+    # it too, but only after creating parents; this keeps the refusal side-effect free.
+    if wpath.is_dir() and any(wpath.iterdir()):
+        raise GitmanError(
+            f"workspace path '{wpath}' already exists and is not empty — move it aside, or choose another lane name.",
+            exit_code=1,
+        )
+    return _resolve_base(session, trunk, name, onto)
+
+
 def _start_workspace(
     session: Session, trunk: str, name: str, onto: str | None, messages: list[str], notes: list[str]
 ) -> None:
@@ -577,7 +628,7 @@ def _start_workspace(
     from pyjutsu import Workspace
 
     from gitman.invariants import canonical_guard, ensure_self_ignored_dir
-    from gitman.lanes import ensure_unique, resolve_workspace_path
+    from gitman.lanes import resolve_workspace_path
 
     wpath = resolve_workspace_path(session.repo_root, session.config, name)
     # A refusal must have no side effects (issue 43 D2). Record whether this invocation will
@@ -586,9 +637,9 @@ def _start_workspace(
     created_dir = not wpath.exists()
     # For an in-repo workspace (the default `.worktrees/<lane>`), self-ignore the TOP in-repo
     # container so colocated git never reports the checkout as `?? .worktrees/` noise (jj-lib
-    # already never snapshots a nested workspace). D7: a `/`-path name like `T/api` lands at
-    # `.worktrees/T/api`, whose *parent* is `.worktrees/T` — self-ignoring that would leave
-    # `.worktrees/` itself un-ignored. Walk up to the first ancestor directly under repo_root (the
+    # already never snapshots a nested workspace). D7: every lane name is a flat `+`-path
+    # (`T+api`), so `wpath` sits directly under `.worktrees/` — but a custom `workspace_dir`
+    # template could still nest it. Walk up to the first ancestor directly under repo_root (the
     # top `.worktrees/`) and ignore that; the `*` glob then covers every nested workspace. Gated to
     # in-repo only: an outside-repo override writes no stray .gitignore (§6). Both paths are
     # resolved-absolute, so `in wpath.parents` is robust.
@@ -598,24 +649,16 @@ def _start_workspace(
             top = top.parent
         ensure_self_ignored_dir(top)
     with canonical_guard(session, "start") as canon:
-        ensure_unique(session, trunk, name)
-        # Refuse a non-empty destination BEFORE touching it (issue 43 D2). `add_workspace` refuses
-        # it too, but only after creating parents; this keeps the refusal side-effect free.
-        if wpath.is_dir() and any(wpath.iterdir()):
-            raise GitmanError(
-                f"workspace path '{wpath}' already exists and is not empty — move it aside, or "
-                f"choose another lane name.",
-                exit_code=1,
-            )
         # Resolve the base AFTER the precheck snapshot (inside the guard): name-derived (D1) — the
-        # `/`-path parent head when stacked, else trunk. A commit id is workspace-global, so the
+        # `+`-path parent head when stacked, else trunk. A commit id is workspace-global, so the
         # sub-workspace tx can name it; the trunk bookmark resolves across the shared op-log.
-        base_name, base_commit = _resolve_base(session, trunk, name, onto)
+        base_name, base_commit = _start_workspace_precheck(session, trunk, name, onto, wpath)
         stacked = base_name is not None
         base_ref = base_commit if stacked else trunk
         try:
-            # pyjutsu >= 0.20 no longer creates missing parents, so a `/`-path name like `T/api`
-            # needs `.worktrees/T` to exist first. The `*` self-ignore above already covers it.
+            # pyjutsu >= 0.20 no longer creates missing parents. A lane name is a flat `+`-path, so
+            # `wpath.parent` is just `.worktrees/` — this mkdir's real job today is creating that
+            # top container on the very first workspace. The `*` self-ignore above already covers it.
             wpath.parent.mkdir(parents=True, exist_ok=True)
             # Own op. `revisions="root()"` is explicit on purpose. pyjutsu 0.16 changed the
             # default parent from the root commit to the source `@`'s parents, which puts the
@@ -2899,25 +2942,33 @@ def do_workspace_forget(session: Session, name: str):
     directory, so `forget` keeps the checkout and only drops the jj row.
     `_cleanup_workspace(..., keep_foreign=True)` is the established "forget the row, keep the dir,
     say so" path — this verb routes through it rather than writing a second removal policy.
+
+    Looks up `name` EXACTLY first, then — only if nothing matches — retries with
+    `lanes.normalise_lane_name(name)` (the `/`-input-sugar a lane started as `T/api` registers as
+    `T+api`). The exact lookup goes first on purpose: a foreign (non-gitman) workspace may
+    legitimately carry a literal `/` in its name, and normalising unconditionally would make it
+    unforgettable. The refusal names what the user typed, not the normalised form.
     """
     from gitman.invariants import canonical_guard
+    from gitman.lanes import normalise_lane_name
     from gitman.models import IntentResult
 
     require_trunk(session.config)
-    rec = next((w for w in session.ws.workspaces() if w.name == name), None)
-    if rec is None:
+    registered = {w.name: w for w in session.ws.workspaces()}
+    resolved = name if name in registered else normalise_lane_name(name)
+    if resolved not in registered:
         raise GitmanError(f"no workspace '{name}' is registered.", exit_code=3)
-    if name == session.ws.name:
+    if resolved == session.ws.name:
         raise GitmanError(
-            f"cannot forget workspace '{name}' — it is the workspace this command runs in.",
+            f"cannot forget workspace '{resolved}' — it is the workspace this command runs in.",
             exit_code=1,
         )
     with canonical_guard(session, "workspace") as canon:
-        notes = _cleanup_workspace(session, name, keep_foreign=True)
+        notes = _cleanup_workspace(session, resolved, keep_foreign=True)
     return IntentResult(
         intent="workspace forget",
         outcome="FORGOTTEN",
-        messages=[f"forgot workspace registration '{name}'."],
+        messages=[f"forgot workspace registration '{resolved}'."],
         notes=notes + canon.notes,
         undo_command="gitman undo",
         state=canon.state,

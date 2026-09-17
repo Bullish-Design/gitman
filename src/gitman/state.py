@@ -142,9 +142,9 @@ def _resolvable_lane_heads(view: RepoView, trunk: str) -> dict[str, str]:
 def _name_parent(lane: str, live: set[str]) -> str | None:
     """The name of the lane `lane` is stacked on (its base), or None if it's a trunk root.
 
-    Fractal-lanes Phase 2A (D1): the base is a **pure function of the `/`-path NAME**, never the commit
-    graph. The name-parent of `T/api` is `T`; the base is `T` iff `T` is a live lane (`live`). A flat
-    name (no `/`) is always a trunk root (base None). This retires Phase-1's DAG ancestry search and
+    Fractal-lanes Phase 2A (D1): the base is a **pure function of the `+`-path NAME**, never the commit
+    graph. The name-parent of `T+api` is `T`; the base is `T` iff `T` is a live lane (`live`). A flat
+    name (no `+`) is always a trunk root (base None). This retires Phase-1's DAG ancestry search and
     closes its "child-behind-its-base loses the link" gap by construction — the name is authoritative,
     the head resolved live. A non-live name-parent → None here (trunk-based for range purposes); the
     orphan is flagged separately in `capture_state` so `status` can report it."""
@@ -808,7 +808,7 @@ def capture_state(session: Session, *, snapshot: bool = True) -> RepoState:
     conflicted = _conflicted_lanes(view, trunk_name)
     # Fractal-lanes F2: a lane's own stats are `parentHead..name`, not `trunk..name` — for a stacked
     # lane the latter double-counts its whole base chain as its own work. The base is name-derived
-    # (Phase 2A, D1 — a pure function of the `/`-path name): `T/api`'s base is `T` iff `T` is live.
+    # (Phase 2A, D1 — a pure function of the `+`-path name): `T+api`'s base is `T` iff `T` is live.
     # Resolve every live head once (the liveness set + the parentHead range target).
     from gitman.lanes import lane_depth, name_parent
 
@@ -1054,7 +1054,7 @@ def capture_state(session: Session, *, snapshot: bool = True) -> RepoState:
     # Encourage the user to start a lane — the happy path never sits directly on trunk.
     elif current_lane is None and trunk_name in (wc.bookmarks or []):
         notes.append("you are on trunk with no active lane — `gitman start <name> --workspace` to begin working.")
-    # Fractal-lanes I3′: an orphaned node (its `/`-path name-parent was deleted out-of-band) is still a
+    # Fractal-lanes I3′: an orphaned node (its `+`-path name-parent was deleted out-of-band) is still a
     # valid, resolvable lane — surface it as a note pointing at `repair`, never a crash. The tree
     # render marks the node itself; this names the recovery verb.
     orphans = sorted(lane.name for lane in lanes if lane.orphaned)
@@ -1106,9 +1106,13 @@ def capture_state(session: Session, *, snapshot: bool = True) -> RepoState:
 
     # Issue 38 / 44 G3 (S4): whose work is in `@`? Compare the dirty set now against this
     # session's fingerprint from the previous command. Advisory (D-C2) — and recorded here
-    # because `capture_state` is the one snapshot every command funnels through (D-C3).
+    # because `capture_state` is the one snapshot every command funnels through (D-C3). The
+    # read runs on every path, so a dry run still reports `foreign` — but `record_paths` is
+    # itself a write, so it runs only when `snapshot` is true; a non-snapshotting read
+    # (`snapshot=False`, the `--dry-run` path) records nothing.
     dirty, foreign = session.path_provenance(view)
-    session.record_paths(dirty)
+    if snapshot:
+        session.record_paths(dirty)
 
     return RepoState(
         repo_root=repo_root,

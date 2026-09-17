@@ -114,7 +114,7 @@ def test_bare_child_with_onto_refuses(tmp_path: Path):
     with pytest.raises(GitmanError) as ei:
         do_start(_sess(work), "api", False, onto="base")
     assert ei.value.exit_code == 3
-    assert "base/api" in str(ei.value)  # the suggested name is shown in the `/`-sugar spelling
+    assert "base+api" in str(ei.value)  # the suggestion is canonical: `+`, never the `/` sugar
 
 
 def test_onto_disagrees_with_name_refuses(tmp_path: Path):

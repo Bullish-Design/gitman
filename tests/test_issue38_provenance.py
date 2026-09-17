@@ -84,6 +84,35 @@ def test_gitman_state_is_never_snapshotted(tmp_path: Path, monkeypatch: pytest.M
     assert not any(p.startswith(".gitman") for p in dirty), dirty
 
 
+def test_dry_run_writes_no_fingerprint(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """`--dry-run` must leave `.gitman/session-paths.json` untouched: `capture_state(snapshot=False)`
+    still reads provenance so a dry run can report `foreign` paths, but `record_paths` — itself a
+    write — must run only for a snapshotting (real) capture."""
+    _init(tmp_path)
+    monkeypatch.setenv("GITMAN_SESSION", "x")
+    fp_path = tmp_path / FINGERPRINT
+
+    # No fingerprint yet: a bare non-snapshotting read must not create one.
+    assert not fp_path.exists()
+    capture_state(_sess(tmp_path), snapshot=False)
+    assert not fp_path.exists()
+
+    # A real `start` legitimately records the fingerprint (a real, snapshotting capture) — the
+    # control case, proving the assertions below aren't vacuous (e.g. because provenance happens
+    # to be unavailable here).
+    do_start(_sess(tmp_path), "feat", workspace=False)
+    assert fp_path.exists()
+    recorded_bytes = fp_path.read_bytes()
+
+    # A `describe --dry-run` right after must not perturb the record `start` just wrote — the
+    # CLI path this bug lived on (`--dry-run` writing the provenance record it exists to avoid).
+    (tmp_path / "f.txt").write_text("base\nwork\n")
+    from gitman.core import do_describe
+
+    do_describe(_sess(tmp_path), "wip", dry_run=True)
+    assert fp_path.read_bytes() == recorded_bytes
+
+
 # --- two simulated sessions ------------------------------------------------------------
 
 

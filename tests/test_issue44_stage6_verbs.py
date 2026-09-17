@@ -217,6 +217,23 @@ def test_workspace_forget_the_current_workspace_refuses(tmp_path: Path):
     assert "runs in" in str(exc.value)
 
 
+def test_workspace_forget_accepts_the_slash_input_form(tmp_path: Path):
+    """A lane started as `T/api` (the CLI normalises the `/`-input form to `+` before calling
+    `do_start`) registers as `T+api` — `workspace forget T/api` must find it too, the same way
+    `switch`/`start` accept the `/` form. `do_workspace_forget` gets the raw, un-normalised
+    name straight from the CLI (issue: it only matched the exact name)."""
+    work = tmp_path / "work"
+    work.mkdir()
+    _repo(work)
+    do_start(_sess(work), "T", workspace=False)
+    do_start(_sess(work), "T+api", workspace=True)  # what the CLI would pass after normalising
+    assert "T+api" in {w.name for w in _sess(work).ws.workspaces()}
+
+    res = do_workspace_forget(_sess(work), "T/api")  # raw user input, un-normalised
+    assert res.outcome == "FORGOTTEN"
+    assert "T+api" not in {w.name for w in _sess(work).ws.workspaces()}
+
+
 def test_workspace_prune_only_takes_empty_and_laneless(tmp_path: Path):
     work = tmp_path / "work"
     work.mkdir()

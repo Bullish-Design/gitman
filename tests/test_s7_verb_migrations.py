@@ -139,6 +139,43 @@ def test_start_adopts_in_progress_work_unchanged(tmp_path: Path):
     assert _sess(tmp_path).view().resolve("feat").commit_id == _sess(tmp_path).view().working_copy().commit_id
 
 
+def test_start_workspace_dry_run_creates_nothing(tmp_path: Path):
+    """`--workspace --dry-run` must not create the workspace directory or publish an op — the
+    defect this guards was `--dry-run` falling through unread on the `--workspace` path."""
+    from gitman.lanes import resolve_workspace_path
+
+    _init(tmp_path)
+    wpath = resolve_workspace_path(tmp_path, CFG, "feat")
+    op_before = _sess(tmp_path).ws.head_operation()
+
+    res = do_start(_sess(tmp_path), "feat", workspace=True, dry_run=True)
+
+    assert res.outcome == "DRY-RUN"
+    assert res.lane == "feat"
+    assert not wpath.exists()
+    assert _sess(tmp_path).ws.head_operation() == op_before
+    assert "feat" not in {w.name for w in _sess(tmp_path).ws.workspaces()}
+    assert any("dry run" in note for note in res.notes)
+
+    # A real run right after still works — the dry run left no half-made state behind.
+    real = do_start(_sess(tmp_path), "feat", workspace=True)
+    assert real.outcome == "STARTED"
+    assert wpath.is_dir()
+
+
+def test_start_workspace_dry_run_refuses_what_a_real_run_would(tmp_path: Path):
+    """The dry run runs the same read-only prechecks as the real path (`ensure_unique`), so a
+    duplicate lane name refuses instead of silently reporting a plan."""
+    _init(tmp_path)
+    do_start(_sess(tmp_path), "feat", workspace=False)
+    op_before = _sess(tmp_path).ws.head_operation()
+
+    with pytest.raises(GitmanError) as exc:
+        do_start(_sess(tmp_path), "feat", workspace=True, dry_run=True)
+    assert exc.value.exit_code == 3
+    assert _sess(tmp_path).ws.head_operation() == op_before
+
+
 # --- split -----------------------------------------------------------------------------
 
 

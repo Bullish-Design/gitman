@@ -171,7 +171,9 @@ Agent → devenv shell → gitman CLI → Intent planner → Executor (jj / git)
 src/gitman/
   cli.py        Typer intents
   session.py    the per-invocation Session — boundary onto pyjutsu (view/fresh_view)
+  provenance.py per-session provenance — flags a dirty `@` path this session did not write
   core.py       orchestration per intent, devenv guard, repo lock, typed-error mapper
+  hooks.py      the land pre/post-hook subprocess boundary ([land.pre_hook]/[land.post_hook])
   lanes.py      lane registry + workspace lifecycle (create/forget/cleanup)
   state.py      RepoState capture (composes one pyjutsu view + lanes.py)
   models.py     Pydantic: RepoState, Lane, Change, Conflict, Op, TrunkRef, ...
@@ -183,6 +185,7 @@ src/gitman/
   version.py    semver math + version-source read/write
   release.py    tag + push flow
   render.py     compact agent reports (plain Python)
+  markdown.py   durable Markdown projections of repo state for external PM systems (e.g. Loci)
   init.py doctor.py repair.py
   advanced/     optional forge extra (github) — base never imports it
 ```

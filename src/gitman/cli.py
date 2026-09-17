@@ -230,7 +230,7 @@ def log_(
 def start(
     name: Annotated[
         str,
-        typer.Argument(help="The lane's readable name (= bookmark = branch); a `/`-path (`T/api`) stacks on `T`."),
+        typer.Argument(help="Lane name (bookmark = branch); a `+`-path (`T+api`) stacks on `T`; `/` also works."),
     ],
     workspace: Annotated[bool, typer.Option("--workspace", help="Isolate the lane in its own jj workspace.")] = False,
     onto: Annotated[
@@ -253,7 +253,7 @@ def start(
     ] = False,
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Report the plan without mutating.")] = False,
 ) -> None:
-    """Create a lane: a `/`-path name (`T/api`) stacks on its name-parent `T`; a flat name roots on trunk."""
+    """Create a lane: a `+`-path name (`T+api`) stacks on `T` (`/` also works); a flat name roots on trunk."""
     from gitman.core import do_start
     from gitman.lanes import normalise_lane_name
 

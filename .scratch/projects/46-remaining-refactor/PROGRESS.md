@@ -428,3 +428,65 @@ registrations; a test that counted raw registrations would have gone the wrong w
 was deliberately left (`sync --trunk` on the callback executor; issue 33's ledger unbuilt).
 
 **Next:** none — project 46's nine stages are all landed.
+
+## S10 — audit fixes (landed, pushed)
+
+Not a planned stage. A full audit of the nine landed stages against their guides found nine gaps:
+three real defects, four wording drifts and two missing regression tests. Every guide's done-when
+list was otherwise satisfied, and the audit confirmed the recorded decisions (D-A2, D-B, D-C1/2/3,
+D-D1/2) are all implemented as written. Suite: 456 passed (450 after S8 + 6 new). `ruff check` clean.
+
+**The three defects.**
+
+- **`gitman start <name> --workspace --dry-run` mutated.** `do_start`'s `workspace` branch never
+  read `dry_run`, so it created the directory and published an op while the flag promised
+  "Report the plan without mutating". S7 migrated the non-workspace path only, and nothing guarded
+  the combination. Fixed as a REAL dry run, not a refusal: `_start_workspace_precheck` now holds
+  the read-only checks (`ensure_unique`, the non-empty-destination refusal, `_resolve_base`) and
+  BOTH paths call it, so a dry run refuses exactly what a real run refuses. The dry-run branch
+  reads `capture_state(session, snapshot=False)` and returns a `DRY-RUN` report naming the lane,
+  the base and the workspace path. It is not on the `Plan` executor: `_start_workspace` mutates
+  through a SECOND workspace's own transaction, which `run_plan`'s single-transaction model does
+  not cover — the same reason S7 left this path alone.
+- **`gitman workspace forget T/api` could not find registration `T+api`.** S6 added the verb after
+  S3 fixed the lane-name entry points, so it fell outside S3's list. `do_workspace_forget` now
+  looks up the EXACT name first and retries with `normalise_lane_name` only on a miss. The order is
+  deliberate: a foreign workspace may carry a literal `/`, and normalising unconditionally would
+  make it unforgettable.
+- **`--dry-run` wrote the provenance record.** `capture_state` called `session.record_paths(dirty)`
+  unconditionally, including on the `snapshot=False` path that exists to avoid mutating. The read
+  still runs everywhere (a dry run still reports `foreign_paths`); the write is now gated on
+  `snapshot`. This also makes `provenance.py`'s "at the end of every command that snapshots" claim
+  true, which it was not before.
+
+**The drifts.** One live refusal still said "save/land it first" (`save` is retired — now
+`describe`); two `--onto` refusals suggested a lane name in the `/` spelling; `start`'s CLI help
+led with `/`-paths; comments and docstrings across `core.py`/`state.py`/`invariants.py` still spelt
+lane paths with `/`. One comment was not merely stale but WRONG: it claimed the `mkdir` before
+`add_workspace` exists because `T/api` needs `.worktrees/T` first. Workspace directories are flat
+under `+`, so `wpath.parent` is always `.worktrees/`; the mkdir's real job today is creating that
+top container on the first workspace. The `mkdir` call itself stays (S3 left that cleanup open).
+`docs/GITMAN_CONCEPT.md`'s layout block gained `provenance.py` (S4's own module, never listed),
+`hooks.py` and `markdown.py` — it now lists every module in `src/gitman/`. Issue 43 **D3** is
+marked FIXED (S6's `workspace` noun closed it; the row and the prose section both went unmarked).
+
+**One stale test, found by the sweep.** `test_bare_child_with_onto_refuses` asserted the suggestion
+appeared as `base/api`, with a comment calling that the deliberate `/`-sugar spelling — while the
+test's own docstring said `base+api`. S3 had updated the docstring and left the assertion pinning
+the unswept message. The message is now canonical (`+`) and the assertion follows it.
+
+**The two tests.**
+
+- `test_a_git_only_ref_move_is_not_reported_as_a_stale_record` pins `_known_to_jj`'s exclusion of
+  the ADOPT direction from `colocated_record_stale`. Without the guard the same raw-git commit is
+  reported twice, by `ref-mismatched` AND `colocated-record-stale`. S9 wrote the guard and no test.
+- `test_land_all_first_lane_failure_writes_no_checkpoint_and_keeps_the_old_one` pins the batch-undo
+  loop when the FIRST lane fails: `batch_op` stays `None`, so no checkpoint is written — and the
+  PRE-EXISTING checkpoint from an earlier command survives intact. The existing partial-progress
+  test covers a second-lane failure only, and asserts nothing about the checkpoint.
+
+**Lesson.** Every defect here sits at a seam between two stages, not inside one: S7 added
+`--dry-run` to a verb whose `--workspace` path S7 itself did not migrate; S6 added `workspace
+forget` after S3 had finished fixing name entry points; S4's record write predates S7's
+non-snapshotting read. A per-stage done-when list cannot catch these. When a stage adds a flag or a
+verb, re-check every OTHER path that the new surface now reaches.

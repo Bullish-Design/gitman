@@ -233,6 +233,60 @@ def test_batch_undo_rewinds_all_landed_lanes(tmp_path: Path):
     assert final.canonical
 
 
+def test_land_all_first_lane_failure_writes_no_checkpoint_and_keeps_the_old_one(tmp_path: Path):
+    """`batch_op` is only set AFTER a lane's fold succeeds (S7's batch-undo loop). When the FIRST
+    lane fails, `batch_op` stays `None`, so the loop's `if batch_op is not None:
+    write_undo_checkpoint(...)` never runs. Nothing landed, so that is correct — but it also means
+    a PRE-EXISTING checkpoint from an earlier command must survive untouched: this pins that the
+    failed invocation neither writes a fresh (empty) checkpoint nor corrupts the old one."""
+    from gitman.core import do_describe, do_land
+
+    _init(tmp_path)
+    (tmp_path / "shared.txt").write_text("orig\n")
+
+    # A flat `start` always bases on trunk, regardless of where `@` currently sits, so each of
+    # these three lanes branches straight off trunk without an explicit switch back.
+
+    # `a` branches off trunk while it still reads "orig", and is landed LAST (in the batch below).
+    do_start(_sess(tmp_path), "a", workspace=False)
+    (tmp_path / "shared.txt").write_text("a-edit\n")
+    do_describe(_sess(tmp_path), "a work")
+
+    # `z` also branches off "orig", edits the same line differently, and lands FIRST and ALONE —
+    # advancing trunk before the batch below runs.
+    do_start(_sess(tmp_path), "z", workspace=False)
+    (tmp_path / "shared.txt").write_text("z-edit\n")
+    do_describe(_sess(tmp_path), "z work")
+    land_z = do_land(_sess(tmp_path), ["z"])
+    assert land_z.outcome == "LANDED", land_z.messages
+
+    # `b` is a clean, unrelated lane — never reached, since the loop breaks on the first failure.
+    # Its `describe` is the last command before the batch under test, and writes the PRE-EXISTING
+    # checkpoint this test protects.
+    do_start(_sess(tmp_path), "b", workspace=False)
+    (tmp_path / "b.txt").write_text("b\n")
+    do_describe(_sess(tmp_path), "b work")
+    pre_existing = read_undo_checkpoint(tmp_path)
+    assert pre_existing is not None and pre_existing["intent"] == "describe"
+
+    trunk_before = _sess(tmp_path).view().resolve("main").commit_id
+
+    # `land --all` targets ["a", "b"] (alphabetical, both direct trunk children). `a` rebases onto
+    # the now-advanced trunk and conflicts on `shared.txt` — the first and only lane attempted.
+    result = do_land(_sess(tmp_path), None, all_=True)
+
+    assert result.outcome == "BLOCKED"
+    assert result.exit_code == 1
+    assert "landed: none" in result.messages
+
+    live = {lane.name for lane in capture_state(_sess(tmp_path)).lanes}
+    assert live == {"a", "b"}  # neither folded
+    assert _sess(tmp_path).view().resolve("main").commit_id == trunk_before  # trunk untouched
+
+    # The pinned behaviour: no checkpoint for THIS (no-op) invocation, and the old one intact.
+    assert read_undo_checkpoint(tmp_path) == pre_existing
+
+
 # --- helpers --------------------------------------------------------------------------
 
 

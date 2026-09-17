@@ -635,8 +635,8 @@ def _export_colocated_git(session: Session) -> list[str]:
             repaired = repair_git_head(session)
             if repaired is not None:
                 return notes + [repaired] + _sync_colocated_checkout(session)
-        # git_export refuses two things: a D/F conflict from fractal lane names (refs/heads/T
-        # blocking refs/heads/T/api) and any ref that moved out from under jj. Repair via the
+        # git_export refuses two things: a D/F conflict from a legacy `/`-separated lane name
+        # (refs/heads/T blocking refs/heads/T/api) and any ref that moved out from under jj. Repair via the
         # shared classifier — the *only* ref writer — so a git-ahead ref can never be force-reset
         # here either (issue 31: this fallback was the second copy of that bug).
         from gitman.state import colocated_ref_desync

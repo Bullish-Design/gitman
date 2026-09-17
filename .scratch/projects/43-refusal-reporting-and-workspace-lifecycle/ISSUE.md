@@ -26,7 +26,7 @@ workspace lifecycles do not match what it tells the operator.**
 |---|---|---|
 | D1 | A refusal is not rendered as a gitman report, so any output filter loses it entirely | **high** |
 | D2 | `start --workspace` **deletes the target directory** when it refuses on a duplicate name | **high** |
-| D3 | A jj workspace registration outlives its lane, permanently burning the lane name, and no gitman verb forgets it | **high** |
+| D3 | ~~A jj workspace registration outlives its lane, permanently burning the lane name, and no gitman verb forgets it~~ **FIXED (2026-09-17, project 46 S6).** `land`/`abandon`/`pull`/`repair` forget a retired lane's own workspace registration when they retire it. A new `gitman workspace` verb group covers the rest: `workspace list` marks registrations with no live lane, `workspace forget <name>` and `workspace prune` drop a laneless registration's jj row and keep the on-disk directory (another agent may still hold it). `status` now names laneless registrations before they block a `start`. | **high** |
 | D4 | ~~`start <T/leaf>` does **not** adopt a dirty unbookmarked `@`, though `status` says it will~~ **FIXED (2026-09-17, project 46 S4).** `_adoptable_work` now tests descent from the ACTUAL intended base (trunk or the parent lane's head) with `is_ancestor`, and `do_start` bookmarks the dirty `@` itself instead of creating a fresh sibling change beside it. A dirty `@` that is NOT based on the intended base now refuses with a reason (exit 1) rather than stranding the work. | **high** |
 | D5 | `land` folds a change with an empty description without warning | medium |
 | D6 | ~~On fractal lanes the git ref desyncs after essentially every write, so `reconcile` becomes a required prefix to every `save`~~ **FIXED (2026-09-17, project 46 S3, issue 44 stage 4f).** Took the first "what I expected" option below: `+` (not `/`) is now the lane-path separator everywhere, a legal git ref character with no parent/child collision — see §7. | medium |
@@ -143,7 +143,15 @@ cleanup on the registration error that does not check whether the directory pre-
 
 ---
 
-## 4. D3 — a workspace registration outlives its lane (HIGH)
+## 4. D3 — a workspace registration outlives its lane (HIGH) — FIXED
+
+**Fixed 2026-09-17** (project 46 S6, issue 43 D3): a `gitman workspace` verb group closes the gap
+this section names — `workspace list` marks registrations with no live lane, `workspace forget
+<name>` drops one, and `workspace prune` drops every empty, laneless registration; both mutating
+verbs forget the jj row and keep the on-disk directory. `land`, `abandon`, `pull`, and `repair`
+already forget a lane's own registration when they retire it, so a freshly landed or abandoned
+lane's name is free again. `gitman status` now names laneless registrations before they block a
+`start`. The section below is kept as the original report.
 
 The prior session landed `diffusion-experiment-rig/phase2/plugin` into
 `diffusion-experiment-rig/phase2`, then that into `diffusion-experiment-rig`. Both lanes retired

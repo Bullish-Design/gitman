@@ -28,7 +28,7 @@ from gitman.doctor import FAIL, OK, WARN, run_doctor
 from gitman.init import do_init
 from gitman.repair import do_reconcile
 from gitman.session import Session
-from gitman.state import colocated_record_stale, orphaned_git_head
+from gitman.state import capture_state, colocated_record_stale, orphaned_git_head
 
 
 def _repo(d: Path) -> Workspace:
@@ -203,3 +203,47 @@ def test_note_only_never_blocks_an_intent(tmp_path: Path):
     result = do_save(Session.load(d), "add c")
 
     assert result.outcome == "DESCRIBED", result.messages
+
+
+def _raw_git_commit(d: Path, msg: str, fn: str = "raw.txt") -> str:
+    """Move `refs/heads/main` through raw git plumbing, past a commit jj never imports — the way
+    an IDE, CI, or an agent that skips gitman moves a colocated branch (`test_colocated_refs.py`'s
+    `_raw_git_commit` idiom, reused here). A scratch index keeps jj's own index and `@` untouched,
+    so only the git side moves: the ADOPT direction, one-way."""
+    import os
+
+    env = {**os.environ, "GIT_INDEX_FILE": str(d / ".git" / "gitman-test-index")}
+
+    def run(*args: str, inp: str | None = None) -> str:
+        p = subprocess.run(["git", *args], cwd=d, env=env, input=inp, check=True, capture_output=True, text=True)
+        return p.stdout.strip()
+
+    blob = run("hash-object", "-w", "--stdin", inp=msg + "\n")
+    run("read-tree", "main")
+    run("update-index", "--add", "--cacheinfo", f"100644,{blob},{fn}")
+    tree = run("write-tree")
+    sha = run("-c", "user.email=t@t.t", "-c", "user.name=T", "commit-tree", tree, "-p", "main", "-m", msg)
+    run("update-ref", "refs/heads/main", sha)
+    return sha
+
+
+def test_a_git_only_ref_move_is_not_reported_as_a_stale_record(tmp_path: Path):
+    """`_known_to_jj` must exclude the ADOPT direction from `colocated_record_stale`.
+
+    A raw-git commit jj has never imported moves `refs/heads/main` off the commit jj's bookmark
+    still names. That is the ADOPT shape — git holds history jj hasn't seen — and `ref-mismatched`
+    already reports it correctly. Without the `_known_to_jj` guard, `colocated_record_stale` would
+    ALSO flag `main` as a stale record, reporting the same raw-git commit twice under two
+    different anomalies.
+    """
+    d = tmp_path
+    ws = _repo(d)
+    _git_sha = _raw_git_commit(d, "raw commit")
+
+    session = Session.load(d)
+    _head_note, stale_bookmarks = colocated_record_stale(session.view(), ws)
+    assert "main" not in stale_bookmarks  # excluded — this is ADOPT, not a stale record
+
+    kinds = {(a.kind, a.subject.name) for a in capture_state(session).anomalies}
+    assert ("ref-mismatched", "main") in kinds  # the correct anomaly for this shape
+    assert ("colocated-record-stale", "main") not in kinds  # not double-reported
