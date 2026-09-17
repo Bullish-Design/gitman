@@ -65,6 +65,12 @@ app = typer.Typer(
 # Populated by the callback; read by commands.
 _ctx: dict = {"repo": None, "json": False}
 
+# The verb of the command currently running. Set by `_main` (the group callback), which Click
+# runs with `invoked_subcommand` already bound — before the subcommand body, and while a
+# `GitmanError` raised inside it would still know which verb it is refusing. `main()` catches
+# the exception after Typer's runtime has unwound, so it cannot ask Click at that point.
+_CURRENT_INTENT: str | None = None
+
 
 def _version_callback(value: bool) -> None:
     if value:
@@ -76,6 +82,7 @@ def _version_callback(value: bool) -> None:
 
 @app.callback()
 def _main(
+    ctx: typer.Context,
     repo: Annotated[Path | None, typer.Option("--repo", help="Path inside the target repo (default: cwd).")] = None,
     json_out: Annotated[bool, typer.Option("--json", help="Emit structured JSON instead of a report.")] = False,
     version: Annotated[
@@ -83,8 +90,11 @@ def _main(
         typer.Option("--version", callback=_version_callback, is_eager=True, help="Show the gitman version and exit."),
     ] = False,
 ) -> None:
+    global _CURRENT_INTENT
+
     _ctx["repo"] = repo
     _ctx["json"] = json_out
+    _CURRENT_INTENT = ctx.invoked_subcommand
 
 
 def _repo_root() -> Path:
@@ -488,24 +498,44 @@ def reconcile(
     _finish_intent(do_reconcile(_session(), abandon_))
 
 
+def _refusal_result(exc: GitmanError):
+    """Project a `GitmanError` into the same `IntentResult` shape a successful intent returns
+    (issue 44 G1). A refusal is an outcome, not an exception — the 101 `raise GitmanError` sites
+    across `core.py` bypassed `render.py` and printed a bare lowercase sentence with no verb, no
+    banner and no `--json` shape. Routing every refusal through here fixes all of them at the
+    boundary instead of at each call site."""
+    from gitman.models import IntentResult
+
+    return IntentResult(
+        intent=_CURRENT_INTENT or "gitman",
+        outcome="REFUSED",
+        exit_code=exc.exit_code,
+        lane=exc.subject,
+        messages=[f"reason: {exc}"],
+        notes=[f"Recover: `gitman {r}`" for r in exc.remedies],
+    )
+
+
 def main() -> None:
     # GitmanError carries an exit code (concept §7). It propagates out of the Typer
-    # runtime, so translate it to a clean message + process exit here (re-raising
+    # runtime, so translate it to a rendered report + process exit here (re-raising
     # typer.Exit outside the runtime would dump a traceback). Any uncaught typed
     # PyjutsuError is mapped to a GitmanError (exit code) at this same boundary (plan §8).
     from pyjutsu import PyjutsuError
 
     from gitman.core import map_pyjutsu_error
+    from gitman.render import render_intent
 
     try:
         app()
     except GitmanError as exc:
-        print(str(exc), file=sys.stderr)
-        sys.exit(exc.exit_code)
+        result = _refusal_result(exc)
+        _emit(render_intent(result), result.model_dump(mode="json"))
+        sys.exit(result.exit_code)
     except PyjutsuError as exc:
-        ge = map_pyjutsu_error(exc)
-        print(str(ge), file=sys.stderr)
-        sys.exit(ge.exit_code)
+        result = _refusal_result(map_pyjutsu_error(exc))
+        _emit(render_intent(result), result.model_dump(mode="json"))
+        sys.exit(result.exit_code)
 
 
 if __name__ == "__main__":

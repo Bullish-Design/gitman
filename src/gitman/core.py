@@ -21,11 +21,26 @@ if TYPE_CHECKING:
 
 
 class GitmanError(RuntimeError):
-    """A Gitman failure carrying an exit code (concept §7)."""
+    """A Gitman failure carrying an exit code (concept §7).
 
-    def __init__(self, message: str, exit_code: int = 2):
+    `subject` and `remedies` are optional: the lane/ref/workspace the refusal is about, and the
+    intent names (not prose) a caller could try next. The CLI boundary (`cli.py:main`) renders
+    every `GitmanError` as an `IntentResult` with `outcome="REFUSED"` (issue 44 G1), so these
+    fields flow into the same report and `--json` shape a successful intent uses.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        exit_code: int = 2,
+        *,
+        subject: str | None = None,
+        remedies: list[str] | None = None,
+    ):
         super().__init__(message)
         self.exit_code = exit_code
+        self.subject = subject
+        self.remedies = remedies or []
 
 
 def map_pyjutsu_error(exc: PyjutsuError) -> GitmanError:
