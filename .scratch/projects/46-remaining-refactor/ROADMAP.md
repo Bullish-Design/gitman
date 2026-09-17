@@ -28,7 +28,7 @@ disagree, the guide wins and says so.
 2. S2   independent  (do S9 with it — same file, same class)
 3. S9   independent
 4. S5   independent
-5. S3   ⚠ BLOCKED on DECISION D-A (SCOPING.md §2.2) — user sign-off required
+5. S3   unblocked — D-A2 signed off 2026-09-17 (SCOPING.md §2.2)
 6. S4   independent, but must NOT run concurrently with S3
 7. S6   after S3
 8. S7   after S6
@@ -49,7 +49,7 @@ Two ordering constraints that are not obvious, both argued in `SCOPING.md` §5:
 
 | ID | Question | State |
 |---|---|---|
-| **D-A** | Fractal lane names: translate at the jj boundary (D-A1) or make `+` the separator (D-A2)? | **OPEN — needs sign-off.** Recommendation: D-A2. `SCOPING.md` §2.2 |
+| **D-A** | Fractal lane names: translate at the jj boundary (D-A1) or make `+` the separator (D-A2)? | **CLOSED 2026-09-17 → D-A2.** `+` is the separator; `/` is input sugar. `SCOPING.md` §2.2 |
 | D-B | G7: derive timestamps, add `merged`, remove `landed`, do not add `abandoned` | Recorded, no sign-off needed. `SCOPING.md` §3.1 |
 
 ## How to run one guide in a clean session

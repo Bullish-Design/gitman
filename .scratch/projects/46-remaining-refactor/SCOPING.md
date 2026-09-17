@@ -105,7 +105,7 @@ So 4f is not optional polish. **The fractal-lanes model is documented as "comple
 `validate_lane_name` already forbids it — which is exactly what makes `ref_for_lane` injective.
 Stage 4a built `ref_for_lane`/`lane_for_ref` (`lanes.py:112-123`) and nothing consumes them.
 
-### 2.2 DECISION D-A — needs your sign-off before S3 starts
+### 2.2 DECISION D-A — **SIGNED OFF 2026-09-17: D-A2**
 
 Option (c) has two shapes. They differ in one thing: **how many representations of a lane name
 exist.**
@@ -135,8 +135,11 @@ working unchanged. `render.py` keeps drawing the indented tree, splitting on `+`
 dual-name lane contradicts it, and the measured blast radius of D-A2 is eight pure functions
 against an unbounded translation boundary for D-A1.
 
-This is the only decision in this scoping pass that is user-visible and not reversible behind a
-deprecating alias. **S3 must not start until it is signed off.**
+**Decided 2026-09-17: D-A2.** The user signed off on the recommendation. `+` is the lane-path
+separator everywhere — jj bookmark, git ref, remote branch, report, and what the user types —
+and `/` is accepted on input and normalised away. `ref_for_lane`/`lane_for_ref` become the
+identity and are deleted. **S3 is unblocked.** Build D-A2 only; `GUIDE_S3` §6 (the D-A1 path) is
+retained for the record and must not be implemented.
 
 ---
 
@@ -259,7 +262,7 @@ S1 (retire-lane)    ─── independent, no dependencies
 S2 (doctor 4e)      ─── independent
 S9 (HEAD blind spot) ─── independent; pair with S2
 S5 (lane facts)     ─── independent
-S3 (ref encoding)   ─── needs DECISION D-A signed off
+S3 (ref encoding)   ─── unblocked (D-A2 signed off 2026-09-17)
 S4 (provenance)     ─── independent of all the above; do not run beside S3
 S6 (verbs)          ─── after S3 (S3 changes what `start`/`subtask` accept)
 S7 (Plan value)     ─── after S6 (migrating verbs that are about to be renamed is wasted work)
@@ -281,7 +284,7 @@ Two constraints worth stating because they are not obvious:
 2. S2  doctor intent-to-add         small · closes issue 41, blocker just cleared
 3. S9  HEAD blind spot              small · pair with S2; fixes a live misreport
 4. S5  lane facts                   small · unblocks devman's janitor; deletes a lying type
-5. S3  fractal ref encoding         medium · NEEDS D-A SIGN-OFF · fixes a broken publish path
+5. S3  fractal ref encoding         medium · D-A2 signed off · fixes a broken publish path
 6. S4  working-copy provenance      large · closes 38, 42-G7, 43-D4
 7. S6  verb consolidation           medium
 8. S7  Plan as a value              large
@@ -289,7 +292,8 @@ Two constraints worth stating because they are not obvious:
 ```
 
 Steps 1–4 are four small lanes that can land in an afternoon, close two open issues between them
-and fix a live misreport. Start there regardless of when D-A is signed off.
+and fix a live misreport. Start there: they are independent, and they keep S3's larger rename off
+the critical path until the cheap wins are banked.
 
 ## 7. What this pass deliberately did not scope
 

@@ -3,12 +3,14 @@
 **Size:** medium · **Risk:** medium · **Closes:** issue 43 D6, and a broken publish path
 **Was:** issue 44 stage 4f, deferred as "needs its own scoping pass". This is that pass's output.
 
-## ⚠ BLOCKED on DECISION D-A
+## DECISION D-A — closed: build D-A2
 
-**Do not start until the user has signed off `SCOPING.md` §2.2.** The decision is user-visible
-(remote branch names change) and is the one thing in the remaining refactor that cannot hide behind
-a deprecating alias. This guide is written for the recommended option **D-A2**; §6 covers D-A1 if
-the user picks it instead.
+**Signed off 2026-09-17.** `+` is the lane-path separator everywhere — jj bookmark, git ref, remote
+branch, report, and what the user types — and `/` is accepted on input and normalised away.
+
+Build **D-A2 only**. §6 records the rejected D-A1 path for the reader who wonders why; do not
+implement it. The decision is user-visible (remote branch names become `T+api`), so it is the one
+change here that cannot hide behind a deprecating alias — say so in the commit message.
 
 ## 1. What is actually broken
 
@@ -245,7 +247,7 @@ uses the bookmark name. Re-read `SCOPING.md` §2.2 before choosing it.
 
 - [ ] A fractal lane publishes alongside its published parent, locally and to a real remote.
 - [ ] `ws.git_export()` succeeds on a three-level tree.
-- [ ] Exactly one lane-name representation exists (D-A2), or the totality test passes (D-A1).
+- [ ] Exactly one lane-name representation exists — no `Lane.name` or jj bookmark disagrees.
 - [ ] `/` still works on input for every verb that takes a lane name.
 - [ ] There is exactly one `name_parent` and one `lane_depth` implementation; `state.py:714` and
       `render.py:103` call them.
