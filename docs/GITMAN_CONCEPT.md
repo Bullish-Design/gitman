@@ -232,6 +232,8 @@ They forward every option and exit code and name the replacement in the report's
 | `workspace list` | `gitman workspace list` | List workspace registrations; mark the ones with no live lane. | `ws.workspaces()` |
 | `workspace forget` | `gitman workspace forget <name>` | Drop a jj workspace registration; never removes the directory. | `ws.forget_workspace` |
 | `workspace prune` | `gitman workspace prune` | Retire every registration with no live lane and an empty `@`. | `ws.forget_workspace` |
+| `agent-files export` | `gitman agent-files export [--target <dir>]` | Write the shipped agent skill to `<target>/.agents/skills/gitman/SKILL.md`, overwriting it. No undo checkpoint: it writes outside version control. | `importlib.resources` read + file write |
+| `agent-files check` | `gitman agent-files check [--target <dir>] [--strict]` | Compare the target's agent skill against the shipped asset; report present/current. `--strict` exits 1 on drift, else it is a report only. | byte compare |
 
 **Global flags:** `--json`, `--repo <path>`.
 **Exit codes:** `0` ok · `1` VC decision needed (conflict / push rejected / verify
