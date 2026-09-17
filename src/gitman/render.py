@@ -5,10 +5,38 @@ end with an inline Undo line. See concept §16.
 
 from __future__ import annotations
 
+from gitman.anomalies import ANOMALY_ORDER, REGISTRY
 from gitman.doctor import FAIL, OK, WARN, DoctorReport
 from gitman.models import IntentResult, Lane, RepoState
 
 _GLYPH = {OK: "ok ", WARN: "!! ", FAIL: "XX "}
+
+# Issue 44 stage 3c (guide §3.8): the status headline + recovery hint, keyed on the anomaly's
+# `kind` rather than substring-matched out of the composed `off_canonical` prose. The prose is no
+# longer load-bearing anywhere — this is the one authoring site for "what to tell the operator",
+# same as `off_canonical` is the one authoring site for "what happened" (models.RepoState). When
+# more than one kind is present, `ANOMALY_ORDER` breaks the tie (below) — the same fixed severity
+# order `state.py` composes `off_canonical` in.
+_STATUS_BY_KIND: dict[str, tuple[str, str]] = {
+    # A locally-conflicted trunk (jj vs colocated git) is NOT the origin-divergence case — both
+    # read as trunk breakage, but `pull` cannot resolve a jj↔git conflict; only `reconcile` can.
+    "trunk-conflicted": (
+        "DIVERGED",
+        "Recover: `gitman reconcile`  — keeps jj's side as trunk, adopts git's side into a lane.",
+    ),
+    "trunk-diverged": ("DIVERGED", "Recover: `gitman pull`  — rebase your local lands onto origin/<trunk>."),
+    "lane-conflicted": ("OFF-CANONICAL", "Recover: `gitman reconcile`  — resolve the conflicted lane bookmark."),
+    "stray-change": ("OFF-CANONICAL", "Recover: `gitman reconcile`  — adopt it into a lane, or abandon it."),
+    "lane-non-linear": ("OFF-CANONICAL", f"Recover: {REGISTRY['lane-non-linear'].manual}."),
+    "lane-divergent": ("OFF-CANONICAL", f"Recover: {REGISTRY['lane-divergent'].manual}."),
+    # Not "re-sync refs to jj" any more — reconcile now heals in whichever direction the drift
+    # runs, adopting git-only history instead of discarding it (issue 31).
+    "ref-mismatched": (
+        "DESYNCHRONIZED",
+        "Recover: `gitman reconcile`  — reconcile jj and colocated git; no commits are discarded.",
+    ),
+}
+_DEFAULT_STATUS = ("OFF-CANONICAL", "Recover: `gitman reconcile`  — adopt it into a lane, or abandon it.")
 
 
 def render_doctor(report: DoctorReport) -> str:
@@ -90,31 +118,14 @@ def _lane_line(lane: Lane, current: str | None) -> str:
 
 def render_status(state: RepoState) -> str:
     if not state.canonical:
-        off = state.off_canonical or ""
-        # A locally-conflicted trunk (jj vs colocated git) is NOT the origin-divergence case — it
-        # reads DIVERGED too, but `pull` cannot resolve it; `reconcile` can.
-        local_conflict = "each hold a different commit" in off
-        diverged = "diverged" in off or local_conflict
-        desynced = not local_conflict and ("out of sync with git" in off or "leftover git ref" in off)
-        if local_conflict:
-            recover = "Recover: `gitman reconcile`  — keeps jj's side as trunk, adopts git's side into a lane."
-        elif desynced:
-            # Not "re-sync refs to jj" any more — reconcile now heals in whichever direction the
-            # drift runs, adopting git-only history instead of discarding it (issue 31).
-            recover = "Recover: `gitman reconcile`  — reconcile jj and colocated git; no commits are discarded."
-        elif diverged:
-            recover = "Recover: `gitman pull`  — rebase your local lands onto origin/<trunk>."
-        else:
-            recover = "Recover: `gitman reconcile`  — adopt it into a lane, or abandon it."
-        if desynced:
-            kind = "DESYNCHRONIZED"
-        elif diverged:
-            kind = "DIVERGED"
-        else:
-            kind = "OFF-CANONICAL"
+        by_kind = {a.kind for a in state.anomalies}
+        headline, recover = next(
+            (_STATUS_BY_KIND[k] for k in ANOMALY_ORDER if k in by_kind and k in _STATUS_BY_KIND),
+            _DEFAULT_STATUS,
+        )
         return "\n".join(
             [
-                f"Gitman status — {kind}",
+                f"Gitman status — {headline}",
                 f"Reason: {state.off_canonical}",
                 recover,
                 "Exit: 1",
