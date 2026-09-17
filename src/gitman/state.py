@@ -16,6 +16,7 @@ from pyjutsu import RepoView, Workspace
 from pyjutsu.errors import RevsetError
 from pyjutsu.models import Commit, DiffStat, Operation
 
+from gitman.anomalies import ANOMALY_ORDER, Anomaly, Subject, make_anomaly
 from gitman.core import GitmanError, has_remote
 from gitman.models import Change, Conflict, ConflictFile, Lane, LaneState, Op, RepoState, TrunkRef
 from gitman.session import Session
@@ -468,22 +469,23 @@ def capture_state(session: Session) -> RepoState:
         tracked_on_remote = any(b.name == trunk_name and b.remote not in (None, "git") for b in view.bookmarks())
         remote_name = pick_remote(session.ws) if has_remote(session.ws) else "origin"
         if tracked_on_remote:
+            kind = "trunk-diverged"
             reason = f"trunk '{trunk_name}' diverged from {remote_name} (un-pushed local lands + origin moved)."
             note = f"run `gitman pull` to rebase your local lands onto {remote_name}/{trunk_name}."
         else:
+            kind = "trunk-conflicted"
             reason = f"trunk '{trunk_name}' is conflicted — jj and colocated git each hold a different commit for it."
             note = "run `gitman reconcile` — it keeps jj's side as trunk and adopts git's side into a lane."
         return RepoState(
             repo_root=repo_root,
             colocated_git=_is_colocated(repo_root),
-            canonical=False,
-            off_canonical=reason,
             trunk=TrunkRef(name=trunk_name, change_id=None, commit_id=None),
             current_lane=None,
             lanes=[],
             conflicts=[],
             recent_ops=[_op(o) for o in view.operations(10)],
             notes=[note],
+            anomalies=[make_anomaly(kind, Subject(kind="trunk", name=trunk_name), reason)],
         )
 
     try:
@@ -601,33 +603,44 @@ def capture_state(session: Session) -> RepoState:
     recent_ops = [_op(o) for o in view.operations(10)]
 
     strays = find_strays(view, trunk_name)
-    reasons: list[str] = []
+    # Issue 44 stage 3a: one `Anomaly` per affected subject (never one per kind — a granular
+    # subject is what lets a later stage scope the gate and the postcondition delta to what an
+    # intent actually touches). Each group still shares one report-facing `detail` sentence, in
+    # the SAME fixed order the old hand-composed `off_canonical` used, so the derived property in
+    # `models.RepoState` reproduces the old string exactly (`ANOMALY_ORDER`).
+    anomalies: list[Anomaly] = []
     if conflicted:
         # No "diverged" here, by design: render keys the *trunk*-divergence recovery hint on that
         # word, whereas a conflicted lane's recovery is `gitman reconcile`, not `adopt`.
-        reasons.append(
+        detail = (
             f"lane(s) {', '.join(sorted(conflicted))} are conflicted with their pushed branch "
             f"(likely forge-merged) — run `gitman reconcile`."
         )
+        for name in sorted(conflicted):
+            anomalies.append(make_anomaly("lane-conflicted", Subject(kind="lane", name=name), detail))
     if strays:
         # Tag each with its short commit_id: two divergent sides share a change_id, so change_id
         # alone would print the same label twice and hide the divergence (issue 06 §G2).
         ids = ", ".join(f"{c.change_id} ({c.commit_id[:8]})" for c in strays)
-        reasons.append(f"change(s) {ids} belong to no lane (edited outside Gitman?).")
+        detail = f"change(s) {ids} belong to no lane (edited outside Gitman?)."
+        for c in strays:
+            anomalies.append(make_anomaly("stray-change", Subject(kind="change", name=c.change_id), detail))
     # H1 (I5): non-linear / divergent lanes. Deliberately keyed on "non-linear" / "divergent" (not
     # "diverged" — that word keys the trunk-`adopt` render path), each ending in `gitman reconcile`,
     # mirroring the conflicted-lane string above so the recovery pointer is unambiguous.
     non_linear_lanes = sorted(lane.name for lane in lanes if lane.non_linear)
     if non_linear_lanes:
-        reasons.append(
-            f"lane(s) {', '.join(non_linear_lanes)} contain a merge commit (non-linear) — run `gitman reconcile`."
-        )
+        detail = f"lane(s) {', '.join(non_linear_lanes)} contain a merge commit (non-linear) — run `gitman reconcile`."
+        for name in non_linear_lanes:
+            anomalies.append(make_anomaly("lane-non-linear", Subject(kind="lane", name=name), detail))
     divergent_lanes = sorted(lane.name for lane in lanes if lane.divergent)
     if divergent_lanes:
-        reasons.append(
+        detail = (
             f"lane(s) {', '.join(divergent_lanes)} have a divergent change-id "
             f"(one change → multiple commits) — run `gitman reconcile`."
         )
+        for name in divergent_lanes:
+            anomalies.append(make_anomaly("lane-divergent", Subject(kind="lane", name=name), detail))
     # step 13: colocated git-ref desync (round-09 gap B + projects 28/29):
     #   a live bookmark whose refs/heads/<name> exists in git but points elsewhere, or a
     #   leftover ref with no jj bookmark. Must be fed into off_canonical so status never
@@ -654,12 +667,12 @@ def capture_state(session: Session) -> RepoState:
         if rewrite:
             parts.append(f"git ref(s) lag jj: {', '.join(n for n, _, _ in rewrite)}")
         names = ", ".join(n for n, _, _ in mismatched)
-        reasons.append(
+        detail = (
             f"{len(mismatched)} bookmark(s) out of sync with git: {names}"
             f" — {'; '.join(parts)} — run `gitman reconcile`."
         )
-
-    off_canonical = " ".join(reasons) if reasons else None
+        for name, _local, _remote in mismatched:
+            anomalies.append(make_anomaly("ref-mismatched", Subject(kind="ref", name=name), detail))
 
     notes: list[str] = list(session.config.deprecations)  # retired config tables — warn, never fail
     if session.is_stale():
@@ -693,22 +706,29 @@ def capture_state(session: Session) -> RepoState:
     # render marks the node itself; this names the recovery verb.
     orphans = sorted(lane.name for lane in lanes if lane.orphaned)
     if orphans:
-        notes.append(
+        detail = (
             f"orphaned lane(s) {', '.join(orphans)}: name-parent deleted out-of-band — "
             f"`gitman reconcile` to re-root (or rename)."
         )
+        notes.append(detail)
+        # NOTE_ONLY_KINDS (models.RepoState.canonical/off_canonical): this kind has no repair —
+        # `state.py`'s old note text advertised `reconcile` for it, which is backlog D3 / issue 42
+        # G6 in the flesh (a manual pointer disguised as a repair). It stays advisory-only in 3a.
+        for name in orphans:
+            anomalies.append(make_anomaly("lane-orphaned", Subject(kind="lane", name=name), detail))
+
+    anomalies.sort(key=lambda a: ANOMALY_ORDER.index(a.kind))
 
     return RepoState(
         repo_root=repo_root,
         colocated_git=_is_colocated(repo_root),
-        canonical=off_canonical is None,
-        off_canonical=off_canonical,
         trunk=trunk_ref,
         current_lane=current_lane,
         lanes=lanes,
         conflicts=conflicts,
         recent_ops=recent_ops,
         notes=notes,
+        anomalies=anomalies,
     )
 
 

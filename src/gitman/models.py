@@ -11,7 +11,9 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
+
+from gitman.anomalies import NOTE_ONLY_KINDS, Anomaly
 
 
 class LaneState(StrEnum):
@@ -141,14 +143,33 @@ class RepoState(BaseModel):
 
     repo_root: Path
     colocated_git: bool = True
-    canonical: bool = True  # all invariants hold
-    off_canonical: str | None = None  # reason, if not canonical
     trunk: TrunkRef
     current_lane: str | None = None  # the lane of this workspace's @
     lanes: list[Lane] = Field(default_factory=list)
     conflicts: list[Conflict] = Field(default_factory=list)
     recent_ops: list[Op] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)  # honesty notes ("not done" / staleness)
+    # The one detect/repair table (issue 44 stage 3a): `capture_state` is the sole author, in a
+    # fixed prose order (see `gitman.anomalies.ANOMALY_ORDER`). `canonical`/`off_canonical` below
+    # are DERIVED from this list, never set directly, so there is exactly one authoring site.
+    anomalies: list[Anomaly] = Field(default_factory=list)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def canonical(self) -> bool:
+        """All invariants hold. `lane-orphaned` is advisory-only (backlog D3) and never trips
+        this — see `gitman.anomalies.NOTE_ONLY_KINDS`."""
+        return not any(a.kind not in NOTE_ONLY_KINDS for a in self.anomalies)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def off_canonical(self) -> str | None:
+        """The reason(s), space-joined in `anomalies` order. A group of anomalies (e.g. three
+        strays) shares one `detail` sentence, so de-duplicate by first occurrence rather than
+        joining once per anomaly — otherwise a granular anomaly list would repeat a sentence
+        once per subject instead of once per group."""
+        details = [a.detail for a in self.anomalies if a.kind not in NOTE_ONLY_KINDS]
+        return " ".join(dict.fromkeys(details)) or None
 
 
 class IntentResult(BaseModel):
