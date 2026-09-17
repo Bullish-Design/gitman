@@ -1,12 +1,19 @@
-# Issue 44 — kickoff prompt
+# Issue 44 — kickoff prompts
 
-Paste the block below into a clean session started in `~/Documents/Projects/gitman`.
+One section per stage. Paste the fenced block into a clean session started in
+`~/Documents/Projects/gitman`.
 
-It kicks off **Stage 1 and Stage 2 only**. Those two stand alone, close the incident that
-prompted this work, and are worth landing whether or not Stages 3-8 ever happen. Re-run the same
-prompt with a different stage number to continue.
+| Section | Stages | Status |
+|---|---|---|
+| Stages 1-2 (below) | G0, G1 | **SHIPPED** — `70c6292`, `cd3e64c`. Kept as a record. |
+| Stage 3 | G2 | ready — design resolved |
 
 ---
+
+# Stages 1-2 kickoff — SHIPPED, kept for reference
+
+Landed 2026-09-16. The `fix-reconcile-divergent-lane` decision this prompt defers to Stage 3 is
+now **resolved**: abandon it (guide §3.9).
 
 ```
 Work on gitman issue 44 — report integrity and the intent architecture.
@@ -92,4 +99,73 @@ and needs its own session.
 Report honestly at the end: what landed, what did not, and anything you found that contradicts
 the guide. The guide was written from a read of the code at trunk `86d99c3`; if it is wrong
 about a line number or a shape, say so plainly rather than working around it.
+```
+
+
+---
+
+# Stage 3 kickoff
+
+Stages 1 and 2 shipped (`70c6292`, `cd3e64c`). Paste the block below for Stage 3.
+
+The Stage 3 **design is resolved** — the three open decisions were settled against the code at
+trunk `cd3e64c`. Do not re-litigate them; `IMPLEMENTATION_GUIDE.md` §3.3-§3.5 record what was
+decided and why, including one recommendation that was reversed.
+
+```
+Work on gitman issue 44, Stage 3 — typed anomalies and a subject-scoped gate.
+
+## Read first
+
+1. `.scratch/projects/44-report-integrity-and-intent-architecture/IMPLEMENTATION_GUIDE.md` §3,
+   all of it. §3.0 lists four corrections to an earlier draft — read those before anything else.
+2. `ISSUE.md` §4 — the fault, and the correction to issue 42's diagnosis.
+
+The design is RESOLVED. §3.3, §3.4 and §3.5 record decisions already made, with reasoning.
+§3.3 reverses an earlier recommendation — the reversal is correct, do not revert it.
+
+## Scope
+
+Sub-stage 3a ONLY, unless it lands early and cleanly:
+
+  3a — `src/gitman/anomalies.py`: the `Subject`/`Anomaly` models, the 7-kind `REGISTRY`, the
+       import-time assertion, and `RepoState.anomalies`. Derive `canonical`/`off_canonical` from
+       the anomaly list. **Prose must stay byte-identical** — `render.py:96-98` still substring-
+       matches it until 3c. NO behaviour change. The full suite must pass untouched.
+
+If 3a lands with time left, continue to 3b (the behaviour change). 3b MUST include the
+postcondition rewire in §3.6 — precheck and postcondition want opposite rules, and skipping the
+postcondition makes every newly-permitted intent silently self-revert with a `reverted:` message.
+That failure looks like "the anomaly model is wrong" and is not.
+
+Stop after 3b. 3c and 3d are separate sessions.
+
+## Non-negotiables
+
+- Subjects are GRANULAR — one anomaly per affected lane/ref/change, never one per kind. The
+  postcondition delta keys on `(kind, subject)` and goes blind otherwise (§3.2, §3.6).
+- `colocated_ref_desync` returns `mismatched` AND `leftover`. ONLY `mismatched` becomes an
+  anomaly. Leftover refs are normal after undo/abandon; collapsing them re-blocks every repo.
+- `trunk-conflicted` and `trunk-diverged` are TWO kinds with opposite repairs, not one kind with
+  a flag (`state.py:470-474` already branches).
+- A `repair=None` kind carries honest `manual` text. Never a `reconcile` pointer for something
+  reconcile cannot do — `state.py:697` does exactly that today for orphaned lanes and it is the
+  defect, not the mitigation.
+
+## How to work
+
+Same loop as Stages 1-2: see `IMPLEMENTATION_GUIDE.md` §0 and §10. One lane per sub-stage.
+Verify: `devenv shell -- bash -c 'ruff check src tests && python -m pytest tests -q'`.
+Baseline is 314 + whatever Stages 1-2 added. `ruff format --check` still reports a pre-existing
+`src/gitman/init.py` drift — not yours, do not fold it in.
+
+## Definition of done
+
+3a: `anomalies.py` exists; the import-time assertion documents the 4 no-repair kinds; full suite
+    green with zero behaviour change; `off_canonical` prose byte-identical to before.
+3b: `test_no_anomaly_seals_the_repo` passes; `abandon` works while another lane is divergent
+    (the issue-42 repro); a test proves a newly-introduced anomaly still rolls the intent back.
+
+Report honestly, including anything in §3 that turns out to be wrong about the code. The guide
+was written from a read at trunk `cd3e64c`.
 ```
