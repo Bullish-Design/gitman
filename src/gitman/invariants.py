@@ -23,7 +23,7 @@ from __future__ import annotations
 import json
 import os
 import time
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -34,6 +34,7 @@ from gitman.core import GitmanError
 if TYPE_CHECKING:
     from pyjutsu import Transaction
 
+    from gitman.anomalies import Subject
     from gitman.models import RepoState
     from gitman.session import Session
 
@@ -188,10 +189,74 @@ def _refresh_stale_working_copy(session: Session, trunk: str) -> list[str]:
     return notes
 
 
-def precheck_canonical(session: Session, intent: str | None = None) -> RepoState:
-    """Refuse to start when already off-canonical → exit 1. Returns the before-state (carrying
-    `trunk_before`). Imported lazily to avoid a state↔invariants import cycle. `capture_state`
-    calls `fresh_view()` → this is the explicit snapshot that fixes `op_before`'s parent."""
+# The two sanctioned trunk-advancing intents (I5 widens to land OR pull): `land` folds a lane into
+# local trunk; `pull` fast-forwards / rebases local trunk onto a moved `origin/<trunk>`. Named once
+# (§3.7 folds in what were two duplicated `("land", "pull")` tuple literals in `_postcondition`).
+TRUNK_ADVANCING = frozenset({"land", "pull"})
+
+
+def subjects_for(
+    intent: str,
+    state: RepoState,
+    *,
+    lane: str | None = None,
+    lanes: Iterable[str] | None = None,
+) -> frozenset[Subject]:
+    """What `intent` actually touches, as a set of `Subject`s (issue 44 stage 3b, guide §3.4).
+
+    The precheck gate blocks on set intersection — an anomaly blocks `intent` only if its own
+    subject is in this set. Deliberately generous rather than exact: a subject an intent doesn't
+    really touch is harmless (the anomaly kind's own `blocks` set is the other half of the AND),
+    but a subject it DOES touch and this function omits would silently under-block. Trunk is
+    always included for every gated intent — the two trunk-tier kinds are repo-wide by nature
+    (a broken trunk poisons everything built on it), so there is no benefit to scoping them
+    narrower than "every intent that consults this gate at all."
+
+    `land` and `sync` are the only intents whose lane-tier scope isn't just "the current lane" —
+    both can target a lane other than the one `@` sits on (`gitman land <lane>`, `gitman sync
+    --all`), so their caller passes `lane`/`lanes` explicitly (computed before the guard opens,
+    in `core.py`). Every other gated intent falls back to `state.current_lane`.
+
+    `land`/`push` additionally carry every stray change's `Subject` — a stray belongs to no lane
+    BY DEFINITION (§3.2), so it can never be scoped to one; it is repo-wide ambiguity in the same
+    sense a broken trunk is, for exactly the two intents (fold a commit in / ship history out)
+    that a change-id collision could quietly corrupt.
+    """
+    from gitman.anomalies import Subject
+
+    subjects: set[Subject] = {Subject(kind="trunk", name=state.trunk.name)}
+    if intent in ("land", "push"):
+        subjects |= {a.subject for a in state.anomalies if a.kind == "stray-change"}
+    if intent == "land":
+        targets = set(lanes) if lanes else ({lane} if lane else set())
+        for name in targets:
+            subjects.add(Subject(kind="lane", name=name))
+            base = next((lo.base for lo in state.lanes if lo.name == name), None)
+            if base:
+                subjects.add(Subject(kind="lane", name=base))
+    elif intent == "sync":
+        targets = set(lanes) if lanes else ({lane} if lane else set())
+        subjects |= {Subject(kind="lane", name=name) for name in targets}
+    elif lane:
+        subjects.add(Subject(kind="lane", name=lane))
+    elif state.current_lane:
+        subjects.add(Subject(kind="lane", name=state.current_lane))
+    return frozenset(subjects)
+
+
+def precheck_canonical(
+    session: Session,
+    intent: str | None = None,
+    *,
+    lane: str | None = None,
+    lanes: Iterable[str] | None = None,
+) -> RepoState:
+    """Refuse `intent` only for an anomaly SCOPED to what it actually touches (issue 44 stage 3b,
+    guide §3.4): an anomaly on lane A no longer blocks work on lane B. Returns the before-state
+    (carrying `trunk_before`). Imported lazily to avoid a state↔invariants import cycle.
+    `capture_state` calls `fresh_view()` → this is the explicit snapshot that fixes `op_before`'s
+    parent."""
+    from gitman.anomalies import REGISTRY
     from gitman.state import capture_state
 
     # Snapshot the pre-`capture_state` `@` (no snapshot yet — `session.view()` is the head): its
@@ -201,38 +266,47 @@ def precheck_canonical(session: Session, intent: str | None = None) -> RepoState
     on_trunk_pre = session.config.trunk in pre_wc.bookmarks
 
     before = capture_state(session)  # fresh_view() snapshots any on-disk edits into `@`
-    if not before.canonical:
-        raise GitmanError(
-            f"refusing: repo is off-canonical ({before.off_canonical}) — run `gitman reconcile`.",
-            exit_code=1,
-        )
-    # Dirty trunk-`@` guard (13-RC2 backstop), scoped to the trunk-consuming intents (`land` folds a
-    # lane into trunk; `push` ships trunk to origin): a `@` that *coincides* with trunk AND carries
-    # *dirty* on-disk edits would fold that dirt into trunk on the precheck snapshot — landing it, or
-    # pushing a dirtied trunk. "Dirty" = the snapshot above rewrote `@` (pre != post commit id). A
-    # clean `@`==trunk — the bootstrap state before the first `start`, or the default workspace while
-    # a secondary workspace does the work — is NOT dirty and proceeds fine. Only a genuinely dirty
-    # trunk-`@` (reachable only via out-of-band edits; gitman itself can't leave `@` on trunk, per the
-    # postcondition) is refused.
-    if intent in ("land", "push") and on_trunk_pre:
+
+    if intent is not None:
+        subjects = subjects_for(intent, before, lane=lane, lanes=lanes)
+        blocking = [a for a in before.anomalies if intent in a.blocks and a.subject in subjects]
+        if blocking:
+            detail = " ".join(dict.fromkeys(a.detail for a in blocking))
+            raise GitmanError(f"refusing {intent}: {detail}", exit_code=1)
+
+    # Dirty trunk-`@` guard (13-RC2 backstop; registry row `dirty-trunk-wc`, §3.7), scoped to the
+    # trunk-consuming intents (`land` folds a lane into trunk; `push` ships trunk to origin): a `@`
+    # that *coincides* with trunk AND carries *dirty* on-disk edits would fold that dirt into trunk
+    # on the precheck snapshot — landing it, or pushing a dirtied trunk. "Dirty" = the snapshot
+    # above rewrote `@` (pre != post commit id). A clean `@`==trunk — the bootstrap state before the
+    # first `start`, or the default workspace while a secondary workspace does the work — is NOT
+    # dirty and proceeds fine. This is precheck-only (a before/after snapshot comparison, not a fact
+    # `capture_state`'s single frozen view can see), so it never joins `RepoState.anomalies` — but
+    # it reads its `manual` text from the same registry row every other kind uses.
+    if intent in REGISTRY["dirty-trunk-wc"].blocks and on_trunk_pre:
         post_wc = session.view().working_copy()
         if pre_wc.commit_id != post_wc.commit_id:  # snapshot rewrote @ → on-disk edits existed
             raise GitmanError(
                 f"working copy @ is the trunk commit '{session.config.trunk}' and carries uncommitted "
-                f"edits — `gitman start <name>` to move this work into a lane before landing.",
+                f"edits — {REGISTRY['dirty-trunk-wc'].manual}.",
                 exit_code=1,
             )
     return before
 
 
-def _postcondition(session: Session, intent: str, trunk_before: str | None, op_before: str) -> RepoState:
+def _postcondition(
+    session: Session, intent: str, trunk_before: str | None, op_before: str, before: RepoState
+) -> RepoState:
+    """Delta-based and global (issue 44 stage 3b, guide §3.6): `canonical_tx`/`canonical_guard`
+    hold the repo lock (I4 — gitman is the sole writer) for the whole intent, so any anomaly
+    present AFTER but not BEFORE was introduced BY this intent — nothing else could have caused
+    it. That makes this check safe to run unconditionally, unlike the precheck: an intent that
+    corrupts a subject it never declared still rolls back, which the old absolute `not
+    after.canonical` check could not do once the repo was already off-canonical anywhere."""
     from gitman.state import capture_state
 
     after = capture_state(session)
-    # `land` and `pull` are the two sanctioned trunk-advancing intents (I5 widens to land OR pull):
-    # `land` folds a lane into local trunk; `pull` fast-forwards / rebases local trunk onto a moved
-    # `origin/<trunk>`. Both may legitimately move trunk, so neither is reverted as a stray move.
-    trunk_moved = (after.trunk.commit_id != trunk_before) and intent not in ("land", "pull")
+    trunk_moved = (after.trunk.commit_id != trunk_before) and intent not in TRUNK_ADVANCING
     # New invariant — `@` never coincides with trunk, enforced at the trunk-advancing intents
     # (`land`, `pull`): after the move, the session's `@` must sit on a fresh child of the advanced
     # trunk (the repark), never *on* trunk — else the next snapshot amends trunk (13-RC2/RC3/RC4).
@@ -240,11 +314,12 @@ def _postcondition(session: Session, intent: str, trunk_before: str | None, op_b
     # bootstrap `@`==trunk before the first `start`, or the default workspace while work runs in a
     # secondary one).
     at_on_trunk = (
-        intent in ("land", "pull")
+        intent in TRUNK_ADVANCING
         and after.trunk.commit_id is not None
         and session.view().working_copy().commit_id == after.trunk.commit_id
     )
-    if not after.canonical or trunk_moved or at_on_trunk:
+    introduced = {a.key for a in after.anomalies} - {a.key for a in before.anomalies}
+    if introduced or trunk_moved or at_on_trunk:
         session.ws.restore_operation(op_before)
         # Re-export git refs — the earlier export in canonical_tx wrote the (now-reverted)
         # bookmark positions. Best-effort; a non-colocated repo skips silently.
@@ -254,12 +329,13 @@ def _postcondition(session: Session, intent: str, trunk_before: str | None, op_b
             session.ws.git_export()
         except PyjutsuError:
             pass
-        if at_on_trunk and after.canonical and not trunk_moved:
+        if at_on_trunk and not introduced and not trunk_moved:
             reason = f"working copy @ coincides with trunk '{after.trunk.name}' after {intent} (repark failed)"
+        elif introduced:
+            new_anomalies = [a for a in after.anomalies if a.key in introduced]
+            reason = " ".join(dict.fromkeys(a.detail for a in new_anomalies))
         else:
-            reason = after.off_canonical or (
-                f"trunk moved outside a land/pull ({trunk_before} → {after.trunk.commit_id})"
-            )
+            reason = f"trunk moved outside a land/pull ({trunk_before} → {after.trunk.commit_id})"
         raise GitmanError(f"reverted: {reason}; no change applied.", exit_code=1)
     return after
 
@@ -588,17 +664,20 @@ class Canon:
 
 
 @contextmanager
-def canonical_tx(session: Session, intent: str) -> Iterator[Transaction]:
+def canonical_tx(
+    session: Session, intent: str, *, lane: str | None = None, lanes: Iterable[str] | None = None
+) -> Iterator[Transaction]:
     """Run a single-transaction intent transactionally under the shared-root lock.
 
     Yields the pyjutsu `Transaction`; the caller drives `tx.describe/new/create_bookmark/...`. A
     raise in the body rolls the tx back (pyjutsu), leaving `op_before` intact. After a clean commit,
-    the postcondition asserts canonical + trunk-unchanged-unless-land (restoring `op_before` on
-    violation), then records the undo checkpoint.
+    the postcondition asserts the delta is empty + trunk-unchanged-unless-land (restoring
+    `op_before` on violation), then records the undo checkpoint. `lane`/`lanes` are forwarded to
+    the subject-scoped precheck (`subjects_for`, stage 3b) for the intents that need them.
     """
     with repo_lock(session.repo_root):
         _assert_fresh(session)
-        before = precheck_canonical(session, intent)
+        before = precheck_canonical(session, intent, lane=lane, lanes=lanes)
         trunk_before = before.trunk.commit_id
         op_before = session.ws.head_operation()  # after the snapshot → deterministic parent
         with session.ws.transaction(f"gitman:{intent}", auto_snapshot=False) as tx:
@@ -606,7 +685,7 @@ def canonical_tx(session: Session, intent: str) -> Iterator[Transaction]:
         # Export BEFORE the postcondition so capture_state's colocated_ref_desync
         # check sees synced git refs.
         _export_colocated_git(session)
-        _postcondition(session, intent, trunk_before, op_before)
+        _postcondition(session, intent, trunk_before, op_before, before)
         write_undo_checkpoint(session.repo_root, op_before, intent)
 
 
@@ -614,18 +693,26 @@ def canonical_tx(session: Session, intent: str) -> Iterator[Transaction]:
 
 
 @contextmanager
-def canonical_guard(session: Session, intent: str, *, acquire_lock: bool = True) -> Iterator[Canon]:
+def canonical_guard(
+    session: Session,
+    intent: str,
+    *,
+    acquire_lock: bool = True,
+    lane: str | None = None,
+    lanes: Iterable[str] | None = None,
+) -> Iterator[Canon]:
     """Run a multi-op intent under the shared-root lock, unwinding partials to `op_before`.
 
     The caller runs its own `ws.transaction(..., auto_snapshot=False)` block(s) interleaved with
     non-tx ops (`git_fetch`/`git_push`/`add_workspace`/`forget_workspace`). Any exception restores
     `op_before` (an earlier non-tx op may have already published) and re-raises. On clean exit, the
     postcondition runs and the undo checkpoint is recorded; `canon.state` carries the post-state.
+    `lane`/`lanes` are forwarded to the subject-scoped precheck (`subjects_for`, stage 3b).
     """
     lock = repo_lock(session.repo_root) if acquire_lock else nullcontext()
     with lock:
         _assert_fresh(session)
-        before = precheck_canonical(session, intent)
+        before = precheck_canonical(session, intent, lane=lane, lanes=lanes)
         trunk_before = before.trunk.commit_id
         op_before = session.ws.head_operation()
         canon = Canon(op_before=op_before)
@@ -635,5 +722,5 @@ def canonical_guard(session: Session, intent: str, *, acquire_lock: bool = True)
             session.ws.restore_operation(op_before)  # an earlier op may have already published
             raise
         canon.notes += _export_colocated_git(session)
-        canon.state = _postcondition(session, intent, trunk_before, op_before)
+        canon.state = _postcondition(session, intent, trunk_before, op_before, before)
         write_undo_checkpoint(session.repo_root, op_before, intent)

@@ -51,14 +51,23 @@ class Anomaly(BaseModel, frozen=True):
         return (self.kind, self.subject)
 
 
-# Every mutating intent, for registry rows whose blocking is repo-wide (the two trunk kinds).
+# Every intent actually routed through the subject-scoped gate (`precheck_canonical` /
+# `_postcondition`, stage 3b) — i.e. the real verb vocabulary of this codebase, not the guide's
+# illustrative draft. Corrected from the first draft in two ways: `abandon` is REMOVED — decision
+# §3.3/§3.5 is that the abandon row is empty, and `core.do_abandon` no longer calls the gate at
+# all (raw `repo_lock`), so listing it here would be dead weight at best and a re-introduced
+# livelock at worst. `pull`/`untrack` are ADDED — real gated verbs the first draft omitted
+# (`describe` never existed as its own verb; `save` already covers that role).
 ALL_MUTATING = frozenset(
-    {"start", "save", "describe", "switch", "split", "shape", "sync", "publish", "land", "push", "abandon"}
+    {"start", "save", "switch", "split", "shape", "sync", "publish", "land", "push", "pull", "untrack"}
 )
 
 REGISTRY: dict[str, AnomalyKind] = {
     "trunk-conflicted": AnomalyKind(tier="global", repair="reconcile", blocks=ALL_MUTATING),
-    "trunk-diverged": AnomalyKind(tier="global", repair="pull", blocks=ALL_MUTATING),
+    # `pull` is trunk-diverged's OWN repair and must stay an escape from the anomaly it fixes —
+    # else diverged-trunk livelocks itself the exact way abandon did in issue 42 (DECISION 1,
+    # guide §3.3: "livelock is prevented by guaranteeing an escape").
+    "trunk-diverged": AnomalyKind(tier="global", repair="pull", blocks=ALL_MUTATING - {"pull"}),
     "lane-conflicted": AnomalyKind(
         tier="lane", repair="reconcile", blocks=frozenset({"land", "publish", "push", "sync"})
     ),
@@ -81,6 +90,16 @@ REGISTRY: dict[str, AnomalyKind] = {
         repair=None,
         blocks=frozenset(),
         manual="rename the lane, or `gitman start <parent>` to re-root",
+    ),
+    # §3.7: folds in the `invariants.py:217` ad-hoc `intent in ("land", "push")` dirty-trunk-`@`
+    # rule. Precheck-only (a snapshot-before/after comparison, not a fact `capture_state` can see
+    # from one frozen view) — `invariants.precheck_canonical` reads this row for its `manual` text
+    # rather than hand-composing it, but does not add it to `RepoState.anomalies`.
+    "dirty-trunk-wc": AnomalyKind(
+        tier="global",
+        repair=None,
+        blocks=frozenset({"land", "push"}),
+        manual="`gitman start <name>` to move this work into a lane",
     ),
 }
 

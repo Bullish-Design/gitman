@@ -94,7 +94,12 @@ def test_conflicting_land_rolls_back(tmp_path: Path):
     assert state.trunk.commit_id != trunk_before
 
 
-def test_precheck_refuses_off_canonical(tmp_path: Path):
+def test_precheck_is_subject_scoped_not_repo_wide(tmp_path: Path):
+    """Issue 44 stage 3b: a stray elsewhere in the repo is not `save`'s subject (it belongs to no
+    lane at all, let alone this one), so `save` on an unrelated lane must proceed — the precheck
+    used to refuse ANY mutating intent for ANY anomaly anywhere, which is the exact shape that
+    livelocked issue 42. `land`, in contrast, DOES declare every stray as a subject (a stray is
+    repo-wide ambiguity a fold could trip over) and must still refuse."""
     _init(tmp_path)
     do_start(_sess(tmp_path), "keep", workspace=False)
     (tmp_path / "f.txt").write_text("base\nkeep\n")
@@ -110,10 +115,20 @@ def test_precheck_refuses_off_canonical(tmp_path: Path):
         tx.edit("keep")
 
     assert capture_state(_sess(tmp_path)).canonical is False
-    with pytest.raises(GitmanError) as exc:
-        do_save(_sess(tmp_path), "again")
-    assert exc.value.exit_code == 1
-    assert "reconcile" in str(exc.value)
+
+    # `save` on `keep` never touches the stray's subject — proceeds despite the repo being
+    # off-canonical elsewhere.
+    res = do_save(_sess(tmp_path), "again")
+    assert res.outcome == "SAVED"
+
+    # `land` DOES declare the stray as a subject (land/push are the two intents a stray change-id
+    # can quietly corrupt) — still refused. `do_land` catches the guard's refusal itself and
+    # reports it as BLOCKED rather than raising (it may have already landed earlier lanes in the
+    # same invocation).
+    blocked = do_land(_sess(tmp_path), ["keep"])
+    assert blocked.outcome == "BLOCKED"
+    assert blocked.exit_code == 1
+    assert any("belong to no lane" in m for m in blocked.messages), blocked.messages
 
 
 def test_abandon_retires_lane(tmp_path: Path):

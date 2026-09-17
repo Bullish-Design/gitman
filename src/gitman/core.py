@@ -1233,7 +1233,7 @@ def _do_land_locked(session: Session, lane_args: list[str] | None, all_: bool, p
         try:
             _, published = _lane_index(session.view())
             was_published = lane in published
-            with canonical_guard(session, "land", acquire_lock=False) as canon:
+            with canonical_guard(session, "land", acquire_lock=False, lane=lane) as canon:
                 if lane not in lane_names(session, trunk):
                     raise GitmanError(f"no such lane '{lane}'.", exit_code=3)
                 # A node can't fold up while a dependent still stacks on it (Model P fan-in: fold the
@@ -1402,18 +1402,39 @@ def _abandon_range(session: Session, trunk: str, target: str) -> None:
 
 
 def do_abandon(session: Session, lane: str | None, recursive: bool = False):
-    from gitman.invariants import canonical_guard
+    """Discard a lane. Deliberately UNGATED (issue 44 stage 3b, guide §3.5): `abandon`'s row in the
+    blocks matrix is empty on purpose — it is the escape hatch every other verb's refusal points
+    at, so it must never itself refuse for an anomaly reason. Issue 42 was exactly this: a
+    divergent change-id elsewhere in the repo blocked `abandon` too, including on the lane the
+    report itself named as the fix. Raw `repo_lock` (the pattern `seed`/`remote_add`/`undo` already
+    use) rather than `canonical_guard`, because the guard's precheck AND postcondition both
+    consult canonicity — the postcondition matters just as much here: abandoning a divergent
+    lane's local side can leave its twin an unbookmarked stray, and a delta-based postcondition
+    would revert exactly the discard that was supposed to clear the anomaly."""
+    from gitman.invariants import _assert_fresh, _export_colocated_git, repo_lock, write_undo_checkpoint
     from gitman.lanes import children, lane_depth, lane_names, require_current_lane, subtree
     from gitman.models import IntentResult
+    from gitman.state import _conflicted_lanes, capture_state
 
     trunk = require_trunk(session.config)
     target = lane or require_current_lane(session, trunk)
     if target not in lane_names(session, trunk):
         raise GitmanError(f"no such lane '{target}'.", exit_code=3)
+    # Not an anomaly-blocks-abandon refusal (that row is deliberately empty, see the docstring) —
+    # a mechanical one. A CONFLICTED bookmark can't resolve as a revset at all, so abandoning it
+    # would crash inside `_abandon_range`'s own `base..target` read, not refuse cleanly. `reconcile`
+    # (`_resolve_conflicted_lane`) is the only thing that can give the name a single commit again.
+    if target in _conflicted_lanes(session.view(), trunk):
+        raise GitmanError(
+            f"lane '{target}' is conflicted (local vs. its pushed branch) — its name doesn't resolve "
+            f"to one commit, so abandon can't target it; run `gitman reconcile` first.",
+            exit_code=1,
+        )
 
     if not recursive:
         # ── bare abandon (P2 behavior, byte-for-byte): one node, refuse a live child ──
-        with canonical_guard(session, "abandon") as canon:
+        with repo_lock(session.repo_root):
+            _assert_fresh(session)
             # A base with a live dependent can't be discarded — its child would be orphaned off a
             # commit about to vanish. Refuse (exit 1); the opt-in cascade is `--recursive`.
             kids = children(session, trunk, target)
@@ -1423,16 +1444,19 @@ def do_abandon(session: Session, lane: str | None, recursive: bool = False):
                     f"abandon or land the child first (or `gitman abandon {target} --recursive`).",
                     exit_code=1,
                 )
+            op_before = session.ws.head_operation()
             _abandon_range(session, trunk, target)
-            canon.notes += _cleanup_workspace(session, target)
+            notes = _cleanup_workspace(session, target)
+            notes += _export_colocated_git(session)
+            write_undo_checkpoint(session.repo_root, op_before, "abandon")
         return IntentResult(
             intent="abandon",
             outcome="ABANDONED",
             lane=target,
             messages=[f"discarded lane '{target}'."],
-            notes=canon.notes,
+            notes=notes,
             undo_command="gitman undo",
-            state=canon.state,
+            state=capture_state(session),
         )
 
     # ── `abandon --recursive` (P3-D3): tear down the whole subtree bottom-up ──
@@ -1449,15 +1473,25 @@ def do_abandon(session: Session, lane: str | None, recursive: bool = False):
     blocked: GitmanError | None = None
     for node in targets:
         try:
-            with canonical_guard(session, "abandon") as canon:
+            with repo_lock(session.repo_root):
+                _assert_fresh(session)
                 if node not in lane_names(session, trunk):
                     raise GitmanError(f"no such lane '{node}'.", exit_code=3)
+                if node in _conflicted_lanes(session.view(), trunk):
+                    raise GitmanError(
+                        f"lane '{node}' is conflicted (local vs. its pushed branch) — its name doesn't "
+                        f"resolve to one commit, so abandon can't target it; run `gitman reconcile` first.",
+                        exit_code=1,
+                    )
+                op_before = session.ws.head_operation()
                 _abandon_range(session, trunk, node)
-                canon.notes += _cleanup_workspace(session, node, keep_foreign=True)
+                node_notes = _cleanup_workspace(session, node, keep_foreign=True)
+                node_notes += _export_colocated_git(session)
+                write_undo_checkpoint(session.repo_root, op_before, "abandon")
             abandoned.append(node)
-            notes += canon.notes
-            last_undo = canon.undo_command
-            last_state = canon.state
+            notes += node_notes
+            last_undo = "gitman undo"
+            last_state = capture_state(session)
         except GitmanError as exc:
             blocked = exc
             break
@@ -1512,7 +1546,7 @@ def do_sync(session: Session, all_: bool):
     notes: list[str] = []
     conflicted: list[str] = []
     synced: list[str] = []
-    with canonical_guard(session, "sync") as canon:
+    with canonical_guard(session, "sync", lanes=targets) as canon:
         if has_remote(session.ws) and targets:
             # Capture pre-fetch commit-ids for every target lane so vanished lanes can be
             # content-checked against trunk after the fetch prunes them (S9d auto-retire).
