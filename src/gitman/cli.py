@@ -485,6 +485,10 @@ def init(
 @app.command()
 def reconcile(
     abandon_: Annotated[bool, typer.Option("--abandon", help="Discard strays instead of adopting them.")] = False,
+    keep: Annotated[
+        str | None,
+        typer.Option("--keep", help="On a genuinely forked lane, keep this side: local|origin."),
+    ] = None,
 ) -> None:
     """Adopt stray changes into lanes and heal jj<->git ref drift (off-canonical recovery).
 
@@ -492,10 +496,17 @@ def reconcile(
     than reset away, a both-sides-moved trunk keeps jj on the name and adopts git's side into a
     lane, and a ref move that would leave a commit unreferenced bookmarks it first (issue 31).
     Every ref move is reported with both commit ids.
+
+    A published lane that diverged from its own forge twin is classified by content. When one side
+    contains the other, reconcile resolves it on its own. When each side holds content the other
+    lacks it stops and says so; --keep names the side to build on, and the other side is duplicated
+    onto its own `adopted-<commit>` lane (or dropped, with --abandon).
     """
     from gitman.reconcile import do_reconcile
 
-    _finish_intent(do_reconcile(_session(), abandon_))
+    if keep is not None and keep not in ("local", "origin"):
+        raise typer.BadParameter("--keep takes 'local' or 'origin'.", param_hint="--keep")
+    _finish_intent(do_reconcile(_session(), abandon_, keep))
 
 
 def _refusal_result(exc: GitmanError):

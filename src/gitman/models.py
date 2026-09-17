@@ -128,6 +128,25 @@ class Lane(BaseModel):
     pr: PRRef | None = None  # github extra only
 
 
+class LaneTwin(BaseModel, frozen=True):
+    """A published lane whose own `<lane>@<remote>` row shares its change-id but not its commit-id
+    — the issue-42 shape, classified by CONTENT (`state.lane_twin_relation`).
+
+    `relation` uses the same four words as `TrunkRef.relation`, for the same reason: one word for
+    one meaning. `in-sync` = a content-identical re-hash twin; `local-ahead` = the local side holds
+    everything the forge side does, and more; `forge-ahead` = the mirror; `diverged` = each side
+    holds content the other lacks (a genuine fork — the one case `reconcile` cannot decide).
+    `unknown` = the content merge could not run; treat it as `diverged` (never discard on a guess).
+    """
+
+    lane: str
+    local: str  # the local bookmark's commit id
+    forge: str  # the `<lane>@<remote>` row's commit id
+    remote: str
+    relation: Literal["in-sync", "local-ahead", "forge-ahead", "diverged", "unknown"]
+    paths: list[str] = Field(default_factory=list)  # paths that differ between the two sides
+
+
 class Op(BaseModel):
     """An entry from the jj op-log — powers undo affordances (concept §12)."""
 

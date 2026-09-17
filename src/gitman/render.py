@@ -28,7 +28,13 @@ _STATUS_BY_KIND: dict[str, tuple[str, str]] = {
     "lane-conflicted": ("OFF-CANONICAL", "Recover: `gitman reconcile`  — resolve the conflicted lane bookmark."),
     "stray-change": ("OFF-CANONICAL", "Recover: `gitman reconcile`  — adopt it into a lane, or abandon it."),
     "lane-non-linear": ("OFF-CANONICAL", f"Recover: {REGISTRY['lane-non-linear'].manual}."),
-    "lane-divergent": ("OFF-CANONICAL", f"Recover: {REGISTRY['lane-divergent'].manual}."),
+    # Stage 3d gave this kind a real repair, so the hint names the repair, not the manual fallback
+    # — `manual` is now the genuine-fork residue, which only `reconcile` itself can report on
+    # (it is the verb that knows the content relation).
+    "lane-divergent": (
+        "OFF-CANONICAL",
+        "Recover: `gitman reconcile`  — classifies the lane against its forge twin by content.",
+    ),
     # Not "re-sync refs to jj" any more — reconcile now heals in whichever direction the drift
     # runs, adopting git-only history instead of discarding it (issue 31).
     "ref-mismatched": (

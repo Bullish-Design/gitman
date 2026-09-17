@@ -648,20 +648,56 @@ Then delete `off_canonical` as a **stored** field and make it a derived property
 
 ### 3.9 `lane-divergent`'s real repair — the highest-value single change
 
+> **LANDED (stage 3d).** `state.lane_twin_relation` + `state.find_divergent_lane_twins` classify;
+> `reconcile._resolve_lane_twin` repairs; `REGISTRY["lane-divergent"].repair == "reconcile"`.
+> Two corrections to this section's first draft are folded in below — read them, the original
+> table inverted two rows.
+
 Issue 42 D2 is right and it is nearly free. `_merge_tree_relation(view, local_sha, origin_sha)`
-(`state.py:153`) returns `(local_has_new, forge_has_new)` and already answers the identical
-question for trunk-vs-origin. Apply it to **a lane vs its own origin twin**:
+(`state.py:153`) already answers the identical question for trunk-vs-origin. Apply it to **a lane
+vs its own origin twin**.
 
-| Result | Meaning | Action |
-|---|---|---|
-| `(False, False)` | re-hash twin, content-identical | resolve automatically, report the choice |
-| `(True, False)` | local is a content superset | name the extra paths, keep local |
-| `(False, True)` | origin is ahead | offer fast-forward |
-| `(True, True)` | genuine fork | the one case that needs a human |
+**Correction 1 — the return order.** The first draft said the function returns
+`(local_has_new, forge_has_new)`. It returns **`(forge_has_new, local_has_new)`** — its docstring,
+its `return` statement, and `_trunk_content_relation`'s unpack (`state.py:232`) all agree. Two rows
+of the draft's table were therefore swapped. The corrected table:
 
-In the `devman` incident the answer was `(True, False)`, three files. That one line turns a
-multi-hour investigation into a two-minute fix. Wire it into `reconcile` and `lane-divergent`
-moves from `repair=None` to `repair="reconcile"`.
+| `(forge_has_new, local_has_new)` | `relation` | Meaning | Action |
+|---|---|---|---|
+| `(False, False)` | `in-sync` | re-hash twin, content-identical | keep local, retire the forge side |
+| `(False, True)` | `local-ahead` | local is a content superset | keep local, name the differing paths |
+| `(True, False)` | `forge-ahead` | origin is ahead | move the lane onto the forge commit |
+| `(True, True)` | `diverged` | genuine fork | the one case that needs a human |
+| `None` | `unknown` | the content merge could not run | treated as `diverged` — never guess |
+
+In the `devman` incident the answer was `local-ahead`, three files.
+
+**Correction 2 — detection is wider than this repair, on purpose.** `capture_state` flags
+`lane-divergent` whenever ANY commit in a lane's range carries a change-id that resolves to more
+than one visible commit, wherever the twin lives. `find_divergent_lane_twins` is narrower: a
+published lane, neither side conflicted, same change-id, different commit-id, and the forge side
+actually **visible**. A divergent lane outside that shape gets no repair and `reconcile` says so
+(the G0 rule) rather than claiming a fix.
+
+**What actually clears a divergence.** Only `tx.abandon` — a jj change stops being divergent when
+one of its two commits stops being visible. Moving the local bookmark does not do it, and neither
+does adopting the losing side under a second name (both commits stay visible, now under two lane
+names). Measured against pyjutsu 0.20 / jj-lib 0.44: abandoning a commit that `<lane>@<remote>`
+still points at is safe — the tracking row survives, a later `git_fetch` does not resurrect the
+commit, and the next `git_push` still advances the remote.
+
+**"Never discard" is kept literally.** The three auto-resolved relations each abandon a side whose
+content is wholly contained in the surviving side, so no content leaves the repo. The fork case
+abandons nothing on its own. `gitman reconcile --keep local|origin` is the operator's explicit
+choice for a fork, and it `duplicate`s the losing side onto its own `adopted-<commit>` lane first
+(a duplicate carries a NEW change-id, which is why the divergence still clears) unless `--abandon`
+says to drop it — the same adopt-by-default contract the stray loop already has.
+
+**Registry honesty.** `repair="reconcile"` AND `manual="`gitman reconcile --keep local|origin`"`:
+the repair is real, and there is a residue only an operator can decide. The old `manual` pointed at
+`gitman resolve --divergent <lane> --keep …`, a surface that never existed. Issue 42 G3 is
+satisfied on `reconcile` rather than on `resolve`, because reconcile is already the single recovery
+path and already holds the lock, the checkpoint and the survey.
 
 **Abandon `fix-reconcile-divergent-lane`** (`031165b`, unlanded) as part of this. It adds
 `find_unbookmarked_divergent_lane_commits` — one more per-shape predicate, which is exactly the
@@ -677,7 +713,7 @@ Land each separately.
 | **3a** | `anomalies.py`, registry, `RepoState.anomalies`; `canonical`/`off_canonical` derived; prose byte-identical. **No behaviour change.** | low — lands green, safe to land alone |
 | **3b** | Precheck subject-scoped; postcondition delta-based (§3.6); ungate `abandon`; fold in §3.7's three rules. Ship the no-seal test. | high — the behaviour change |
 | **3c** | `render.py` matches on kind; remedy-is-permitted test; drop stored `off_canonical`. | low |
-| **3d** | `lane-divergent` repair via the content classifier; abandon the stale lane. | medium |
+| **3d** | `lane-divergent` repair via the content classifier; abandon the stale lane. | medium — **landed** |
 
 3a is a safe, self-contained foundation. The import-time assertion immediately documents the four
 no-repair kinds as a visible fact rather than a latent one.

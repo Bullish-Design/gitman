@@ -18,7 +18,7 @@ from pyjutsu.models import Commit, DiffStat, Operation
 
 from gitman.anomalies import ANOMALY_ORDER, Anomaly, Subject, make_anomaly
 from gitman.core import GitmanError, has_remote
-from gitman.models import Change, Conflict, ConflictFile, Lane, LaneState, Op, RepoState, TrunkRef
+from gitman.models import Change, Conflict, ConflictFile, Lane, LaneState, LaneTwin, Op, RepoState, TrunkRef
 from gitman.session import Session
 
 
@@ -237,6 +237,83 @@ def _trunk_content_relation(session: Session, view: RepoView, trunk: str) -> tup
     if local_has_new:
         return "local-ahead", behind, ahead, remote
     return "in-sync", behind, ahead, remote
+
+
+def lane_twin_relation(view: RepoView, local_sha: str, forge_sha: str) -> tuple[str, list[str]]:
+    """`(relation, differing paths)` of a lane's local side against its own forge twin.
+
+    The lane-level twin of `_trunk_content_relation`, and the answer issue 42 D2 asked for. Both
+    sides carry the same change-id and different commit-ids, so ancestry says nothing — only the
+    content merge can tell a re-hash twin from a genuine fork. `_merge_tree_relation` returns
+    `(forge_has_new, local_has_new)` (that order, not the reverse — see its docstring), which maps
+    onto the four `TrunkRef.relation` words. `None` (the merge could not run) becomes `unknown`,
+    which every caller must treat as `diverged`: never discard a side on a guess.
+
+    The path list is the tree-to-tree diff stat between the two sides. It is the number the
+    devman incident needed and never got — "three files differ", not the lane's 5068-line diff
+    against trunk, which both sides carry identically.
+    """
+    from pyjutsu import PyjutsuError
+
+    content = _merge_tree_relation(view, local_sha, forge_sha)
+    try:
+        paths = sorted({f.path for f in view.diff_stat(forge_sha, local_sha).files})
+    except PyjutsuError:
+        paths = []
+    if content is None:
+        return "unknown", paths
+    forge_has_new, local_has_new = content
+    if forge_has_new and local_has_new:
+        return "diverged", paths
+    if forge_has_new:
+        return "forge-ahead", paths
+    if local_has_new:
+        return "local-ahead", paths
+    return "in-sync", paths
+
+
+def find_divergent_lane_twins(session: Session, view: RepoView, trunk: str) -> list[LaneTwin]:
+    """Every published lane in the issue-42 shape, classified by content.
+
+    `lane-divergent` is detected far more broadly than this: `capture_state` flags a lane when ANY
+    commit in its range carries a change-id that resolves to >1 visible commit, wherever the twin
+    lives (a stray, an unbookmarked keep-ref leftover, a deeper commit in the range). This survey is
+    deliberately narrower — it names only the shape `reconcile` can actually repair:
+
+      * the lane is published (a real `<lane>@<remote>` row, not the colocated `git` backing),
+      * neither side is conflicted, so each names exactly one commit,
+      * the two commit-ids differ but the change-ids match,
+      * and the forge side is VISIBLE (a rewritten predecessor that jj has already hidden is not a
+        divergence — `<lane>@<remote>` pointing at it is the ordinary "local is ahead" state).
+
+    A divergent lane outside this shape gets no repair here, and `reconcile` reports that honestly
+    rather than claiming a fix (the G0 rule, stage 1).
+    """
+    if not has_remote(session.ws):
+        return []
+    conflicted = set(_conflicted_lanes(view, trunk))
+    local_names, published = _lane_index(view)
+    visible = {c.commit_id for c in view.log(f"{trunk}..")}
+    twins: list[LaneTwin] = []
+    for name in sorted((local_names & published) - {trunk} - conflicted):
+        forge_sha = _remote_target(view, name)
+        if forge_sha is None or forge_sha not in visible:
+            continue
+        try:
+            local = view.resolve(name)
+            forge = view.resolve(forge_sha)
+        except RevsetError:
+            continue
+        if local.commit_id == forge.commit_id or local.change_id != forge.change_id:
+            continue
+        relation, paths = lane_twin_relation(view, local.commit_id, forge.commit_id)
+        remote = next(b.remote for b in view.bookmarks() if b.name == name and b.remote not in (None, "git"))
+        twins.append(
+            LaneTwin(
+                lane=name, local=local.commit_id, forge=forge.commit_id, remote=remote, relation=relation, paths=paths
+            )
+        )
+    return twins
 
 
 def _git_refs_heads(ws: Workspace) -> dict[str, str]:

@@ -15,6 +15,14 @@ a verb that also refuses.
 
 ---
 
+> **RESOLVED (2026-09-17, issue 44 stage 3d).** G1/G2/G3 landed together:
+> `state.find_divergent_lane_twins` + `state.lane_twin_relation` classify a published lane against
+> its own forge twin by content, and `reconcile` resolves the three relations where one side
+> contains the other. A genuine fork still needs a human, and `gitman reconcile --keep local|origin`
+> is that surface (G3 landed on `reconcile`, not on `resolve`). G0 landed in stage 1, G0b in stage
+> 3b. See `.scratch/projects/44-report-integrity-and-intent-architecture/IMPLEMENTATION_GUIDE.md`
+> §3.9.
+
 ## 1. TL;DR
 
 `reconcile` resolves divergent change-ids **only for strays**. Both sides of this divergence were

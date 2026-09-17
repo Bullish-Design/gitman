@@ -78,11 +78,17 @@ REGISTRY: dict[str, AnomalyKind] = {
         blocks=frozenset({"land", "publish"}),
         manual="`gitman shape --squash` to linearise, or `gitman abandon`",
     ),
+    # Stage 3d: `reconcile` classifies a published lane against its own `<lane>@<remote>` twin by
+    # CONTENT (`state.lane_twin_relation`) and resolves the three cases where one side contains the
+    # other. `manual` covers the fourth — a genuine fork, where no automatic choice is safe — and
+    # names a flag that exists (`cli.reconcile --keep`), not the planned-but-absent `resolve`
+    # surface it used to advertise. Both fields are set on purpose: the repair is real AND there is
+    # a residue only an operator can decide.
     "lane-divergent": AnomalyKind(
         tier="lane",
-        repair=None,
+        repair="reconcile",
         blocks=frozenset({"land", "publish", "push"}),
-        manual="`gitman resolve --divergent <lane> --keep local|origin`",
+        manual="`gitman reconcile --keep local|origin`",
     ),
     "ref-mismatched": AnomalyKind(tier="ref", repair="reconcile", blocks=frozenset()),
     "lane-orphaned": AnomalyKind(
