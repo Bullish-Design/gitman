@@ -84,12 +84,31 @@ gate verdict     : BLOCKED
     `gitman push --reset-origin` to drop them deliberately.
 ```
 
-## Left open
+## S1 — done
 
-- `_retire_lane` (`core.py`, the pull path) still delete-pushes a forge-merged lane inside
-  `do_pull`'s guard — D2's shape at lower severity. Same fix, separate change.
+`_retire_lane` no longer pushes. It returns the lane name when its remote branch still needs
+deleting (`None` otherwise); `do_pull` collects these into `pending_remote_deletes` (threaded
+through `_reconcile_lane_against_adopted_trunk`, which has the function's two call sites) and runs
+the delete-pushes after `canonical_guard` closes, under one outer `repo_lock` — the same shape
+`do_land`'s L1 fix and `do_push`/`do_publish`'s F2 fix already use. `do_pull` had no outer lock
+before this change; it has one now (`acquire_lock=False` on the guard).
+
+New test: `test_pull_postcondition_failure_precedes_the_remote_branch_delete`
+(`tests/test_issue45_push_safety.py`). It forge-merges a published lane (`_forge_merge_commit`,
+reused from `test_pull_integration.py`) so `pull` retires it via the ancestry path, then forces
+`_postcondition` to fail *and roll back* (mirroring the real postcondition's own
+`restore_operation` call on an anomaly — a bare `raise` alone doesn't exercise the rollback, since
+`canonical_guard` only unwinds on an exception raised **during** the guarded body, not on
+`_postcondition` itself raising after a clean body). Asserts the remote branch survives and the
+local lane bookmark is restored.
+
+`grep -n 'delete=True' src/gitman/core.py` shows exactly two sites: `do_land` (already correct)
+and `do_pull` (this change). No third site exists. Issue 45 is now closed completely — nothing
+left open in this file.
+
+## Left open (pre-existing, unrelated to issue 45)
+
 - Whether `restore_operation` should ever rewind remote-tracking bookmarks. F2 closes the window
   for `push`/`publish`, so it is no longer reachable from them.
-- Stage 4f (total ref encoding for fractal lanes) and stage 4e are untouched by this work. 4e's
-  blocker has cleared: `gitman doctor` reports `pyjutsu 0.22.0`, so the pin the stage-4d write-up
-  believed unpublished now resolves.
+- Stage 4f (total ref encoding for fractal lanes) and stage 4e are untouched by this work — both
+  are scoped separately under `.scratch/projects/46-remaining-refactor/`.

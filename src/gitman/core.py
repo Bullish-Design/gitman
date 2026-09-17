@@ -1730,14 +1730,19 @@ def _trunk_diverged_no_ff(view, trunk: str, origin_trunk, remote: str) -> bool:
     return behind > 0 and ahead > 0
 
 
-def _retire_lane(session: Session, trunk: str, lane: str, published_before: set[str], notes: list[str]) -> None:
+def _retire_lane(
+    session: Session, trunk: str, lane: str, published_before: set[str], notes: list[str]
+) -> str | None:
     """Retire a forge-merged surviving lane: abandon its (now-empty) trunk..lane changes, delete the
-    bookmark, forget its workspace, best-effort delete a still-live remote branch. Runs its own tx
-    inside an already-open `canonical_guard`. For the merge-commit case (`trunk..lane` already empty)
-    the abandon loop is a no-op and only the bookmark is dropped (the commits stay as trunk ancestors).
-    """
-    from pyjutsu import PyjutsuError
+    bookmark, forget its workspace. Runs its own tx inside an already-open `canonical_guard`. For the
+    merge-commit case (`trunk..lane` already empty) the abandon loop is a no-op and only the bookmark
+    is dropped (the commits stay as trunk ancestors).
 
+    Returns the lane name when its **remote** branch still needs deleting, else None. The delete-push
+    is irreversible, so `do_pull` runs it after `canonical_guard` closes — a postcondition rollback
+    must never restore a local lane whose remote branch is already gone (issue 45 D2; `do_land` does
+    the same for the same reason).
+    """
     # Target by commit_id (via `_target`): _retire_lane runs in the exact post-`git_import` pull
     # window where keep-ref divergence is introduced, so a bare change_id could dead-end here (issue
     # 06 §G2).
@@ -1747,12 +1752,7 @@ def _retire_lane(session: Session, trunk: str, lane: str, published_before: set[
         tx.delete_bookmark(lane)
     notes += _cleanup_workspace(session, lane)
     notes.append(f"retired (forge-merged): {lane}")
-    if lane in published_before:
-        try:
-            session.ws.git_push(pick_remote(session.ws), lane, delete=True)
-            notes.append(f"deleted remote branch '{lane}' (one-way; `gitman undo` won't restore it).")
-        except PyjutsuError as exc:
-            notes.append(f"remote branch '{lane}' not deleted (delete it manually): {exc}")
+    return lane if lane in published_before else None
 
 
 def _resolve_conflicted_lane(
@@ -1825,6 +1825,7 @@ def _reconcile_lane_against_adopted_trunk(
     rebased: list[str],
     conflicts: list[str],
     notes: list[str],
+    pending_remote_deletes: list[str],
 ) -> None:
     """Reconcile one surviving lane against the freshly-pulled trunk (content-based, not SHA).
 
@@ -1856,7 +1857,9 @@ def _reconcile_lane_against_adopted_trunk(
         )
 
     if not session.view().log(f"{trunk}..{lane}"):  # merge-commit: already an ancestor of trunk
-        _retire_lane(session, trunk, lane, published_before, notes)
+        pending = _retire_lane(session, trunk, lane, published_before, notes)
+        if pending is not None:
+            pending_remote_deletes.append(pending)
         retired.append(lane)
         return
 
@@ -1875,7 +1878,9 @@ def _reconcile_lane_against_adopted_trunk(
 
     range_after = session.view().log(f"{trunk}..{lane}")  # re-read after the rebase op committed
     if range_after and all(c.is_empty for c in range_after):  # squash / rebase-merge → merged
-        _retire_lane(session, trunk, lane, published_before, notes)
+        pending = _retire_lane(session, trunk, lane, published_before, notes)
+        if pending is not None:
+            pending_remote_deletes.append(pending)
         retired.append(lane)
     else:
         rebased.append(lane)
@@ -2021,9 +2026,10 @@ def do_pull(session: Session, *, dry_run: bool = False):
     rule (I5: trunk advances via `land` OR `pull`). A re-hash twin never triggers a trunk move (the
     content gate). See `.scratch/projects/21-trunk-model-tier2/PLAN.md` §4.
     """
+    from pyjutsu import PyjutsuError
     from pyjutsu.errors import RevsetError
 
-    from gitman.invariants import canonical_guard
+    from gitman.invariants import canonical_guard, repo_lock
     from gitman.lanes import lane_names
     from gitman.models import IntentResult
     from gitman.state import _lane_index, _trunk_conflicted
@@ -2045,69 +2051,89 @@ def do_pull(session: Session, *, dry_run: bool = False):
     rebased: list[str] = []
     conflicts: list[str] = []
     notes: list[str] = []
-    try:
-        with canonical_guard(session, "pull") as canon:
-            session.ws.git_fetch(remote)  # own op: FFs trunk (clean), prunes deleted lanes, may stale @
-            view = session.view()
+    pending_remote_deletes: list[str] = []
+    # One lock across the guard AND the retired-lane delete-pushes, so nothing slips in between the
+    # postcondition and the network calls (`do_land`'s/`do_push`'s pattern: outer lock,
+    # `acquire_lock=False` guard).
+    with repo_lock(session.repo_root):
+        try:
+            with canonical_guard(session, "pull", acquire_lock=False) as canon:
+                session.ws.git_fetch(remote)  # own op: FFs trunk (clean), prunes deleted lanes, may stale @
+                view = session.view()
+                try:
+                    origin_tip = view.resolve(f"{trunk}@{remote}").commit_id
+                except RevsetError as exc:
+                    raise GitmanError(
+                        f"no {trunk}@{remote} — nothing to pull; is the trunk pushed?", exit_code=1
+                    ) from exc
+
+                # Read the local trunk tip structurally: jj marks the local bookmark *conflicted* on a
+                # genuine divergence, so `resolve(trunk)` would raise. `_integrate_trunk` acts by
+                # commit-id, resolving the conflict either way.
+                if _trunk_conflicted(view, trunk):
+                    targets = [
+                        t for b in view.bookmarks() if b.name == trunk and b.remote is None for t in b.target_ids
+                    ]
+                    local_tip = next((t for t in targets if t != origin_tip), targets[0] if targets else origin_tip)
+                else:
+                    local_tip = view.resolve(trunk).commit_id
+
+                try:
+                    _integrate_trunk(session, trunk, local_tip, origin_tip, notes)
+                except _SurvivorConflict as exc:
+                    raise GitmanError(
+                        f"local {trunk} lands conflict with {remote}/{trunk} — resolve origin's changes by "
+                        f"hand, or `gitman reconcile`, then re-run `gitman pull`.",
+                        exit_code=1,
+                    ) from exc
+
+                surviving = set(lane_names(session, trunk))
+                for lane in sorted(lanes_before - surviving):  # pruned by the fetch (forge-merged + deleted)
+                    notes += _cleanup_workspace(session, lane)
+                    notes.append(f"retired (forge-merged): {lane}")
+                    retired.append(lane)
+                for lane in sorted(surviving):
+                    _reconcile_lane_against_adopted_trunk(
+                        session,
+                        trunk,
+                        lane,
+                        published_before,
+                        retired=retired,
+                        rebased=rebased,
+                        conflicts=conflicts,
+                        notes=notes,
+                        pending_remote_deletes=pending_remote_deletes,
+                    )
+
+                if session.ws.is_stale():  # the fetch/abandons orphaned @ off a pruned/retired lane
+                    session.ws.update_stale()
+                    notes.append("refreshed the working copy onto the pulled trunk.")
+                # `@`-never-on-trunk (the invariant now extended to `pull`): if the trunk move left `@`
+                # coinciding with trunk (e.g. update_stale checked out onto the advanced trunk), repark it
+                # onto a fresh empty child — mirroring `land`'s repark.
+                after_view = session.view()
+                if after_view.working_copy().commit_id == after_view.resolve(trunk).commit_id:
+                    with session.ws.transaction("gitman:pull-repark", auto_snapshot=False) as tx:
+                        tx.new(trunk)
+                    notes.append("reparked @ onto a fresh child of the pulled trunk.")
+        except GitmanError as exc:
+            return IntentResult(
+                intent="pull",
+                outcome="BLOCKED",
+                messages=[str(exc)],
+                notes=["nothing changed — the repo is back to its pre-pull state."],
+                exit_code=exc.exit_code,
+            )
+
+        # Postcondition passed → the pull is committed. The remote-branch cleanup is one-way and
+        # best-effort, so it runs here: a rollback must never leave a restored local lane whose
+        # remote branch is already deleted (issue 45 D2; mirrors `do_land`'s L1 placement).
+        for lane in pending_remote_deletes:
             try:
-                origin_tip = view.resolve(f"{trunk}@{remote}").commit_id
-            except RevsetError as exc:
-                raise GitmanError(f"no {trunk}@{remote} — nothing to pull; is the trunk pushed?", exit_code=1) from exc
-
-            # Read the local trunk tip structurally: jj marks the local bookmark *conflicted* on a
-            # genuine divergence, so `resolve(trunk)` would raise. `_integrate_trunk` acts by
-            # commit-id, resolving the conflict either way.
-            if _trunk_conflicted(view, trunk):
-                targets = [t for b in view.bookmarks() if b.name == trunk and b.remote is None for t in b.target_ids]
-                local_tip = next((t for t in targets if t != origin_tip), targets[0] if targets else origin_tip)
-            else:
-                local_tip = view.resolve(trunk).commit_id
-
-            try:
-                _integrate_trunk(session, trunk, local_tip, origin_tip, notes)
-            except _SurvivorConflict as exc:
-                raise GitmanError(
-                    f"local {trunk} lands conflict with {remote}/{trunk} — resolve origin's changes by "
-                    f"hand, or `gitman reconcile`, then re-run `gitman pull`.",
-                    exit_code=1,
-                ) from exc
-
-            surviving = set(lane_names(session, trunk))
-            for lane in sorted(lanes_before - surviving):  # pruned by the fetch (forge-merged + deleted)
-                notes += _cleanup_workspace(session, lane)
-                notes.append(f"retired (forge-merged): {lane}")
-                retired.append(lane)
-            for lane in sorted(surviving):
-                _reconcile_lane_against_adopted_trunk(
-                    session,
-                    trunk,
-                    lane,
-                    published_before,
-                    retired=retired,
-                    rebased=rebased,
-                    conflicts=conflicts,
-                    notes=notes,
-                )
-
-            if session.ws.is_stale():  # the fetch/abandons orphaned @ off a pruned/retired lane
-                session.ws.update_stale()
-                notes.append("refreshed the working copy onto the pulled trunk.")
-            # `@`-never-on-trunk (the invariant now extended to `pull`): if the trunk move left `@`
-            # coinciding with trunk (e.g. update_stale checked out onto the advanced trunk), repark it
-            # onto a fresh empty child — mirroring `land`'s repark.
-            after_view = session.view()
-            if after_view.working_copy().commit_id == after_view.resolve(trunk).commit_id:
-                with session.ws.transaction("gitman:pull-repark", auto_snapshot=False) as tx:
-                    tx.new(trunk)
-                notes.append("reparked @ onto a fresh child of the pulled trunk.")
-    except GitmanError as exc:
-        return IntentResult(
-            intent="pull",
-            outcome="BLOCKED",
-            messages=[str(exc)],
-            notes=["nothing changed — the repo is back to its pre-pull state."],
-            exit_code=exc.exit_code,
-        )
+                session.ws.git_push(pick_remote(session.ws), lane, delete=True)
+                notes.append(f"deleted remote branch '{lane}' (one-way; `gitman undo` won't restore it).")
+            except PyjutsuError as exc:
+                notes.append(f"remote branch '{lane}' not deleted (delete it manually): {exc}")
 
     trunk_after = canon.state.trunk.commit_id if canon.state else local_trunk_before
     changed = bool(retired or rebased or conflicts) or trunk_after != local_trunk_before

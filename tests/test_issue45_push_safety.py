@@ -212,6 +212,38 @@ def test_postcondition_failure_precedes_the_network_push(tmp_path: Path, monkeyp
     assert _origin_ref(remote) == before  # the push never ran — the note is honest
 
 
+def test_pull_postcondition_failure_precedes_the_remote_branch_delete(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """A pull rollback must never leave a restored local lane whose remote branch is gone.
+
+    `_retire_lane`'s old shape (issue 45 D2, `_retire_lane` variant): a forge-merged lane's remote
+    branch was deleted from inside `do_pull`'s `canonical_guard` body. Force the postcondition to
+    fail *and roll back* (the real `_postcondition`'s own behavior on an anomaly) and the
+    delete-push must never have run.
+    """
+    from gitman.core import GitmanError
+    from tests.test_pull_integration import _forge_merge_commit, _make_lane
+
+    work, remote, ws = _with_remote(tmp_path)
+    _make_lane(ws, work, "m0", [("a.txt", "A\n")])
+    _forge_merge_commit(remote, tmp_path, "m0")  # forge merges m0 into main, keeps the branch alive
+
+    import gitman.invariants as inv
+
+    def boom(session, intent, trunk_before, op_before, before):
+        session.ws.restore_operation(op_before)  # mirrors the real _postcondition's anomaly path
+        raise GitmanError("reverted: synthetic anomaly; no change applied.", exit_code=1)
+
+    monkeypatch.setattr(inv, "_postcondition", boom)
+
+    res = do_pull(_sess(work))
+
+    assert res.outcome == "BLOCKED", res.messages
+    assert res.exit_code == 1
+    assert "nothing changed — the repo is back to its pre-pull state." in res.notes
+    assert _origin_ref(remote, "refs/heads/m0") != ""  # the delete never ran
+    assert "m0" in {lane.name for lane in capture_state(_sess(work)).lanes}  # rollback restored it
+
+
 def test_publish_postcondition_failure_precedes_the_network_push(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """Same ordering for `publish` — it had the identical shape."""
     from gitman.core import GitmanError
