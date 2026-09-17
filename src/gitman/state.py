@@ -10,6 +10,7 @@ changes outside every lane); the authoritative transactional invariants live in 
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
 
 from pyjutsu import RepoView, Workspace
@@ -285,7 +286,9 @@ def lane_twin_relation(view: RepoView, local_sha: str, forge_sha: str) -> tuple[
     return "in-sync", paths
 
 
-def find_divergent_lane_twins(session: Session, view: RepoView, trunk: str) -> list[LaneTwin]:
+def find_divergent_lane_twins(
+    session: Session, view: RepoView, trunk: str, lanes: Iterable[str] | None = None
+) -> list[LaneTwin]:
     """Every published lane in the issue-42 shape, classified by content.
 
     `lane-divergent` is detected far more broadly than this: `capture_state` flags a lane when ANY
@@ -301,14 +304,22 @@ def find_divergent_lane_twins(session: Session, view: RepoView, trunk: str) -> l
 
     A divergent lane outside this shape gets no repair here, and `reconcile` reports that honestly
     rather than claiming a fix (the G0 rule, stage 1).
+
+    `lanes`, when given, narrows the candidates to that name set (issue 44 stage 3f, guide
+    §3.13.3) — the repair nests inside the `capture_state`-flagged subjects instead of
+    re-deriving its own, independent set in parallel, so it can never claim a lane the gate did
+    not flag, and never miss one it did.
     """
     if not has_remote(session.ws):
         return []
     conflicted = set(_conflicted_lanes(view, trunk))
     local_names, published = _lane_index(view)
     visible = {c.commit_id for c in view.log(f"{trunk}..")}
+    candidates = (local_names & published) - {trunk} - conflicted
+    if lanes is not None:
+        candidates &= set(lanes)
     twins: list[LaneTwin] = []
-    for name in sorted((local_names & published) - {trunk} - conflicted):
+    for name in sorted(candidates):
         forge_sha = _remote_target(view, name)
         if forge_sha is None or forge_sha not in visible:
             continue

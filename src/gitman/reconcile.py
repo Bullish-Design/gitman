@@ -1,29 +1,24 @@
 """`gitman reconcile`: the single recovery path from off-canonical (concept §11, §20).
 
-Non-interactive (agent context): it heals two desyncs in one pass — (1) **off-canonical strays**
-(non-empty changes outside every lane): by default each is **adopted** into an auto-named lane
-(`adopted-<commit_id>` bookmark — keyed off commit_id so divergent sides get distinct names),
-or discarded with `--abandon`; (2) **colocated git-ref drift**
-(round-09 gap B): a live bookmark whose `refs/heads/<name>` disagrees with jj — in *either*
-direction (`invariants.sync_colocated_refs` classifies which side is authoritative and imports
-git-only history rather than discarding it — issue 31) — or an abandoned lane's leftover ref that
-makes every `git_export` raise. It runs without the canonical precheck (the repo is off-canonical
-by definition) and records an undo checkpoint so `gitman undo` can revert it.
+Non-interactive (agent context): it heals off-canonical shapes in one pass — colocated git-ref
+drift, conflicted trunk/lane bookmarks, off-canonical strays, and published lanes diverged from
+their own forge twin — by dispatching through `repairs.REPAIRS` (issue 44 stage 3f), the table
+`anomalies.REGISTRY` names but does not itself read. It runs without the canonical precheck (the
+repo is off-canonical by definition) and records an undo checkpoint so `gitman undo` can revert
+it.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from pyjutsu.errors import ImmutableCommitError, RevsetError
-
 from gitman.anomalies import REGISTRY
-from gitman.core import _target, require_trunk
+from gitman.core import require_trunk
 from gitman.invariants import _refresh_stale_working_copy
-from gitman.lanes import adopted_lane_name
+from gitman.repairs import REPAIRS, REPAIRS_ORDER, Survey
 
 if TYPE_CHECKING:
-    from gitman.models import KeepSide, LaneTwin
+    from gitman.models import KeepSide
     from gitman.session import Session
 
 
@@ -33,7 +28,8 @@ def _repair_orphaned_head(session: Session) -> list[str]:
     The mutating path now self-heals this at the moment it appears
     (`invariants.repair_git_head`), so reaching here means the repo was left broken by an older
     gitman, or the self-heal failed. It stays first in `reconcile` because while `HEAD` is
-    unusable every `git_export` raises, so no other healing below can land.
+    unusable every `git_export` raises, so no other healing below can land. Not a `REPAIRS` row:
+    it is invisible to `capture_state` (project 29), so no anomaly kind could ever gate it.
     """
     from gitman.invariants import repair_git_head
     from gitman.state import orphaned_git_head
@@ -48,83 +44,10 @@ def _repair_orphaned_head(session: Session) -> list[str]:
     return [repaired]
 
 
-def _resolve_lane_twin(
-    session: Session, twin: LaneTwin, keep: KeepSide | None, abandon_: bool, actions: list[str]
-) -> bool:
-    """Repair one `lane-divergent` twin. Returns True once the repair transaction has run — the
-    caller re-surveys once, after the whole loop, to confirm the divergence actually cleared
-    (issue 44 stage 3e.2: this used to run its own `capture_state` here, once per twin).
-
-    A jj divergence ends only when one of the two commits stops being VISIBLE, and the only verb
-    that hides a commit is `tx.abandon`. Moving the local bookmark does not do it, and neither does
-    adopting the losing side under a second name — both commits stay visible, now under two lane
-    names. Measured against real pyjutsu 0.20 / jj-lib 0.44: abandoning the forge side while
-    `<lane>@<remote>` still points at it is safe — the tracking row survives intact, a later
-    `git_fetch` does not resurrect the commit, and the next `git_push` still advances the remote.
-
-    "Never discard" is kept LITERALLY, not by hand-waving at the op log:
-
-      * `in-sync` / `local-ahead` — the forge side's content is wholly inside the local side, and
-        the remote still holds it. Abandoning it loses nothing.
-      * `forge-ahead` — the local side's content is wholly inside the forge side. Same argument,
-        mirrored: move the lane onto the forge commit, then abandon the local one.
-      * `diverged` / `None` (the content check could not run) — each side holds content the other
-        lacks, so no automatic choice is safe. `reconcile` refuses and reports; `--keep
-        local|origin` is the operator's explicit choice, and even then the losing side is
-        DUPLICATED onto its own `adopted-<commit>` lane first (a duplicate carries a NEW change-id,
-        so the divergence still clears) unless `--abandon` says to drop it — exactly what the
-        stray loop below already does.
-    """
-    # The content relation wins over `--keep` on the three contained cases: honouring `--keep origin`
-    # on a `local-ahead` lane would throw away local content for no reason, and the flag is
-    # documented as the genuine-fork choice. An unrecognised value repairs nothing.
-    keep_side = keep if keep in ("local", "origin") else None
-    if twin.relation in ("in-sync", "local-ahead"):
-        keep_side = "local"
-    elif twin.relation == "forge-ahead":
-        keep_side = "origin"
-    if keep_side is None:
-        return False
-
-    loser = twin.forge if keep_side == "local" else twin.local
-    winner = twin.local if keep_side == "local" else twin.forge
-    # A forced choice on a genuine fork discards unique content unless the loser is kept somewhere.
-    # `duplicate` re-creates it with a fresh change-id, which is what lets it stay visible as its
-    # own lane without re-tripping the divergence it is being pulled out of.
-    rescue = twin.relation in ("diverged", None) and not abandon_
-    with session.ws.transaction("gitman:reconcile", auto_snapshot=False) as tx:
-        rescued: str | None = None
-        if rescue:
-            existing = {b.name for b in session.view().bookmarks() if b.remote is None}
-            rescued = adopted_lane_name(loser, existing)
-            if rescued is not None:
-                dup = tx.duplicate(loser)[0]
-                tx.create_bookmark(rescued, dup.commit_id)
-        if winner != twin.local:
-            tx.set_bookmark(twin.lane, winner)
-        tx.abandon(loser)
-    side = "forge" if keep_side == "local" else "local"
-    detail = f" ({len(twin.paths)} path(s) differ: {', '.join(twin.paths[:5])})" if twin.paths else ""
-    actions.append(
-        f"lane '{twin.lane}' vs {twin.remote}/{twin.lane}: {twin.relation or 'unknown'} — kept the {keep_side} side "
-        f"{winner[:12]}, retired the {side} side {loser[:12]}{detail}"
-    )
-    if rescued is not None:
-        actions.append(f"rescued the {side} side {loser[:12]} → lane '{rescued}' (duplicated, new change-id)")
-    return True
-
-
 def do_reconcile(session: Session, abandon_: bool, keep: KeepSide | None = None):
-    from gitman.core import _resolve_conflicted_lane
-    from gitman.invariants import repo_lock, sync_colocated_refs, write_undo_checkpoint
+    from gitman.invariants import repo_lock, write_undo_checkpoint
     from gitman.models import IntentResult
-    from gitman.state import (
-        _conflicted_lanes,
-        capture_state,
-        colocated_ref_desync,
-        find_divergent_lane_twins,
-        find_strays,
-    )
+    from gitman.state import capture_state, colocated_ref_desync, find_divergent_lane_twins, find_strays
 
     trunk = require_trunk(session.config)
     with repo_lock(session.repo_root):
@@ -156,39 +79,31 @@ def do_reconcile(session: Session, abandon_: bool, keep: KeepSide | None = None)
         # healthy repo while no export had succeeded for the whole session (project 29).
         head_notes = _repair_orphaned_head(session)
         try:
-            view = session.fresh_view()  # snapshot dirty @ first (now safe — no longer stale)
+            # One `capture_state` (issue 44 stage 3f), not a hand-rolled survey per shape: it
+            # already reads trunk-conflicted structurally, never raising on it. `find_strays` is
+            # the one raw, trunk-anchored survey still taken here (§G2's union fix needs the
+            # actual pre-heal Change rows, which `capture_state`'s anomalies can't carry — two
+            # divergent strays share a change_id, so their `Subject` rows are indistinguishable),
+            # and a *pre-existing* trunk conflict (a hand-run `jj git import`, an interrupted run)
+            # makes even that raise — the repo is precisely the state the operator is sent here
+            # from, so it must not be the state that makes `reconcile` error out on itself. Skip
+            # the pre-heal stray sighting in that case; `_repair_refs` clears the conflict first,
+            # and `_repair_strays`'s own post-heal scan then sees whatever is left. `leftover`
+            # colocated refs are `capture_state`'s one gap (they never flip `canonical` — `doctor`
+            # warns on them, `status` does not), so it stays a direct, cheap check alongside kinds.
+            from pyjutsu.errors import RevsetError
+
+            pre_view = session.fresh_view()
             try:
-                conflicted = _conflicted_lanes(view, trunk)
-                strays = find_strays(view, trunk)
-                twins = find_divergent_lane_twins(session, view, trunk)
-                mismatched, leftover = colocated_ref_desync(view, session.ws)
+                pre_strays = find_strays(pre_view, trunk)
             except RevsetError:
-                # Trunk itself is conflicted on entry (a hand-run `jj git import`, another tool's
-                # import, an earlier interrupted run), so every trunk-anchored revset raises before
-                # we get to the thing that fixes it. This is the state the operator is *sent* here to
-                # recover from — it must not be the state that makes the recovery verb error out.
-                # Skip the survey, let the ref sync below clear the conflict, and re-scan after.
-                conflicted, strays, twins, mismatched, leftover = [], [], [], [], []
-                surveyed = False
-            else:
-                surveyed = True
-            if (
-                surveyed
-                and not conflicted
-                and not strays
-                and not twins
-                and not mismatched
-                and not leftover
-                and not refresh_notes
-                and not head_notes
-            ):
-                # The surveys above cover reconcile's *repair* scope, which is narrower than
-                # the canonical predicate in `capture_state`. Reporting survey-emptiness as
-                # "canonical" is how issue 42 livelocked: CLEAN + exit 0 while `status` said
-                # OFF-CANONICAL, so the operator was told to re-run the verb that had just
-                # declined to act. Ask the predicate, then answer.
-                state = capture_state(session)
-                if state.canonical:
+                pre_strays = []
+            before = Survey(state=capture_state(session), strays=pre_strays)
+            present = {a.kind for a in before.state.anomalies}
+            repairable = [k for k in REPAIRS_ORDER if k in present]
+            _, leftover = colocated_ref_desync(session.view(), session.ws)
+            if not repairable and not leftover and not refresh_notes and not head_notes:
+                if before.state.canonical:
                     return IntentResult(
                         intent="reconcile",
                         outcome="CLEAN",
@@ -201,107 +116,38 @@ def do_reconcile(session: Session, abandon_: bool, keep: KeepSide | None = None)
                     messages=["no strays, refs in sync — but the repo is still off-canonical."],
                     notes=gc_notes
                     + [
-                        f"still off-canonical: {state.off_canonical}",
+                        f"still off-canonical: {before.state.off_canonical}",
                         "reconcile has no repair for this shape — this is a gap, not your mistake.",
                     ],
                     exit_code=1,
                 )
 
             actions: list[str] = gc_notes + list(head_notes) + list(refresh_notes)
-            # Colocated refs FIRST (gap B). The import step can bring in git-only history — trunk
-            # included — so everything downstream must read the *post*-import view: strays scanned
-            # against a stale trunk get adopted onto a stale base and report a diff that double-counts
-            # trunk content (31-RC6), and a both-sides-moved bookmark only becomes visible as a
-            # conflicted lane once the import has resolved it (which the pass below then handles).
-            ref_notes = sync_colocated_refs(session)
-            if ref_notes:
-                view = session.fresh_view()
-                try:
-                    conflicted = _conflicted_lanes(view, trunk)
-                    # UNION, not replace. The import can abandon a commit that just became
-                    # unreachable in git (a retired keep-ref / leftover lane ref), which would
-                    # silently drop a stray that was visible a moment ago — trading one discard path
-                    # for another. Adopting it anyway re-anchors it; `create_bookmark` targets
-                    # commit_id, so an abandoned commit is still a valid target (issue 06 §G2).
-                    after = find_strays(view, trunk)
-                    seen = {c.commit_id for c in after}
-                    strays = after + [c for c in strays if c.commit_id not in seen]
-                except RevsetError:
-                    # Belt-and-braces: `sync_colocated_refs` clears a both-sides-moved bookmark
-                    # before returning (jj keeps the name, git's side becomes a lane), so trunk
-                    # should resolve by now. If some *other* bookmark is still conflicted and a
-                    # trunk-anchored revset raises anyway, keep the pre-heal scan and fall through —
-                    # `capture_state` models a conflicted trunk and reports PARTIAL. Never crash the
-                    # one verb the operator was told to run.
-                    pass
+            # Dispatch in `REPAIRS_ORDER` — colocated-ref healing first (Trap 2, guide §3.13.2),
+            # then lane conflicts, then strays, then divergent twins. Run every row once (two kinds
+            # share the ref-healing callable), unconditionally: each repair re-surveys its own
+            # precise shape on a fresh view, so one that finds nothing is a cheap no-op rather than
+            # a branch this function has to hand-maintain. Adding a kind means adding one row to
+            # `repairs.REPAIRS` — nothing here changes, and a forgotten callable is an import error.
+            ran: list[object] = []
+            for kind in REPAIRS_ORDER:
+                repair = REPAIRS[kind]
+                if repair in ran:
+                    continue
+                ran.append(repair)
+                repair(session, trunk, abandon_, keep, actions, before)
 
-            # Conflicted lanes next: clearing them is what unwedges the repo (issue 11), and retiring
-            # one can orphan local commits, so strays must be (re-)scanned afterwards. Local recovery —
-            # don't push-delete the remote branch here (that's a forge action; `pull`/`land` own it).
-            if conflicted:
-                for lane in sorted(conflicted):
-                    _resolve_conflicted_lane(session, trunk, lane, abandon=abandon_, notes=actions)
-                view = session.fresh_view()  # resolving may have orphaned local commits → re-scan
-                strays = find_strays(view, trunk)
-
-            existing = {b.name for b in session.view().bookmarks() if b.remote is None}
-            if strays:
-                # Target AND name each stray by commit_id, never the bare change_id. A divergent
-                # change-id resolves to ≥2 commits, so a change-id target dead-ends the
-                # transaction — and, critically, the two divergent sides *share* a change_id, so naming
-                # by change_id collides them onto one bookmark. commit_id is what actually differs, so
-                # it both resolves unambiguously and yields distinct lane names (issue 06 §G2).
-                # A stray under a tag or an untracked remote bookmark is immutable since pyjutsu
-                # 0.16, so `--abandon` can refuse. Report which protection fired; recovery does not
-                # override it (project 34, lane 6c — `ignore_immutable=True` appears nowhere in
-                # gitman). Adoption is unaffected: `create_bookmark` moves a ref, not a commit.
-                try:
-                    with session.ws.transaction("gitman:reconcile", auto_snapshot=False) as tx:
-                        for change in strays:
-                            cid = _target(change)
-                            if abandon_:
-                                tx.abandon(cid)
-                                actions.append(f"abandoned {cid[:12]}")
-                            else:
-                                name = adopted_lane_name(cid, existing)
-                                if name is None:  # this exact commit already has its own adopted lane
-                                    actions.append(f"{cid[:12]} already adopted — skipping.")
-                                    continue
-                                tx.create_bookmark(name, cid)
-                                existing.add(name)
-                                actions.append(f"adopted {cid[:12]} → lane '{name}'")
-                except ImmutableCommitError as exc:
-                    from gitman.core import explain_immutable
-
-                    raise explain_immutable(session, exc, "abandon a stray change") from exc
-            # Divergent lane twins LAST of the repairs: the ref sync and the conflicted-lane pass
-            # above both move bookmarks, so the pre-heal survey is only good enough to decide
-            # whether to bail early. Re-survey against the healed view before touching anything.
-            unresolved: list[LaneTwin] = []
-            if twins:
-                twins = find_divergent_lane_twins(session, session.fresh_view(), trunk)
-                for twin in twins:
-                    try:
-                        _resolve_lane_twin(session, twin, keep, abandon_, actions)
-                    except ImmutableCommitError as exc:
-                        from gitman.core import explain_immutable
-
-                        raise explain_immutable(session, exc, f"retire a side of divergent lane '{twin.lane}'") from exc
-                # One re-survey after the whole loop (issue 44 stage 3e.2), not a `capture_state`
-                # taken once per twin inside `_resolve_lane_twin` — cheaper, and a truer
-                # postcondition: it tests whether the divergence actually cleared, not a proxy read.
-                unresolved = find_divergent_lane_twins(session, session.fresh_view(), trunk)
-            actions += ref_notes
+            state = capture_state(session)
             if not actions:
-                # "nothing to do" would be false when a fork was surveyed and classified — the verb
-                # did the work of deciding, and declined to choose. Say that instead.
+                # "nothing to do" would be false when a fork was surveyed and classified — the
+                # verb did the work of deciding, and declined to choose. Say that instead.
+                still_divergent = [lane.name for lane in state.lanes if lane.divergent]
                 actions = (
-                    [f"classified {len(unresolved)} divergent lane(s); none can be resolved without a choice."]
-                    if unresolved
+                    [f"classified {len(still_divergent)} divergent lane(s); none can be resolved without a choice."]
+                    if still_divergent
                     else ["nothing to do."]
                 )
             write_undo_checkpoint(session.repo_root, op_before, "reconcile")
-            state = capture_state(session)
             # Repair the colocated checkout LAST (HEAD + index), as every mutating intent does via
             # `_export_colocated_git`. An import can move trunk well past git's HEAD, and until this
             # runs a bare `git status` shows the whole delta as staged — the repo looks wrecked to
@@ -320,15 +166,20 @@ def do_reconcile(session: Session, abandon_: bool, keep: KeepSide | None = None)
     # Name the genuine forks explicitly. The whole devman cost was a report that said "divergent,
     # 5068 insertions" and never said WHICH content was at risk — the lane's diff against trunk is
     # carried identically by both sides, so it measures the lane, not the disagreement. Print the
-    # relation, both commit ids, and the paths that actually differ.
-    for twin in unresolved:
-        paths = ", ".join(twin.paths[:8]) + (" …" if len(twin.paths) > 8 else "")
-        notes.append(
-            f"lane '{twin.lane}' and {twin.remote}/{twin.lane} have genuinely forked "
-            f"(local {twin.local[:12]}, forge {twin.forge[:12]}); {len(twin.paths)} path(s) differ"
-            f"{': ' + paths if paths else ''} — neither side contains the other, so `reconcile` will "
-            f"not choose. Run {REGISTRY['lane-divergent'].manual}."
-        )
+    # relation, both commit ids, and the paths that actually differ. One fresh, filtered re-survey
+    # (issue 44 stage 3e.2/3.13.3) tests the real postcondition — the twin is gone — rather than a
+    # proxy read taken once per twin inside the repair loop.
+    divergent_lanes = sorted(lane.name for lane in state.lanes if lane.divergent)
+    if divergent_lanes:
+        twins = find_divergent_lane_twins(session, session.fresh_view(), trunk, lanes=divergent_lanes)
+        for twin in twins:
+            paths = ", ".join(twin.paths[:8]) + (" …" if len(twin.paths) > 8 else "")
+            notes.append(
+                f"lane '{twin.lane}' and {twin.remote}/{twin.lane} have genuinely forked "
+                f"(local {twin.local[:12]}, forge {twin.forge[:12]}); {len(twin.paths)} path(s) differ"
+                f"{': ' + paths if paths else ''} — neither side contains the other, so `reconcile` will "
+                f"not choose. Run {REGISTRY['lane-divergent'].manual}."
+            )
     return IntentResult(
         intent="reconcile",
         outcome="RECONCILED" if canonical else "PARTIAL",

@@ -241,7 +241,7 @@ def test_capture_state_is_not_called_once_per_twin(tmp_path: Path, monkeypatch):
 
     result = do_reconcile(_sess(work), abandon_=False)
     assert result.outcome == "RECONCILED", (result.messages, result.notes)
-    # Exactly one — the final G0 check — never one per twin. (The early-return gate's own
-    # `capture_state` call is skipped entirely here since the raw pre-heal survey already found
-    # work to do.)
-    assert calls == 1, calls
+    # Exactly two — one for the pre-repair `Survey` the stage 3f gate takes (replacing the old
+    # raw multi-survey gate; guide §3.13.5 step 2) and one for the final G0 check — never one per
+    # twin, which is the invariant this test exists to pin.
+    assert calls == 2, calls
