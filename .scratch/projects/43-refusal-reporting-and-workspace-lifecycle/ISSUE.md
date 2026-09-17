@@ -27,7 +27,7 @@ workspace lifecycles do not match what it tells the operator.**
 | D1 | A refusal is not rendered as a gitman report, so any output filter loses it entirely | **high** |
 | D2 | `start --workspace` **deletes the target directory** when it refuses on a duplicate name | **high** |
 | D3 | A jj workspace registration outlives its lane, permanently burning the lane name, and no gitman verb forgets it | **high** |
-| D4 | `start <T/leaf>` does **not** adopt a dirty unbookmarked `@`, though `status` says it will | **high** |
+| D4 | ~~`start <T/leaf>` does **not** adopt a dirty unbookmarked `@`, though `status` says it will~~ **FIXED (2026-09-17, project 46 S4).** `_adoptable_work` now tests descent from the ACTUAL intended base (trunk or the parent lane's head) with `is_ancestor`, and `do_start` bookmarks the dirty `@` itself instead of creating a fresh sibling change beside it. A dirty `@` that is NOT based on the intended base now refuses with a reason (exit 1) rather than stranding the work. | **high** |
 | D5 | `land` folds a change with an empty description without warning | medium |
 | D6 | ~~On fractal lanes the git ref desyncs after essentially every write, so `reconcile` becomes a required prefix to every `save`~~ **FIXED (2026-09-17, project 46 S3, issue 44 stage 4f).** Took the first "what I expected" option below: `+` (not `/`) is now the lane-path separator everywhere, a legal git ref character with no parent/child collision — see §7. | medium |
 

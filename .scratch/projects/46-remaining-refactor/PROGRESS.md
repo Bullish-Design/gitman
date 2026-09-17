@@ -174,3 +174,61 @@ clean.
 
 **Next:** S4 (working copy provenance) — large, high risk. Do not run concurrently with S3 (moot
 now that S3 is landed) — S6 (verb consolidation) is the one that must wait for S3, which it now has.
+
+## S4 — done (landed, pushed)
+
+`GUIDE_S4_working_copy_provenance.md`, closes issues 38, 43 D4 and (in reduced form) 42-G7. This is
+the stage that adds a new source of truth under `.gitman/`; the three D-C decisions are recorded
+here.
+
+**D-C1 — identity.** `GITMAN_SESSION` if set, else `ws.name` (the workspace name). Recorded and
+reported as `RepoState.session_identity`, because a provenance claim under the wrong identity is
+worse than none. Coarse by design: two agents in ONE working copy share an identity unless a
+co-tenant opts into `GITMAN_SESSION` — the issue-38 case, and the reason the record is advisory.
+
+**D-C2 — advisory, never authoritative.** Read the record; if absent/unreadable, `foreign_paths` is
+empty and `start` says "provenance unavailable" and behaves exactly as before. It cannot tell a
+path this session dirtied between two commands from one a co-tenant dirtied, so it shapes the
+report and the strict mode, not a silent refusal:
+- default `start`: **adopts `@`** (jj can only adopt the whole change) and reports
+  `N path(s) this session, M not written by it` plus a note naming the foreign paths.
+- `--adopt-all`: the explicit spelling of the default (there is no narrower adoption at the jj
+  level).
+- `--adopt-mine`: refuses (exit 1) when foreign paths are present, naming `gitman split` as the
+  carve-out. Deliberately does NOT auto-split — parking a co-tenant's work needs a lane name the
+  operator should choose.
+- `save` reports (names the foreign paths in its note) but never restricts; the guide's own
+  instruction, since jj already snapshotted `@` and un-snapshotting is not a thing.
+
+**D-C3 — write timing.** Every command that snapshots. The single choke point is `capture_state`
+(the one `fresh_view()` caller every read and every intent funnels through), so the record is
+written there, with the baseline read ONCE per `Session` and cached — otherwise the precheck's
+snapshot would "absorb" this session's own paths before the postcondition's report could name
+foreign ones. `status` writes too (it snapshots); `doctor`/`log` do not (they never snapshot).
+
+**Pruning.** By age (`FINGERPRINT_MAX_AGE = 7 days`), not by op-id: op-id pruning needs a full
+op-log read on every command, which costs more than a fixed window buys. Atomic write (temp +
+`os.replace`): the repo lock serialises mutating intents but `status` records without it, so two
+concurrent writers can lose a record but never corrupt the file. An unparseable file reads as
+absent.
+
+**Issue 43 D4, and a latent bug in the old guard.** The guide's shape reproduced (as a misleading
+`reverted: … belong to no lane` postcondition failure, not an empty lane — the postcondition was
+added after the issue). `_adoptable_work` now tests descent from the ACTUAL intended base (trunk or
+the name-parent lane's head) and `do_start` bookmarks the dirty `@` itself. **The old check was
+wrong in two ways**: it hard-coded trunk, so a post-`land` `@` parked on a fresh child of its
+parent lane was never adopted; and `@ & (base..)` is not "descends from base" — a bare `base..` is
+"everything that is not an ancestor of base", which also matches a SIBLING of base. Replaced with
+`view.is_ancestor(base_id, @)` (plus a `!=` guard). A dirty unbookmarked `@` that is genuinely not
+based on the target now refuses with a reason rather than stranding.
+
+**Tests:** `tests/test_issue38_provenance.py` (10 new) — store round-trip + unparseable-reads-as-
+absent, age pruning, `.gitman/session-paths.json` never snapshotted, two simulated sessions naming
+foreign paths, the `start` report counts, the no-fingerprint degradation note, `--adopt-mine`
+refusal, `save`'s foreign note, the exact 43-D4 post-land fractal adopt, and the not-based-on-base
+refusal. Suite: 411 passed (401 after S3 + 10 new). `ruff check` clean.
+
+**Not done, deliberately:** issue 38's W2 (`save --paths`) — see issue 38's status note; the report
+points at the existing `split`. W5 (verify scoped to the lane) stays testee's problem.
+
+**Next:** S6 (verb consolidation) — S3 has landed, so it is unblocked.

@@ -20,6 +20,7 @@ from pyjutsu import PyjutsuError, RepoView, Workspace
 
 from gitman.config import GitmanConfig
 from gitman.core import GitmanError, resolve_repo_root
+from gitman.provenance import dirty_paths, read_fingerprint, session_identity, write_fingerprint
 
 
 def _shared_root(ws: Workspace, start: Path) -> Path:
@@ -50,12 +51,18 @@ def _shared_root(ws: Workspace, start: Path) -> Path:
 class Session:
     """Per-invocation context: workspace + config + shared repo root + snapshot/view policy."""
 
-    __slots__ = ("ws", "config", "repo_root")
+    __slots__ = ("ws", "config", "repo_root", "_identity", "_baseline_paths", "_baseline_available")
 
     def __init__(self, ws: Workspace, config: GitmanConfig, repo_root: Path) -> None:
         self.ws = ws
         self.config = config
         self.repo_root = repo_root
+        # The fingerprint baseline is read once per invocation and cached, so every
+        # `capture_state` call in this command measures foreign paths against the SAME record
+        # (the one the previous command left). Writing is separate (`record_paths`).
+        self._identity: str | None = None
+        self._baseline_paths: frozenset[str] | None = None
+        self._baseline_available: bool = False
 
     @classmethod
     def load(cls, repo: Path | str | None, config: GitmanConfig | None = None) -> Session:
@@ -135,6 +142,42 @@ class Session:
             self.ws.git_export()
         except Exception:  # noqa: BLE001 - best-effort by design; see the docstring
             pass
+
+    @property
+    def identity(self) -> str:
+        """The session identity a fingerprint is keyed by (D-C1) — `GITMAN_SESSION` or `ws.name`."""
+        if self._identity is None:
+            self._identity = session_identity(self.ws)
+        return self._identity
+
+    def path_provenance(self, view: RepoView) -> tuple[list[str], list[str]]:
+        """`(dirty, foreign)` paths in `@` for this invocation (issues 38/43 D4).
+
+        `dirty` is every path `@` changes against its parent; `foreign` is the subset absent from
+        this session's last fingerprint. `foreign` is EMPTY when the baseline is unavailable
+        (D-C2's degradation: first run in an existing repo, or an unreadable record) — the caller
+        must say provenance was unavailable rather than claim the paths are this session's.
+        """
+        paths = dirty_paths(view)
+        baseline, available = self._path_baseline()
+        foreign = [p for p in paths if p not in baseline] if available else []
+        return paths, foreign
+
+    def provenance_available(self) -> bool:
+        """Whether a usable fingerprint exists for this identity."""
+        self._path_baseline()
+        return self._baseline_available
+
+    def record_paths(self, paths: list[str]) -> None:
+        """Record the current dirty set as this session's fingerprint (D-C3: after every snapshot)."""
+        write_fingerprint(self.repo_root, self.identity, paths, self.ws.head_operation())
+
+    def _path_baseline(self) -> tuple[frozenset[str], bool]:
+        if self._baseline_paths is None:
+            fingerprint = read_fingerprint(self.repo_root, self.identity)
+            self._baseline_available = fingerprint is not None
+            self._baseline_paths = fingerprint.paths if fingerprint else frozenset()
+        return self._baseline_paths, self._baseline_available
 
     def is_stale(self) -> bool:
         """Whether this workspace's on-disk `@` lags the repo's current `@` (plan §8 / decision #8)."""

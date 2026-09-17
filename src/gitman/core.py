@@ -413,12 +413,22 @@ def _resolve_base(session: Session, trunk: str, name: str, onto: str | None) -> 
     return parent, view.resolve(parent).commit_id
 
 
-def do_start(session: Session, name: str, workspace: bool, onto: str | None = None):
+def do_start(
+    session: Session,
+    name: str,
+    workspace: bool,
+    onto: str | None = None,
+    *,
+    adopt_all: bool = False,
+    adopt_mine: bool = False,
+):
     from gitman.invariants import canonical_tx
     from gitman.lanes import current_lane, ensure_unique, lane_has_content
     from gitman.models import IntentResult
     from gitman.state import capture_state
 
+    if adopt_all and adopt_mine:
+        raise GitmanError("`--adopt-all` and `--adopt-mine` are mutually exclusive.", exit_code=3)
     trunk = require_trunk(session.config)
     notes: list[str] = []
     messages: list[str] = []
@@ -431,7 +441,40 @@ def do_start(session: Session, name: str, workspace: bool, onto: str | None = No
             # `T`. `_resolve_base` returns the parent + its head (stacked) or (None, None) for a trunk
             # root, and enforces the D2 refusals (non-live parent, bare-child+`--onto`, disagreement).
             base_name, base_commit = _resolve_base(session, trunk, name, onto)
-            if base_name is not None:
+            base_ref = base_commit if base_name is not None else trunk
+            # Issue 38 provenance: whose work is in @? Advisory (D-C2) — it shapes the report and
+            # `--adopt-mine`, never a silent adoption.
+            dirty, foreign = session.path_provenance(session.view())
+            if foreign and adopt_mine and not adopt_all:
+                shown = ", ".join(foreign[:8]) + (" …" if len(foreign) > 8 else "")
+                raise GitmanError(
+                    f"@ holds {len(foreign)} path(s) this session ({session.identity}) did not write: "
+                    f"{shown} — carve theirs out first (`gitman split --paths <theirs> --into "
+                    f"parked/other`), or take them deliberately with `gitman start --adopt-all {name}`.",
+                    exit_code=1,
+                )
+            adopted = _adoptable_work(session, base_ref)
+            if not adopted and _unbookmarked_dirty(session):
+                # Issue 43 D4: @ holds uncommitted work that is NOT based on the intended base.
+                # Never create an empty lane beside it (the old bug) and never strand it — refuse
+                # and name the fix, the way the `status` note promises.
+                where = f"lane '{base_name}'" if base_name is not None else f"trunk '{trunk}'"
+                raise GitmanError(
+                    f"@ holds uncommitted work that is not based on {where} — save/land it first, "
+                    f"or start a lane on its own base (`gitman start <flat-name>` adopts it onto {trunk}).",
+                    exit_code=1,
+                )
+            if adopted:
+                # Issue 43 D4 fix: @ is already a proper descendant of the intended base, so the
+                # work IS the lane's content — bookmark @ itself. The old path always created a
+                # fresh child of the base here, which orphaned the work and left an empty lane
+                # beside it (the post-land fractal shape the issue reports).
+                tx.create_bookmark(name, "@")
+                if base_name is not None:
+                    messages.append(f"adopted in-progress work into lane '{name}' stacked on '{base_name}'.")
+                else:
+                    messages.append(f"adopted in-progress work into lane '{name}' on {trunk}.")
+            elif base_name is not None:
                 # Base the new lane on <parent>'s head instead of trunk (the stacking atom). The
                 # issue-17 guardrail below is for the *trunk* root path only — when stacking you
                 # deliberately build on the un-landed parent, and the base supersedes the dirty-`@`
@@ -439,11 +482,6 @@ def do_start(session: Session, name: str, workspace: bool, onto: str | None = No
                 tx.new(base_commit)
                 tx.create_bookmark(name, "@")
                 messages.append(f"lane '{name}' stacked on '{base_name}'.")
-            elif _adoptable_work(session, trunk):
-                # In-progress edits already sit on a non-empty, unbookmarked change descended
-                # from trunk — adopt that change as the lane instead of orphaning it.
-                tx.create_bookmark(name, "@")
-                messages.append(f"adopted in-progress work into lane '{name}' on {trunk}.")
             else:
                 # Issue-17 guardrail: a plain (flat-name) `start` bases on trunk. If `@` is currently on
                 # a named lane that holds saved, un-landed work, that lane's tree is NOT in the new base,
@@ -464,6 +502,24 @@ def do_start(session: Session, name: str, workspace: bool, onto: str | None = No
                 tx.new(trunk)
                 tx.create_bookmark(name, "@")
                 messages.append(f"lane '{name}' created on {trunk}.")
+            # Issue 38 W3: never adopt silently. Report the provenance of what the lane took.
+            if adopted:
+                if not session.provenance_available():
+                    notes.append(
+                        "path provenance unavailable (no fingerprint for this session yet) — "
+                        "every dirty path in @ is treated as this session's."
+                    )
+                elif foreign:
+                    shown = ", ".join(foreign[:8]) + (" …" if len(foreign) > 8 else "")
+                    notes.append(
+                        f"{len(foreign)} path(s) in @ were not written by this session "
+                        f"({session.identity}): {shown} — another session may be working here; "
+                        f"`gitman split --paths <theirs> --into parked/other` carves them out."
+                    )
+                    messages.append(
+                        f"{len(dirty) - len(foreign)} path(s) this session, "
+                        f"{len(foreign)} not written by it."
+                    )
     return IntentResult(
         intent="start",
         outcome="STARTED",
@@ -565,14 +621,29 @@ def _start_workspace(
     notes.extend(canon.notes)
 
 
-def _adoptable_work(session: Session, trunk: str) -> bool:
-    """True if @ is in-progress work to fold into a new lane: non-empty, no bookmark, and a
-    proper descendant of trunk (i.e. you edited before running `start`). The precheck already
-    snapshotted, so the frozen view reflects on-disk edits."""
+def _unbookmarked_dirty(session: Session) -> bool:
+    """True if @ is non-empty work with no lane bookmark — edits not yet named as a lane."""
     wc = session.view().working_copy()
-    if wc.is_empty or wc.bookmarks:
+    return not wc.is_empty and not wc.bookmarks
+
+
+def _adoptable_work(session: Session, base_ref: str) -> bool:
+    """True if @ is in-progress work to fold into a new lane: non-empty, no bookmark, and a
+    proper descendant of the intended base (trunk, or a parent lane's head). The precheck already
+    snapshotted, so the frozen view reflects on-disk edits. Issue 43 D4 generalized this from
+    trunk-only to the actual base — a post-`land` `@` sitting on a fresh child of its parent lane
+    is adopted instead of orphaned.
+
+    Uses `is_ancestor`, NOT `@ & (base..)`: a bare `base..` is "everything that is not an ancestor
+    of base", which also matches a SIBLING of base — the exact case (`start T+other` with loose
+    work parked on trunk beside a live `T`) that must refuse, not adopt.
+    """
+    if not _unbookmarked_dirty(session):
         return False
-    return bool(session.view().log(f"@ & ({trunk}..)"))
+    view = session.view()
+    wc = view.working_copy()
+    base_id = view.resolve(base_ref).commit_id
+    return wc.commit_id != base_id and view.is_ancestor(base_id, wc.commit_id)
 
 
 def do_subtask(session: Session, name: str, workspace: bool = False):
@@ -971,11 +1042,23 @@ def do_save(session: Session, message: str | None):
         )
     with canonical_tx(session, "save") as tx:
         tx.describe("@", message)
+        # Issue 38 W2 / S4 step 6: `save` cannot narrow what jj already snapshotted, so it reports
+        # rather than restricts. A co-tenant's paths in the same change get named here.
+        _dirty, foreign = session.path_provenance(session.view())
+    notes: list[str] = []
+    if foreign:
+        shown = ", ".join(foreign[:8]) + (" …" if len(foreign) > 8 else "")
+        notes.append(
+            f"this change also holds {len(foreign)} path(s) not written by this session "
+            f"({session.identity}): {shown} — `gitman split --paths <theirs> --into parked/other` "
+            f"carves them out; `save` cannot (jj already snapshotted @)."
+        )
     return IntentResult(
         intent="save",
         outcome="SAVED",
         lane=lane,
         messages=[f'described: "{message}"'],
+        notes=notes,
         undo_command="gitman undo",
         state=capture_state(session),
     )

@@ -1081,6 +1081,12 @@ def capture_state(session: Session) -> RepoState:
 
     anomalies.sort(key=lambda a: ANOMALY_ORDER.index(a.kind))
 
+    # Issue 38 / 44 G3 (S4): whose work is in `@`? Compare the dirty set now against this
+    # session's fingerprint from the previous command. Advisory (D-C2) — and recorded here
+    # because `capture_state` is the one snapshot every command funnels through (D-C3).
+    dirty, foreign = session.path_provenance(view)
+    session.record_paths(dirty)
+
     return RepoState(
         repo_root=repo_root,
         colocated_git=_is_colocated(repo_root),
@@ -1091,6 +1097,8 @@ def capture_state(session: Session) -> RepoState:
         recent_ops=recent_ops,
         notes=notes,
         anomalies=anomalies,
+        foreign_paths=foreign,
+        session_identity=session.identity,
     )
 
 

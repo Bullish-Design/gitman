@@ -150,6 +150,18 @@ def render_status(state: RepoState) -> str:
         lines.append(_lane_line(lane, state.current_lane))
     for note in state.notes:
         lines.append(f"note: {note}")
+    # Issue 38 / 44 G3 (S4): the field, rendered — never re-derived here. A co-tenant's work is a
+    # real condition on a CANONICAL repo, so it is not an anomaly; it is a warning block.
+    if state.foreign_paths:
+        ident = state.session_identity or "this session"
+        shown = state.foreign_paths[:8]
+        lines.append("")
+        lines.append(f"!! {len(state.foreign_paths)} path(s) in @ were not written by this session ({ident}):")
+        lines.extend(f"     {path}" for path in shown)
+        if len(state.foreign_paths) > len(shown):
+            lines.append(f"     … and {len(state.foreign_paths) - len(shown)} more")
+        lines.append("   Another session may be working here. `gitman save` describes ALL of it —")
+        lines.append("   carve theirs out first: `gitman split --paths <theirs> --into parked/other`.")
     if not state.lanes:
         lines.append("No lanes yet — `gitman start <name>` to begin.")
 

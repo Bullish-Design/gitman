@@ -13,6 +13,15 @@
 > parallel sessions corrupting the *trunk bookmark*. This is the earlier, quieter
 > failure: parallel sessions corrupting *each other's commits*.
 
+> **Status (2026-09-17, project 46 S4): SHIPPED.** gitman now records the set of paths dirty in `@`
+> at the end of every command, keyed by session identity (`GITMAN_SESSION` or the workspace name,
+> `.gitman/session-paths.json`), and reports a path dirty now that the last record does not name as
+> `RepoState.foreign_paths` — `status` renders it, `save` names it, and `start` reports what it
+> adopted versus what is not this session's (`--adopt-mine` refuses on foreign paths). The record is
+> advisory by design; see project 46 S4's D-C1/D-C2/D-C3 in `46-remaining-refactor/PROGRESS.md`.
+> W2 (`save --paths`) was deliberately not built: jj already snapshotted `@`, so `save` reports
+> rather than restricts, and the report points at the existing `split` for the carve-out.
+
 ---
 
 # ⚑ READ PROJECT 37 BEFORE IMPLEMENTING ANY OF THIS

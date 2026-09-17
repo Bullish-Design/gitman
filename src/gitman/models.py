@@ -197,6 +197,12 @@ class RepoState(BaseModel):
     conflicts: list[Conflict] = Field(default_factory=list)
     recent_ops: list[Op] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)  # honesty notes ("not done" / staleness)
+    # Issue 38 / 44 G3 (S4): paths dirty in `@` that this session's fingerprint does not name —
+    # a co-tenant's work, or an edit made between two commands. Advisory (D-C2). Empty when the
+    # fingerprint is unavailable; `session_identity` names whose record was consulted so the
+    # report can say so plainly.
+    foreign_paths: list[str] = Field(default_factory=list)
+    session_identity: str | None = None
     # The one detect/repair table (issue 44 stage 3a): `capture_state` is the sole author, in a
     # fixed prose order (see `gitman.anomalies.ANOMALY_ORDER`). `canonical`/`off_canonical` below
     # are DERIVED from this list, never set directly, so there is exactly one authoring site.

@@ -218,13 +218,34 @@ def start(
         str | None,
         typer.Option("--onto", help="Optional assertion of the base lane (must equal the name-parent)."),
     ] = None,
+    adopt_all: Annotated[
+        bool,
+        typer.Option(
+            "--adopt-all",
+            help="Adopt every dirty path in @, including paths this session did not write.",
+        ),
+    ] = False,
+    adopt_mine: Annotated[
+        bool,
+        typer.Option(
+            "--adopt-mine",
+            help="Adopt only paths this session wrote; refuse if a co-tenant's paths are present.",
+        ),
+    ] = False,
 ) -> None:
     """Create a lane: a `/`-path name (`T/api`) stacks on its name-parent `T`; a flat name roots on trunk."""
     from gitman.core import do_start
     from gitman.lanes import normalise_lane_name
 
     _finish_intent(
-        do_start(_session(), normalise_lane_name(name), workspace, normalise_lane_name(onto) if onto else onto)
+        do_start(
+            _session(),
+            normalise_lane_name(name),
+            workspace,
+            normalise_lane_name(onto) if onto else onto,
+            adopt_all=adopt_all,
+            adopt_mine=adopt_mine,
+        )
     )
 
 
