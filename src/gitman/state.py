@@ -524,6 +524,9 @@ def colocated_head_lag(view: RepoView, ws: Workspace) -> tuple[str, str, int | N
     record (issue 44 S9) — jj's own memory of the colocated git state disagreeing with the actual
     on-disk `.git/HEAD`, not merely lagging `@`.
 
+    Returns `None` when `HEAD` IS `@`'s parent: jj parks it there on every `@` move, so that is the
+    healthy shape, whether or not a bookmark names the commit (issue 47).
+
     **Not** "HEAD != `@`'s parent" — that comparison alone is nearly always true under ordinary
     operation: `HEAD`/the on-disk index only move via `sync_colocated` (issue 44 stage 4d: a
     publish/push-only side effect), so between two publishes `HEAD` legitimately lags every local
@@ -555,6 +558,15 @@ def colocated_head_lag(view: RepoView, ws: Workspace) -> tuple[str, str, int | N
         if not parent_ids:
             return None
         parent_oid = parent_ids[0]
+        if head.oid == parent_oid:
+            # HEAD sitting exactly on `@`'s parent is the HEALTHY colocated shape, not staleness.
+            # jj parks HEAD there whenever `@` moves — the docstring's old premise ("HEAD only
+            # moves via `sync_colocated`") missed that writer. So an `@` on a commit no bookmark
+            # names (one behind trunk, say) dragged HEAD off every `<name>@git` target and fired
+            # this check on a healthy repo, with a "(0 commit(s) behind)" message naming one
+            # commit twice — and `repair` could never clear it, because `git_import` +
+            # `sync_colocated` do not move HEAD off `@`'s parent (issue 47).
+            return None
         if view.is_ancestor(head.oid, parent_oid):
             return head.oid, parent_oid, len(view.log(f"{head.oid}..{parent_oid}"))
         return head.oid, parent_oid, None

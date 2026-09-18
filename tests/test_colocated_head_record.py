@@ -28,7 +28,7 @@ from gitman.doctor import FAIL, OK, WARN, run_doctor
 from gitman.init import do_init
 from gitman.repair import do_reconcile
 from gitman.session import Session
-from gitman.state import capture_state, colocated_record_stale, orphaned_git_head
+from gitman.state import capture_state, colocated_head_lag, colocated_record_stale, orphaned_git_head
 
 
 def _repo(d: Path) -> Workspace:
@@ -247,3 +247,24 @@ def test_a_git_only_ref_move_is_not_reported_as_a_stale_record(tmp_path: Path):
     kinds = {(a.kind, a.subject.name) for a in capture_state(session).anomalies}
     assert ("ref-mismatched", "main") in kinds  # the correct anomaly for this shape
     assert ("colocated-record-stale", "main") not in kinds  # not double-reported
+
+
+def test_head_at_working_copy_parent_is_never_stale(tmp_path: Path):
+    """Issue 47: `HEAD` on `@`'s parent is healthy, even when no bookmark names that commit.
+
+    jj parks `HEAD` at `@`'s parent on every `@` move. So an `@` that sits off trunk — one behind
+    it, or on any unbookmarked change — drags `HEAD` away from every `<name>@git` target. That is
+    not staleness, and `repair` cannot change it: `git_import` + `sync_colocated` never move `HEAD`
+    off `@`'s parent, so a report here would re-fire forever.
+    """
+    d = tmp_path
+    ws = _repo(d)
+    session = Session.load(d)
+    view = session.view()
+    head = ws.git.head()
+    parent_ids = view.working_copy().parent_ids
+    assert head is not None and parent_ids and head.oid == parent_ids[0], "fixture: HEAD tracks @"
+
+    assert colocated_head_lag(view, ws) is None
+    kinds = {a.kind for a in capture_state(Session.load(d)).anomalies}
+    assert "colocated-record-stale" not in kinds
