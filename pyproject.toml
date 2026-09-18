@@ -28,6 +28,9 @@ github = [
 [dependency-groups]
 dev = [
   "pytest>=7.0",
+  # Runs the suite across all cores. The suite is process-parallel-safe: every test builds
+  # its own repo under `tmp_path`, and gitman's repo lock is keyed per repo root.
+  "pytest-xdist>=3.6",
   "ruff>=0.5.0",
 ]
 
@@ -72,6 +75,9 @@ pyjutsu = { url = "https://github.com/Bullish-Design/Pyjutsu/releases/download/v
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Run the suite across all cores by default — it is process-parallel-safe (see
+# tests/conftest.py, which also sizes `auto`). Pass `-n0` to run serially.
+addopts = ["-n", "auto"]
 
 [tool.ruff]
 line-length = 120
