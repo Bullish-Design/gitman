@@ -1,1 +1,24 @@
 trunk = "main"
+
+# Verify hook — the gate before `publish`, and before `release` by inheritance.
+#
+# Why it is on: `release` creates and pushes a tag, and gitman's own report says a pushed tag is
+# one-way. Without a gate, tagging a red suite is one forgotten command away, and it cannot be
+# cleanly undone. The gate must not depend on whoever is driving remembering to run the suite.
+#
+# Why it is on *now*: project 48 took the suite from ~145 s to ~21 s. A gate costing two and a
+# half minutes on every publish is one people route around; at twenty seconds it is not.
+# `pytest -q` picks up `-n auto` from [tool.pytest.ini_options] addopts, so this is the full
+# suite in parallel.
+#
+# One command + args, no shell — `core.run_verify` calls `subprocess.run` directly, so
+# `ruff && pytest` is not expressible here. Tests are the half that protects a tag; `ruff`
+# already runs in the dev loop and in the `gitman:lint` task.
+[publish]
+verify = ["pytest", "-q"]
+verify_timeout = 300
+on_fail = "block"
+
+# [release].verify is deliberately omitted: omitting it inherits [publish].verify, so the gate
+# is configured in exactly one place. Setting it to [] here would silently disable it for the
+# one verb whose mistake is hardest to reverse.
