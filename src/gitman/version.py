@@ -93,19 +93,49 @@ def write_version(repo_root: Path, new: str) -> None:
 
 
 def bump_change_on_lane(session: Session, lane: str, new: str, op_desc: str = "gitman:version") -> None:
-    """Add a dedicated 'Bump version to <new>' change on top of @ and advance `lane` to it.
+    """Put a 'Bump version to <new>' change on `lane` and advance the bookmark to it.
 
-    Three ops (new → snapshot the written files → describe+set_bookmark); call inside a
-    canonical_guard body (multi-op). Both files uv rewrites land in the one change, so the
-    manifest and the lock can never be committed apart.
+    Call inside a canonical_guard body (multi-op). Both files uv rewrites land in the ONE change,
+    so the manifest and the lock can never be committed apart.
+
+    That guarantee is about isolation from *other work*, so a dedicated change is only needed when
+    `@` holds work to be isolated from. A `@` that is empty and undescribed — exactly what `gitman
+    start` leaves — holds none, and the bump is written straight into it. Creating a change there
+    manufactured a contentless, messageless commit that `land` then folded onto trunk; `264eedd`
+    and `923c11d`, beside the v0.9.1 and v0.9.2 tags, are two of them.
+
+    The bump keeps its OWN change rather than being written into an empty `@`. `tx.new` also
+    supplies a fresh change id, and that is load-bearing: `bump → undo → bump` at the same level
+    reproduces identical content on the identical change, and jj's backend refuses the duplicate
+    ("Newly-created commit ... already exists"). `test_bump_undo_bump_keeps_the_export_working`
+    pins that sequence.
+
+    So the placeholder is removed AFTER the fact instead: if `@` was empty and undescribed before
+    the bump — what `gitman start` leaves — it is abandoned once the bump change exists, and the
+    bump rebases onto its parent. Leaving it produced a contentless, messageless commit that `land`
+    folded onto trunk; `264eedd` and `923c11d`, beside the v0.9.1 and v0.9.2 tags, are two of them.
+
+    Abandoning it cannot strand the lane: every caller resolves `lane` through
+    `lanes.require_current_lane`, which reads the bookmark sitting ON `@`, so the placeholder is
+    the lane head and the bookmark has already moved to the bump. The read goes through
+    `fresh_view()` so an unsnapshotted edit is never mistaken for an empty `@`.
     """
+    head = session.fresh_view().working_copy()
+    # Empty AND undescribed = a placeholder, not work. Anything else is someone's change.
+    placeholder = head.change_id if (head.is_empty and not head.description.strip()) else None
+
     with session.ws.transaction(op_desc, auto_snapshot=False) as tx:
-        tx.new("@")  # dedicated empty change on the lane head
+        tx.new("@")  # dedicated change: the version files never mix with other work
     write_version(session.repo_root, new)  # writes pyproject.toml + uv.lock on the new @
     session.ws.snapshot()  # own op: fold both files into @
     with session.ws.transaction(op_desc, auto_snapshot=False) as tx:
         tx.describe("@", f"Bump version to {new}")
         tx.set_bookmark(lane, "@")  # lane head = the bump change
+    if placeholder is not None:
+        # Its own op, after the bookmark has moved: abandoning rebases `@` (the bump) onto the
+        # placeholder's parent, and the lane bookmark follows the change id.
+        with session.ws.transaction(op_desc, auto_snapshot=False) as tx:
+            tx.abandon(placeholder)
 
 
 def _changed_paths(session: Session, revset: str) -> list[str]:

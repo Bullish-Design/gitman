@@ -109,7 +109,13 @@ def test_version_show_and_bump(tmp_path: Path):
     assert res.outcome == "BUMPED"
     assert read_version(tmp_path) == "1.3.0"
     state = capture_state(_isess(tmp_path))
-    assert state.lanes[0].change_count == 2
+    # ONE change, not two. This asserted 2 until the bump stopped creating a dedicated change on
+    # an already-empty, undescribed `@`: the surplus was a contentless, messageless commit that
+    # `land` folded onto trunk (`264eedd`/`923c11d`, beside the v0.9.1/v0.9.2 tags). The lane now
+    # holds exactly the bump. `test_version_bump_change_shape.py` covers both branches.
+    assert state.lanes[0].change_count == 1
+    assert state.lanes[0].head.description.startswith("Bump version to 1.3.0")
+    assert not state.lanes[0].head.empty
 
     # The G2 guarantee: uv rewrites both files and both land in the one bump change. The
     # report names what was actually committed, so it cannot claim a lock it did not capture.
