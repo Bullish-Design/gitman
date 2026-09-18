@@ -16,30 +16,20 @@ from gitman.core import (
 )
 from gitman.session import Session
 from gitman.state import capture_state
+from tests.repofixtures import build_remote, session
 
 CFG = GitmanConfig(trunk="main")
 
 
-def _sess(d: Path) -> Session:
-    return Session.load(d, CFG)
+_sess = session
 
 
 # ── catchup tests (S4) ────────────────────────────────────────────────────────────
 
 
 def _with_remote(tmp_path: Path) -> tuple[Path, Path]:
-    """A colocated work repo on `main`, pushed to a bare `origin`. Returns (work, remote_path)."""
-    remote = tmp_path / "remote.git"
-    subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True)
-    work = tmp_path / "work"
-    work.mkdir()
-    ws = Workspace.init(work, colocate=True)
-    (work / "f.txt").write_text("base\n")
-    with ws.transaction("initial") as tx:
-        tx.describe("@", "initial")
-        tx.create_bookmark("main", "@")
-    ws.add_remote("origin", str(remote))
-    ws.git_push("origin", "main", allow_new=True)
+    """A colocated work repo on `main`, pushed to a bare `origin`. Returns (work, remote)."""
+    work, remote, ws = build_remote(tmp_path)
     return work, remote
 
 

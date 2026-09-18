@@ -8,32 +8,24 @@ is needed. Covers squash-collapses-range, reorder, the cross-base refusal, and t
 
 from __future__ import annotations
 
+from functools import partial
 from pathlib import Path
 
 import pytest
-from pyjutsu import Workspace
 
 from gitman.config import GitmanConfig
 from gitman.core import GitmanError, do_save, do_shape, do_start, do_undo
 from gitman.repair import do_reconcile
-from gitman.session import Session
 from gitman.state import capture_state
+from tests.repofixtures import build_repo, session
 
 CFG = GitmanConfig(trunk="main")
 
 
-def _init(d: Path) -> Workspace:
-    ws = Workspace.init(d, colocate=True)
-    (d / "base.txt").write_text("base\n")
-    with ws.transaction("initial") as tx:
-        tx.describe("@", "initial")
-        tx.create_bookmark("main", "@")
-        tx.new(["main"])
-    return ws
+_init = partial(build_repo, child=True, path="base.txt")
 
 
-def _sess(d: Path) -> Session:
-    return Session.load(d, CFG)
+_sess = session
 
 
 def _stack(d: Path) -> None:

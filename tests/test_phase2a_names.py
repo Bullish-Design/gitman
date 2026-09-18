@@ -27,6 +27,7 @@ from gitman.core import GitmanError, do_save, do_start, do_subtask, do_switch
 from gitman.lanes import name_parent, normalise_lane_name, validate_lane_name
 from gitman.render import render_status
 from gitman.state import capture_state
+from tests.repofixtures import build_repo
 
 CFG = GitmanConfig(trunk="main")
 
@@ -37,13 +38,7 @@ def _sess(d: Path):
     return Session.load(d, CFG)
 
 
-def _init(d: Path) -> Workspace:
-    ws = Workspace.init(d, colocate=True)
-    (d / "f.txt").write_text("base\n")
-    with ws.transaction("initial") as tx:
-        tx.describe("@", "initial")
-        tx.create_bookmark("main", "@")
-    return ws
+_init = build_repo
 
 
 def _lane(state, name):

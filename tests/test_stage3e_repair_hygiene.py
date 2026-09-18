@@ -18,16 +18,15 @@ from pyjutsu import Workspace
 from gitman.config import GitmanConfig
 from gitman.lanes import adopted_lane_name
 from gitman.repair import do_reconcile
-from gitman.session import Session
 from gitman.state import find_divergent_lane_twins
+from tests.repofixtures import build_remote, session
 
 CFG = GitmanConfig(trunk="main")
 
 LANE = "feat"
 
 
-def _sess(d: Path) -> Session:
-    return Session.load(d, CFG)
+_sess = session
 
 
 def _publish_then_amend(tmp_path: Path, published: dict[str, str], local: dict[str, str]) -> Path:
@@ -35,17 +34,7 @@ def _publish_then_amend(tmp_path: Path, published: dict[str, str], local: dict[s
     same fixture route as stage 3d's `test_stage3d_divergent_lane_repair._publish_then_amend`,
     inlined here — pytest test modules aren't import-safe from one another without an `__init__.py`
     package, and one small fixture isn't worth adding one)."""
-    remote = tmp_path / "remote.git"
-    sp.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True)
-    work = tmp_path / "work"
-    work.mkdir()
-    ws = Workspace.init(work, colocate=True)
-    (work / "f.txt").write_text("base\n")
-    with ws.transaction("initial") as tx:
-        tx.describe("@", "initial")
-        tx.create_bookmark("main", "@")
-    ws.add_remote("origin", str(remote))
-    ws.git_push("origin", "main", allow_new=True)
+    work, remote, ws = build_remote(tmp_path)
 
     with ws.transaction(f"start {LANE}") as tx:
         tx.new("main")
@@ -197,17 +186,7 @@ def test_capture_state_is_not_called_once_per_twin(tmp_path: Path, monkeypatch):
     check called `capture_state` once inside `_resolve_lane_twin` for each one it acted on, on top
     of the final G0 check — proportional to twin count. `do_reconcile` must call it a fixed number
     of times regardless."""
-    remote = tmp_path / "remote.git"
-    sp.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True)
-    work = tmp_path / "work"
-    work.mkdir()
-    ws = Workspace.init(work, colocate=True)
-    (work / "f.txt").write_text("base\n")
-    with ws.transaction("initial") as tx:
-        tx.describe("@", "initial")
-        tx.create_bookmark("main", "@")
-    ws.add_remote("origin", str(remote))
-    ws.git_push("origin", "main", allow_new=True)
+    work, remote, ws = build_remote(tmp_path)
 
     pushed_one = _push_and_amend(work, "one", "one.txt")
     pushed_two = _push_and_amend(work, "two", "two.txt")

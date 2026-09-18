@@ -9,10 +9,10 @@ compose (round 08 + round 10 together).
 
 from __future__ import annotations
 
+from functools import partial
 from pathlib import Path
 
 import pytest
-from pyjutsu import Workspace
 
 from gitman.config import GitmanConfig
 from gitman.core import (
@@ -25,26 +25,16 @@ from gitman.core import (
 )
 from gitman.lanes import current_lane
 from gitman.repair import do_reconcile
-from gitman.session import Session
 from gitman.state import capture_state
+from tests.repofixtures import build_repo, session
 
 CFG = GitmanConfig(trunk="main")
 
 
-def _init(d: Path) -> Workspace:
-    """trunk `main` with one committed file `base.txt`, then a fresh empty child as @ (as init does)."""
-    ws = Workspace.init(d, colocate=True)
-    (d / "base.txt").write_text("base\n")
-    with ws.transaction("initial") as tx:
-        tx.describe("@", "initial")
-        tx.create_bookmark("main", "@")
-        tx.new(["main"])
-    return ws
+_init = partial(build_repo, child=True, path="base.txt")
 
 
-def _sess(d: Path) -> Session:
-    """A fresh Session per call — mirrors one-session-per-CLI-invocation."""
-    return Session.load(d, CFG)
+_sess = session
 
 
 def _cur(d: Path) -> str | None:

@@ -15,14 +15,13 @@ from pyjutsu import PyjutsuError, Workspace
 
 from gitman.config import GitmanConfig
 from gitman.repair import do_reconcile
-from gitman.session import Session
 from gitman.state import capture_state, colocated_ref_desync
+from tests.repofixtures import session
 
 CFG = GitmanConfig(trunk="main")
 
 
-def _sess(d: Path) -> Session:
-    return Session.load(d, CFG)
+_sess = session
 
 
 def _git(*args, cwd: Path):

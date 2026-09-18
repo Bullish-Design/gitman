@@ -18,14 +18,13 @@ from pyjutsu.errors import RevsetError
 
 from gitman.config import GitmanConfig
 from gitman.core import do_pull, do_undo
-from gitman.session import Session
 from gitman.state import capture_state
+from tests.repofixtures import build_remote, session
 
 CFG = GitmanConfig(trunk="main")
 
 
-def _sess(d: Path) -> Session:
-    return Session.load(d, CFG)
+_sess = session
 
 
 def _resolve(work: Path, name: str) -> str | None:
@@ -44,20 +43,7 @@ def _git(*args, cwd: Path) -> None:
     )
 
 
-def _with_remote(tmp_path: Path) -> tuple[Path, Path, Workspace]:
-    """A colocated work repo on `main`, pushed to a bare `origin`. Returns (work, remote, ws)."""
-    remote = tmp_path / "remote.git"
-    subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True)
-    work = tmp_path / "work"
-    work.mkdir()
-    ws = Workspace.init(work, colocate=True)
-    (work / "f.txt").write_text("base\n")
-    with ws.transaction("initial") as tx:
-        tx.describe("@", "initial")
-        tx.create_bookmark("main", "@")
-    ws.add_remote("origin", str(remote))
-    ws.git_push("origin", "main", allow_new=True)
-    return work, remote, ws
+_with_remote = build_remote
 
 
 def _make_lane(ws: Workspace, work: Path, lane: str, files: list[tuple[str, str]], *, publish: bool = True) -> None:

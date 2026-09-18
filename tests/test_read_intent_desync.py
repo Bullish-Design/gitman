@@ -13,30 +13,21 @@ transient until the next `publish`/`push`/`status`:
 from __future__ import annotations
 
 import subprocess
+from functools import partial
 from pathlib import Path
-
-from pyjutsu import Workspace
 
 from gitman.config import GitmanConfig
 from gitman.core import do_start
-from gitman.session import Session
 from gitman.state import capture_state
+from tests.repofixtures import build_repo, session
 
 CFG = GitmanConfig(trunk="main")
 
 
-def _sess(d: Path) -> Session:
-    return Session.load(d, CFG)
+_sess = session
 
 
-def _init(d: Path) -> Workspace:
-    ws = Workspace.init(d, colocate=True)
-    (d / "f.txt").write_text("base\n")
-    with ws.transaction("initial") as tx:
-        tx.describe("@", "initial")
-        tx.create_bookmark("main", "@")
-    ws.git_export()
-    return ws
+_init = partial(build_repo, export=True)
 
 
 def _gref(work: Path, ref: str) -> str | None:

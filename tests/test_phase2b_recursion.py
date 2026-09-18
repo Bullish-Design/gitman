@@ -16,28 +16,19 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from pyjutsu import Workspace
 
 from gitman.config import GitmanConfig, LanesConfig
 from gitman.core import GitmanError, do_land, do_save, do_start, do_subtask, do_switch, do_sync
-from gitman.session import Session
 from gitman.state import capture_state
+from tests.repofixtures import build_repo, session
 
 CFG = GitmanConfig(trunk="main")
 
 
-def _sess(d: Path, cfg: GitmanConfig | None = None) -> Session:
-    return Session.load(d, cfg or CFG)
+_sess = session
 
 
-def _init(d: Path) -> Workspace:
-    """trunk `main` with one committed file `f.txt`; `@` parked on trunk."""
-    ws = Workspace.init(d, colocate=True)
-    (d / "f.txt").write_text("base\n")
-    with ws.transaction("initial") as tx:
-        tx.describe("@", "initial")
-        tx.create_bookmark("main", "@")
-    return ws
+_init = build_repo
 
 
 def _lane(state, name):

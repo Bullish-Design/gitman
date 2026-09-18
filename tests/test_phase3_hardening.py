@@ -11,13 +11,12 @@ from gitman.config import GitmanConfig
 from gitman.core import GitmanError, map_pyjutsu_error, pick_remote
 from gitman.doctor import FAIL, OK, WARN, Check, DoctorReport
 from gitman.render import render_doctor
-from gitman.session import Session
+from tests.repofixtures import session
 
 CFG = GitmanConfig(trunk="main")
 
 
-def _sess(d: Path) -> Session:
-    return Session.load(d, CFG)
+_sess = session
 
 
 # ── S8: render_doctor warns heading ──────────────────────────────────────────────

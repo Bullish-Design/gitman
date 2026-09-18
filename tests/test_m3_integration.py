@@ -8,6 +8,7 @@ through pyjutsu and driven over a `Session`.
 from __future__ import annotations
 
 import subprocess
+from functools import partial
 from pathlib import Path
 
 import pytest
@@ -17,22 +18,15 @@ from gitman.config import GitmanConfig, ReleaseConfig
 from gitman.core import GitmanError, do_save, do_start, do_sync, do_undo
 from gitman.session import Session
 from gitman.state import capture_state
+from tests.repofixtures import build_remote, build_repo, session
 
 CFG = GitmanConfig(trunk="main")
 
 
-def _base(d: Path) -> Workspace:
-    """A colocated repo with trunk `main` over an `app.py`."""
-    ws = Workspace.init(d, colocate=True)
-    (d / "app.py").write_text("print(1)\n")
-    with ws.transaction("initial") as tx:
-        tx.describe("@", "initial")
-        tx.create_bookmark("main", "@")
-    return ws
+_base = partial(build_repo, content="print(1)\n", path="app.py")
 
 
-def _sess(d: Path) -> Session:
-    return Session.load(d, CFG)
+_sess = session
 
 
 # --- MP1-migrated intents (run) ------------------------------------------------------
@@ -342,17 +336,7 @@ def test_reconcile_undo_restores_off_canonical(tmp_path: Path):
 
 def _with_remote(tmp_path: Path) -> tuple[Path, Path]:
     """A colocated work repo on `main`, pushed to a bare `origin`. Returns (work, remote)."""
-    remote = tmp_path / "remote.git"
-    subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True)
-    work = tmp_path / "work"
-    work.mkdir()
-    ws = Workspace.init(work, colocate=True)
-    (work / "f.txt").write_text("base\n")
-    with ws.transaction("initial") as tx:
-        tx.describe("@", "initial")
-        tx.create_bookmark("main", "@")
-    ws.add_remote("origin", str(remote))
-    ws.git_push("origin", "main", allow_new=True)
+    work, remote, ws = build_remote(tmp_path)
     return work, remote
 
 

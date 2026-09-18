@@ -15,8 +15,8 @@ from pyjutsu import Workspace
 
 from gitman.config import GitmanConfig
 from gitman.core import GitmanError, do_seed, do_start, do_undo
-from gitman.session import Session
 from gitman.state import capture_state
+from tests.repofixtures import session
 
 CFG = GitmanConfig(trunk="main")
 
@@ -31,8 +31,7 @@ def _init_unseeded(d: Path) -> Workspace:
     return ws
 
 
-def _sess(d: Path) -> Session:
-    return Session.load(d, CFG)
+_sess = session
 
 
 def _git_ref(repo: Path, ref: str) -> str:

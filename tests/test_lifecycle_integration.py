@@ -29,23 +29,15 @@ from gitman.core import (
 from gitman.repair import do_reconcile
 from gitman.session import Session
 from gitman.state import capture_state
+from tests.repofixtures import build_repo, session
 
 CFG = GitmanConfig(trunk="main")
 
 
-def _init(d: Path) -> Workspace:
-    """trunk `main` with one committed file `f.txt`."""
-    ws = Workspace.init(d, colocate=True)
-    (d / "f.txt").write_text("base\n")
-    with ws.transaction("initial") as tx:  # auto-snapshot folds f.txt into @
-        tx.describe("@", "initial")
-        tx.create_bookmark("main", "@")
-    return ws
+_init = build_repo
 
 
-def _sess(d: Path) -> Session:
-    """A fresh Session per call — mirrors one-session-per-CLI-invocation."""
-    return Session.load(d, CFG)
+_sess = session
 
 
 # --- canonical lifecycle -------------------------------------------------------------

@@ -25,15 +25,9 @@ from gitman.config import GitmanConfig
 from gitman.core import GitmanError, do_abandon, do_land, do_save, do_start
 from gitman.session import Session
 from gitman.state import capture_state
+from tests.repofixtures import build_repo
 
-
-def _repo(d: Path) -> Workspace:
-    ws = Workspace.init(d, colocate=True)
-    (d / "f.txt").write_text("base\n")
-    with ws.transaction("initial") as tx:
-        tx.describe("@", "initial")
-        tx.create_bookmark("main", "@")
-    return ws
+_repo = build_repo
 
 
 def _sess(d: Path) -> Session:

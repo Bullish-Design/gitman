@@ -6,26 +6,17 @@ import json
 import sys
 from pathlib import Path
 
-from pyjutsu import Workspace
-
 from gitman.config import GitmanConfig, LandConfig, LandHookConfig
 from gitman.core import do_land, do_save, do_start
 from gitman.hooks import run_hook
 from gitman.models import LandHookEvent
 from gitman.session import Session
+from tests.repofixtures import build_repo, session
+
+_init = build_repo
 
 
-def _init(d: Path) -> Workspace:
-    ws = Workspace.init(d, colocate=True)
-    (d / "f.txt").write_text("base\n")
-    with ws.transaction("initial") as tx:
-        tx.describe("@", "initial")
-        tx.create_bookmark("main", "@")
-    return ws
-
-
-def _session(d: Path, config: GitmanConfig) -> Session:
-    return Session.load(d, config)
+_session = session
 
 
 def _script(d: Path, body: str) -> list[str]:

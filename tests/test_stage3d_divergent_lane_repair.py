@@ -27,16 +27,15 @@ from pyjutsu import Workspace
 from gitman.anomalies import REGISTRY
 from gitman.config import GitmanConfig
 from gitman.repair import do_reconcile
-from gitman.session import Session
 from gitman.state import capture_state, find_divergent_lane_twins
+from tests.repofixtures import build_remote, session
 
 CFG = GitmanConfig(trunk="main")
 
 LANE = "feat"
 
 
-def _sess(d: Path) -> Session:
-    return Session.load(d, CFG)
+_sess = session
 
 
 def _git(d: Path, *args: str) -> str:
@@ -59,17 +58,7 @@ def _publish_then_amend(
     `published` is the tree pushed to origin; `local` is the tree the lane is amended to. Pass
     `redescribe` instead of a different tree to get a content-identical re-hash twin.
     """
-    remote = tmp_path / "remote.git"
-    sp.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True)
-    work = tmp_path / "work"
-    work.mkdir()
-    ws = Workspace.init(work, colocate=True)
-    (work / "f.txt").write_text("base\n")
-    with ws.transaction("initial") as tx:
-        tx.describe("@", "initial")
-        tx.create_bookmark("main", "@")
-    ws.add_remote("origin", str(remote))
-    ws.git_push("origin", "main", allow_new=True)
+    work, remote, ws = build_remote(tmp_path)
 
     with ws.transaction(f"start {LANE}") as tx:
         tx.new("main")

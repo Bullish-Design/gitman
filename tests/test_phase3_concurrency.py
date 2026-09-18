@@ -29,8 +29,8 @@ from pyjutsu import Workspace
 from gitman.config import GitmanConfig
 from gitman.core import GitmanError, do_abandon, do_land, do_save, do_start, do_subtask, do_sync
 from gitman.repair import do_reconcile
-from gitman.session import Session
 from gitman.state import capture_state
+from tests.repofixtures import build_repo, session
 
 CFG = GitmanConfig(trunk="main")
 
@@ -38,20 +38,10 @@ CFG = GitmanConfig(trunk="main")
 # --- helpers --------------------------------------------------------------------------
 
 
-def _sess(d: Path, cfg: GitmanConfig | None = None) -> Session:
-    """A FRESH Session at `d` — one per intent per agent (models a real agent's per-CLI-call load,
-    and is the concurrent-checkout discipline: never reuse a handle across a `do_*`)."""
-    return Session.load(d, cfg or CFG)
+_sess = session
 
 
-def _init(d: Path) -> Workspace:
-    """trunk `main` with one committed file `f.txt`; `@` parked on trunk."""
-    ws = Workspace.init(d, colocate=True)
-    (d / "f.txt").write_text("base\n")
-    with ws.transaction("initial") as tx:
-        tx.describe("@", "initial")
-        tx.create_bookmark("main", "@")
-    return ws
+_init = build_repo
 
 
 def _trunk(work: Path) -> str:

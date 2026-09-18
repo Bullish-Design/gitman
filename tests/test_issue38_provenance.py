@@ -17,31 +17,22 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from pyjutsu import Workspace
 
 from gitman.config import GitmanConfig
 from gitman.core import GitmanError, do_land, do_save, do_start
 from gitman.provenance import read_fingerprint, write_fingerprint
 from gitman.render import render_status
-from gitman.session import Session
 from gitman.state import capture_state
+from tests.repofixtures import build_repo, session
 
 CFG = GitmanConfig(trunk="main")
 FINGERPRINT = ".gitman/session-paths.json"
 
 
-def _sess(d: Path) -> Session:
-    return Session.load(d, CFG)
+_sess = session
 
 
-def _init(d: Path) -> Workspace:
-    """trunk `main` with one committed file `f.txt`; `@` parked on trunk."""
-    ws = Workspace.init(d, colocate=True)
-    (d / "f.txt").write_text("base\n")
-    with ws.transaction("initial") as tx:
-        tx.describe("@", "initial")
-        tx.create_bookmark("main", "@")
-    return ws
+_init = build_repo
 
 
 # --- the store, alone ------------------------------------------------------------------

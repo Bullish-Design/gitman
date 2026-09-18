@@ -32,23 +32,16 @@ from gitman.core import (
 from gitman.init import do_init
 from gitman.session import Session
 from gitman.state import capture_state
+from tests.repofixtures import build_repo, session
 
 CFG = GitmanConfig(trunk="main")
 runner = CliRunner()
 
 
-def _sess(d: Path) -> Session:
-    return Session.load(d, CFG)
+_sess = session
 
 
-def _repo(d: Path) -> Workspace:
-    """A colocated repo on `main` with one committed file."""
-    ws = Workspace.init(d, colocate=True)
-    (d / "f.txt").write_text("base\n")
-    with ws.transaction("initial") as tx:
-        tx.describe("@", "initial")
-        tx.create_bookmark("main", "@")
-    return ws
+_repo = build_repo
 
 
 def _workspace_on_trunk(ws: Workspace, path: Path, name: str) -> None:

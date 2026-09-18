@@ -12,30 +12,23 @@ Built in-process over pyjutsu (no `jj` CLI), reusing the fixtures from `test_m3_
 from __future__ import annotations
 
 import subprocess as sp
+from functools import partial
 from pathlib import Path
 
 from pyjutsu import Workspace
 
 from gitman.config import GitmanConfig
 from gitman.core import do_save, do_start
-from gitman.session import Session
 from gitman.state import capture_state
+from tests.repofixtures import build_repo, session
 
 CFG = GitmanConfig(trunk="main")
 
 
-def _base(d: Path) -> Workspace:
-    """A colocated repo with trunk `main` over an `app.py`."""
-    ws = Workspace.init(d, colocate=True)
-    (d / "app.py").write_text("print(1)\n")
-    with ws.transaction("initial") as tx:
-        tx.describe("@", "initial")
-        tx.create_bookmark("main", "@")
-    return ws
+_base = partial(build_repo, content="print(1)\n", path="app.py")
 
 
-def _sess(d: Path) -> Session:
-    return Session.load(d, CFG)
+_sess = session
 
 
 def _git(d: Path, *args: str, inp: str | None = None) -> sp.CompletedProcess[str]:

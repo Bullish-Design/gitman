@@ -16,23 +16,16 @@ from pyjutsu import Workspace
 
 from gitman.config import GitmanConfig
 from gitman.core import GitmanError, do_describe, do_land, do_start, do_undo
-from gitman.session import Session
 from gitman.state import capture_state
+from tests.repofixtures import build_repo, session
 
 CFG = GitmanConfig(trunk="main")
 
 
-def _init(d: Path) -> Workspace:
-    ws = Workspace.init(d, colocate=True)
-    (d / "f.txt").write_text("base\n")
-    with ws.transaction("initial") as tx:
-        tx.describe("@", "initial")
-        tx.create_bookmark("main", "@")
-    return ws
+_init = build_repo
 
 
-def _sess(d: Path) -> Session:
-    return Session.load(d, CFG)
+_sess = session
 
 
 def test_undo_op_reverts_the_land_the_field_case(tmp_path: Path):
