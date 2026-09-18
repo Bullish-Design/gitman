@@ -48,3 +48,4 @@ archive/
 !.agents/skills/**
 !AGENTS.md
 !CLAUDE.md
+.envrc
