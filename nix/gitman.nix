@@ -19,6 +19,12 @@ in
     "gitman:fix".exec = ''cd "$DEVENV_ROOT" && ${venvBin}/ruff check --fix src tests && ${venvBin}/ruff format src tests'';
     "gitman:test".exec = ''cd "$DEVENV_ROOT" && ${venvBin}/pytest -q'';
 
+    # `devenv test` runs the `devenv:enterTest` task. Setting the `enterTest` option alone is
+    # silently ignored by devenv 2.2.2: `devenv test` then exits 0 without running anything, so
+    # a red suite reported success. Depend on the two real verification tasks instead — the
+    # same wiring devenv.nix uses for `base:test`.
+    "devenv:enterTest".after = [ "gitman:lint" "gitman:test" ];
+
     # Build the distributable wheel + sdist into dist/. Gitman is pure Python, so this is an
     # ordinary uv build — no relocation step, unlike pyjutsu's native extension.
     "gitman:wheel".exec = ''
@@ -70,8 +76,4 @@ needed on x86-64 Linux. See the README."
       echo "published $tag"
     '';
   };
-
-  enterTest = ''
-    cd "$DEVENV_ROOT" && ${venvBin}/ruff check src tests && ${venvBin}/pytest -q
-  '';
 }
