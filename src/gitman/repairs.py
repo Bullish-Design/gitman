@@ -6,7 +6,8 @@ them), but until this module nothing *read* that field — it was an assertion a
 not a wiring into it. `REPAIRS` is the table `do_repair` actually dispatches through, and the
 loop at the bottom is a two-way, import-time assertion that `REGISTRY` and `REPAIRS` agree:
 a kind whose registry row says `repair="repair"` with no entry here fails the *import*, not a
-livelocked recovery verb — the same trick `anomalies.py:112` already plays for `repair or manual`.
+livelocked recovery verb — the same trick `anomalies.py`'s own registry-validation loop already
+plays for `repair or manual`.
 
 Each repair does its own precise survey (`find_strays`, `find_divergent_lane_twins`,
 `_conflicted_lanes`, `sync_colocated_refs`'s own `colocated_ref_desync`) rather than being handed

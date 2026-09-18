@@ -1,8 +1,8 @@
 # Gitman examples
 
 - **[`lane-loop.sh`](lane-loop.sh)** — a runnable end-to-end demo of the lane loop in a
-  throwaway colocated repo (init → start → save → status → land → undo → conflict rollback
-  → reconcile). It never touches your real repo:
+  throwaway colocated repo (init → seed → start → describe → status → land → undo → conflict
+  rollback → repair). It never touches your real repo:
 
   ```bash
   devenv shell -- bash examples/lane-loop.sh

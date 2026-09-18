@@ -663,7 +663,7 @@ def orphaned_by_rewrite(view: RepoView, git_id: str) -> bool:
     Ancestry against jj's new position answers a different question (`_known_to_jj` explains why).
 
     **Unreachable is not enough** — a REWRITTEN commit is unreachable too, and preserving those
-    turns every ordinary undo into litter. `save` amends and `land` rebases, so the ref left behind
+    turns every ordinary undo into litter. `describe` amends and `land` rebases, so the ref left behind
     names a predecessor of a commit jj still has. jj identifies the pair: a rewrite keeps the
     **change id**. So a commit whose change id is still reachable was rewritten, not lost, and only
     a commit with no reachable namesake is genuinely orphaned — which is exactly the imported

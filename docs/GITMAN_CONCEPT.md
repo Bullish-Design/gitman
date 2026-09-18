@@ -667,7 +667,7 @@ Pydantic-validated.
 
 ### Retiring a config table
 
-**A retired table warns for one minor release. It is never a hard failure.**
+**A retired table warns, permanently. It is never a hard failure.**
 
 Gitman manages the repo that configures gitman, and it is installed from that repo's working
 copy. So a rejection is live the moment the new code is on disk — *before* the change that
@@ -680,7 +680,8 @@ The rule that prevents it:
 - A retired table is listed in `config.RETIRED_TABLES` with the migration the owner must make.
 - `load_config` strips it before validation and carries it out as `cfg.deprecations`.
 - `doctor` shows it as a `WARN` row; `status` and every intent report it as a `note:`.
-- It becomes an error only in a later minor release, named in the message itself.
+- The warning never expires into an error — the owner migrates on their own schedule (project
+  32, G2).
 
 This applies to *retired* tables only. A live table with an invalid value is still a hard
 failure (exit 2) — leniency is about schema changes gitman itself introduces, not about

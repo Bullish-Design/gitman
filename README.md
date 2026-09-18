@@ -27,8 +27,9 @@ named jj **bookmark** (which *is* the git branch) on a trunk descendant, optiona
 own jj **workspace** for parallel agents. Multiplicity is fine; anarchy is not.
 
 **Trunk is local-authored:** Gitman is the sole writer of trunk SHAs. Lanes fold into local trunk via
-`land`; origin is a mirror reached by fast-forward `push`, and `pull` integrates a genuinely-moved
-origin (rebasing your un-pushed lands — never dropping work). One model, no forge-authored trunk door.
+`land`; origin is a mirror reached by fast-forward `push`, and `sync --trunk` integrates a
+genuinely-moved origin (rebasing your un-pushed lands — never dropping work). One model, no
+forge-authored trunk door.
 
 ## Markdown projections
 
@@ -56,11 +57,12 @@ would otherwise make the file self-invalidating.
 ```
 # lane loop
 start <name> [--workspace]   switch <lane>   split --paths <sel> --into <lane>
-save [-m]   sync [--all]   publish   land [<lane>…]   abandon [<lane>]   status
+shape [--squash <rev>] [--reorder <rev>…]   describe [-m]
+sync [--all]   publish   land [<lane>…]   abandon [<lane>]   status
 # trunk ↔ origin (single local-authored model)
-remote add <url>   push [--reset-origin]   pull [--dry-run]   untrack <path>…
+remote add <url>   push [--reset-origin]   sync --trunk [--dry-run]   untrack <path>…
 # safety net / bootstrap / meta
-undo [--op|--list]   resolve [--list]   reconcile [--abandon]   seed -m
+undo [--op|--list]   resolve [--list]   repair [--abandon]   seed -m
 version [bump <major|minor|patch>]   release [<level>|--version X.Y.Z]   init [--colocate]   doctor
 ```
 

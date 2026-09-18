@@ -71,17 +71,17 @@ class GitmanConfig(BaseModel):
 
 # Tables gitman used to honour, mapped to the migration the repo owner must make.
 #
-# A retired table is a **warning for one minor release**, never a hard failure. Gitman manages
-# the repo that configures gitman, so a rejection is live the moment the new code is on disk —
-# before the config migration can land. Removing `[version]` in 0.5.0 did exactly that: gitman
-# refused to run against its own trunk config, including refusing the `sync` that would have
-# landed the fix. A warning keeps the tool usable while the owner migrates.
+# A retired table is a **permanent warning**, never a hard failure. Gitman manages the repo
+# that configures gitman, so a rejection is live the moment the new code is on disk — before
+# the config migration can land. Removing `[version]` in 0.5.0 did exactly that: gitman refused
+# to run against its own trunk config, including refusing the `sync` that would have landed the
+# fix. A warning keeps the tool usable while the owner migrates, on their own schedule.
 #
-# Retired tables become errors in **0.7.0**. Add new entries here rather than to the model.
+# Add new entries here rather than to the model; the warning never expires into an error.
 RETIRED_TABLES: dict[str, str] = {
     "version": (
         "[version] is ignored — gitman reads and writes the version through uv "
-        "(`uv version`). Delete the table; it becomes an error in 0.7.0."
+        "(`uv version`). Delete the table; this warning is permanent, not a deadline."
     ),
 }
 

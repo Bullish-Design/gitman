@@ -25,7 +25,8 @@ branch_prefix = ""
 
 # There is no [version] table. uv owns the version: gitman reads it with `uv version --short`
 # and writes it with `uv version --no-sync`, so pyproject.toml and uv.lock always move
-# together. A leftover [version] table is rejected with a migration message.
+# together. A leftover [version] table is not rejected: gitman warns with a migration
+# message, forever, and keeps running.
 
 [release]
 # Tag name format for `gitman release`. Default: "v{version}".

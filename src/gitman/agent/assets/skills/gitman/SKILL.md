@@ -95,8 +95,8 @@ cleanly if the lane is checked out in another `--workspace` (`cd` there to resum
 **sibling** lane on trunk and leaves the remainder on the original — both independently landable.
 `@` stays on the remainder; continue on the carved one with `gitman switch <new-lane>`.
 
-**Dry run.** `describe`, `switch`, `start`, `split` and `land` accept `--dry-run`: they print the
-exact steps the intent would perform and change nothing. Use it to check the plan before an intent
+**Dry run.** `describe`, `switch`, `start`, `split`, `sync` and `land` accept `--dry-run`: they
+print the exact steps the intent would perform and change nothing. Use it to check the plan before an intent
 that moves trunk or creates/retires a lane.
 
 ## Trunk ↔ origin (local-authored model)

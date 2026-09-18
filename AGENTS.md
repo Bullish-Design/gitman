@@ -13,7 +13,7 @@ and mirrors its shape. The authority is `docs/GITMAN_CONCEPT.md`.
   environment, so **batch** commands into a single invocation. Use the `--` form so flags
   reach the command, not `devenv shell`.
 - **jj-lib is embedded in-process via [pyjutsu](../Pyjutsu)** (PyO3) — there is **no `jj` CLI**
-  on PATH and no `-T` templates. The jj-lib 0.44.0 pin lives solely in pyjutsu (currently 0.20.0);
+  on PATH and no `-T` templates. The jj-lib 0.44.0 pin lives solely in pyjutsu (currently 0.22.0);
   gitman inherits it. `gitman doctor` asserts `pyjutsu.JJ_VERSION == pyjutsu.JJ_LIB_TARGET`, so a
   jj-lib drift fails loudly. Reads go through `Session.view()` / `fresh_view()`; mutations through
   `ws.transaction(...)`. The raw-git subprocess surface is **zero**: pyjutsu project 14 (0.12.x)

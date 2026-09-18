@@ -10,7 +10,7 @@ already published.
 
 Two entry points share the helpers:
 
-- `canonical_tx(session, intent)` — sugar for a **single-transaction** intent (`save`, simple
+- `canonical_tx(session, intent)` — sugar for a **single-transaction** intent (`describe`, simple
   `start`, simple `abandon`). Yields the pyjutsu `Transaction`.
 - `canonical_guard(session, intent)` — for **multi-op** intents (`start --workspace`, `sync`,
   `land`, workspaced `abandon`) that interleave non-tx ops (`git_fetch`/`git_push`/`add_workspace`/
@@ -170,9 +170,9 @@ def _refresh_stale_working_copy(session: Session, trunk: str) -> list[str]:
 
     The fractal-lanes §1.3 case: a *sibling's* fold (or a `pull`) retired the lane this workspace had
     checked out, so its `@` commit no longer exists. `do_repair` is the recovery surface for it —
-    `fresh_view()` deliberately SKIPS the snapshot when stale (session.py:96-98, so `status` can report
-    staleness instead of crashing), and nothing outside `do_pull` (core.py:1339) calls `update_stale()`.
-    Reuse the proven `do_pull` sequence verbatim: `update_stale()` → repark `@` off trunk if it now
+    `Session.fresh_view()` deliberately SKIPS the snapshot when stale (so `status` can report
+    staleness instead of crashing), and `do_pull` and this function are the only callers of
+    `update_stale()`. Reuse the proven `do_pull` sequence verbatim: `update_stale()` → repark `@` off trunk if it now
     coincides with the trunk head (the `@`-never-on-trunk invariant) → `sync_colocated()` to rebuild
     the colocated git index. No-op (empty list) when the workspace is not stale."""
     from pyjutsu import PyjutsuError

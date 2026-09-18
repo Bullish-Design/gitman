@@ -3,33 +3,33 @@
 #
 #   devenv shell -- bash examples/lane-loop.sh
 #
-# It builds a temp repo, then exercises: init → start → save → status → land → undo →
-# a conflict rollback → reconcile. Nothing here touches your real repo.
+# It builds a temp repo, then exercises: init --colocate → seed → start → describe → status →
+# land → undo → a conflict rollback → repair. Nothing here touches your real repo.
+#
+# Gitman's own golden rule is "route all version control through gitman" — but this demo
+# needs one off-canonical repo to show `repair` recovering from it, and there is no `jj` CLI
+# in this devenv to make that stray by hand. The "simulate an out-of-band edit" step below
+# talks to pyjutsu directly for that one purpose; every other step is a plain `gitman` intent.
 set -u
 
 DEMO="$(mktemp -d "${TMPDIR:-/tmp}/gitman-demo.XXXX")"
 cd "$DEMO" || exit 1
-export JJ_CONFIG=/dev/null
 echo "demo repo: $DEMO"
 echo
 
-# --- seed a colocated repo with a version source ---
-jj git init --colocate >/dev/null 2>&1
-jj config set --repo user.name  "Demo"          >/dev/null 2>&1
-jj config set --repo user.email "demo@example"  >/dev/null 2>&1
-printf '[project]\nname = "demo"\nversion = "0.1.0"\n' > pyproject.toml
-printf 'value = 1\n' > config.py
-jj describe -m "initial" >/dev/null 2>&1
-
 run() { echo "\$ gitman $*"; gitman "$@"; echo; }
 
-run init
+# --- colocate + freeze trunk, then make the first commit ---
+run init --colocate
+printf '[project]\nname = "demo"\nversion = "0.1.0"\n' > pyproject.toml
+printf 'value = 1\n' > config.py
+run seed -m "initial"
 run status
 
 # --- a normal lane ---
 run start add-feature
 printf 'feature = True\n' >> config.py
-run save -m "add feature flag"
+run describe -m "add feature flag"
 run status
 run land add-feature
 run status
@@ -46,16 +46,29 @@ run undo                        # the lane 'oops' never happened
 run status
 
 # --- conflicts are first-class: land two lanes that touch the same line ---
-run start lane-a; printf 'value = 2\n' > config.py; gitman save -m "a" >/dev/null
-run start lane-b; printf 'value = 3\n' > config.py; gitman save -m "b" >/dev/null
+run start lane-a; printf 'value = 2\n' > config.py; gitman describe -m "a" >/dev/null
+run start lane-b; printf 'value = 3\n' > config.py; gitman describe -m "b" >/dev/null
 echo "\$ gitman land lane-a lane-b   # second conflicts -> rolled back, not stuck"
 gitman land lane-a lane-b; echo "(exit $?)"; echo
 run status                      # lane-b survives; repo still canonical
 
 # --- recover from an out-of-band edit (off-canonical) ---
-jj new main -m "raw stray" >/dev/null 2>&1; printf 'oops\n' > stray.txt; jj new lane-b >/dev/null 2>&1
+python3 - <<'PY'
+from pathlib import Path
+
+from pyjutsu import Workspace
+
+ws = Workspace.load(".")
+with ws.transaction("demo:raw-stray") as tx:
+    tx.new(["main"])
+    tx.describe("@", "raw stray")
+Path("stray.txt").write_text("oops\n")
+ws.snapshot()
+with ws.transaction("demo:repark") as tx:
+    tx.new(["lane-b"])  # park @ back on a named lane; "raw stray" is now orphaned
+PY
 run status                      # OFF-CANONICAL
-run reconcile                   # adopt the stray into a lane
+run repair                      # adopt the stray into a lane
 run status                      # CANONICAL again
 
 echo "done. remove the demo repo with:  rm -rf $DEMO"

@@ -1,9 +1,25 @@
 # H3 — `release <bump>` tags a lane commit that `land` later rewrites
 
 **Date:** 2026-07-22
-**Origin:** `04-gitman-code-review/CODE_REVIEW.md` §H3. **Status:** OPEN (only a warning note today),
-verified at trunk `690ce52`. **Rough size:** S. A concrete, silent footgun — smaller blast radius
-than H1 but a clean, cheap fix.
+**Origin:** `04-gitman-code-review/CODE_REVIEW.md` §H3. **Rough size:** S.
+
+> **Status: FIXED, and the fix went too far — re-verified 2026-09-18.** `release.py`'s `do_release`
+> carries both guards proposed below: Option A (refuse a bump when `@` is not an ancestor of trunk)
+> and Option C (never tag a commit unreachable from trunk). This doc said OPEN for two months after
+> they landed.
+>
+> The live defect is now the opposite one. Option A's gate and `require_current_lane` are **jointly
+> unsatisfiable**: the gate needs `@` at-or-behind trunk, and `require_current_lane` needs a
+> non-trunk bookmark sitting ON `@` — but a lane is by construction a trunk descendant. So
+> `gitman release <level>` (and `--version X.Y.Z` whenever it differs) can never succeed; it always
+> exits 1 at the Option A refusal. The suite records this without saying so: every test that passes
+> a `level` sits inside `pytest.raises`, and every `RELEASED` assertion passes `level=None`.
+>
+> The recommended repair is NOT to make the bump path work — that needs either a direct commit to
+> trunk (violates I1) or a land inside `release` (Option B, rejected below). It is to refuse
+> `level`/`--version` outright, before any version math, naming the flow that works
+> (`version bump` → `land` → `release`), and to correct concept §7 and the CLI help, which still
+> advertise "(bump →) tag". Not yet implemented.
 
 ---
 

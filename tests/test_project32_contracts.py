@@ -68,7 +68,7 @@ def test_a_legacy_version_table_warns_and_does_not_break_the_tool(tmp_path: Path
     assert len(cfg.deprecations) == 1
     assert "[version] is ignored" in cfg.deprecations[0]
     assert "gitman.toml" in cfg.deprecations[0]  # names the file to edit
-    assert "0.7.0" in cfg.deprecations[0]  # and when it stops being a warning
+    assert "0.7.0" not in cfg.deprecations[0]  # the warning is permanent, not a lapsed deadline
 
 
 def test_a_malformed_config_is_still_a_hard_failure(tmp_path: Path):

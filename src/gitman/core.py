@@ -199,8 +199,8 @@ def pick_remote(ws: Workspace) -> str:
     if not names:
         return "origin"  # defensive; callers gate on non-empty
     raise GitmanError(
-        f"multiple remotes and no 'origin' — configure a default remote "
-        f"(`gitman remote add origin <url>`, or set `[gitman].default_remote`). "
+        f"multiple remotes and no 'origin' — add one named 'origin' "
+        f"(`gitman remote add <url>`; --name defaults to 'origin'). "
         f"Available: {', '.join(sorted(names))}",
         exit_code=2,
     )
@@ -243,7 +243,9 @@ def explain_immutable(session: Session, exc: Exception, action: str) -> GitmanEr
     cause = f"{protection} protects it" if protection else "an immutability rule protects it"
     return GitmanError(
         f"cannot {action}: commit {commit_id[:12]} is immutable — {cause}. "
-        f"Remove the protection (delete the tag, or prune the remote bookmark) and retry.",
+        f"The protection is deliberate: a tag marks intentional history and a remote bookmark is "
+        f"history others can see, so both outrank a local cleanup. Gitman ships no verb to remove "
+        f"either — drop the tag or the remote branch outside gitman, then retry.",
         exit_code=1,
     )
 
@@ -775,7 +777,7 @@ def do_switch(session: Session, name: str, *, dry_run: bool = False):
     # switching away would strand it nowhere-named. Named lanes are safe (preserved as today's
     # accidental `start` already does). `fresh_view()` snapshots first so a *loose on-disk* edit on a
     # parked empty `@` (e.g. the fresh child left by `land`'s repark) is seen here, not missed until
-    # the tx snapshot strands it. (verb: save/start/abandon)
+    # the tx snapshot strands it. (verb: describe/start/abandon)
     if cur is None:
         # A dry run must not snapshot (that publishes an op), so it reads the recorded head; a real
         # run snapshots first so a *loose on-disk* edit on a parked empty `@` is seen here.
@@ -1221,7 +1223,7 @@ def do_seed(session: Session, message: str):
 
     The bootstrap front door for adopting a repo with no history yet (concept §15; bootstrap Issue 6).
     After `gitman init`, trunk's bookmark sits on `@`, which holds the not-yet-described on-disk
-    files — but `save` refuses (no lane) and `start` would fold the work *into* trunk and open an
+    files — but `describe` refuses (no lane) and `start` would fold the work *into* trunk and open an
     empty lane. `seed` instead describes `@` (the trunk bookmark follows the rewrite, so trunk lands
     on the seed commit) and opens a fresh empty child as the new `@`, then exports so
     `refs/heads/<trunk>` + git HEAD point at the seed. It is one-shot: it refuses once trunk has any

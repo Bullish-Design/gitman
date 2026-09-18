@@ -137,8 +137,8 @@ REGISTRY: dict[str, AnomalyKind] = {
         blocks=frozenset(),
         manual="rename the lane, or `gitman start <parent>` to re-root",
     ),
-    # §3.7: folds in the `invariants.py:217` ad-hoc `intent in ("land", "push")` dirty-trunk-`@`
-    # rule. Precheck-only (a snapshot-before/after comparison, not a fact `capture_state` can see
+    # §3.7: folds in what was an ad-hoc `intent in ("land", "push")` dirty-trunk-`@` check in
+    # `invariants.py`. Precheck-only (a snapshot-before/after comparison, not a fact `capture_state` can see
     # from one frozen view) — `invariants.precheck_canonical` reads this row for its `manual` text
     # rather than hand-composing it, but does not add it to `RepoState.anomalies`.
     "dirty-trunk-wc": AnomalyKind(

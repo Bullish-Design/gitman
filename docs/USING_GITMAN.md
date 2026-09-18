@@ -12,7 +12,7 @@ porcelain. This guide gets Gitman working in *another* repo. For the full design
 Gitman runs **only inside a [devenv.sh](https://devenv.sh) shell** and requires:
 
 - **jujutsu 0.44.0** — **embedded in-process** via [pyjutsu](https://github.com/Bullish-Design/Pyjutsu)
-  0.20 (jj-lib via PyO3); a gitman dependency, no `jj` CLI at runtime. `gitman doctor` asserts
+  0.22 (jj-lib via PyO3); a gitman dependency, no `jj` CLI at runtime. `gitman doctor` asserts
   `pyjutsu.JJ_VERSION == pyjutsu.JJ_LIB_TARGET`, so a jj-lib drift fails loudly.
 - **git** — the colocated interop layer. Gitman runs no git subprocess of its own; the git side of
   the repo is read and written through pyjutsu's `ws.git` namespace.
@@ -116,8 +116,8 @@ devenv shell -- gitman land fix-thing          # fold into trunk LOCALLY, advanc
 Safety net: `gitman undo` (revert the last intent), `gitman resolve` (surface conflicts —
 never blocking), `gitman repair` (recover from off-canonical).
 
-Check a plan before it runs: `describe`, `switch`, `start`, `split` and `land` accept `--dry-run`.
-They print the exact steps the intent would perform and change nothing.
+Check a plan before it runs: `describe`, `switch`, `start`, `split`, `sync` and `land` accept
+`--dry-run`. They print the exact steps the intent would perform and change nothing.
 
 ### Trunk ↔ origin (the single local-authored model)
 

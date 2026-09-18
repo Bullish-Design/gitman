@@ -1,7 +1,7 @@
 """Per-session path provenance — which dirty paths in `@` did this session write? (issues 38/42/43).
 
 jj removed the staging area but not the intent it encoded: *"these files, together, are one unit
-of work."* gitman had no model of *whose* work sits in `@`, so `start`/`save` swept a co-tenant's
+of work."* gitman had no model of *whose* work sits in `@`, so `start`/`describe` swept a co-tenant's
 files into a lane with no signal (issue 38). This module adds the missing model.
 
 **The record.** At the end of every command that snapshots `@`, gitman records the set of paths

@@ -157,6 +157,11 @@ def test_pick_remote_errors_on_multiple_no_origin(tmp_path: Path):
     assert "no 'origin'" in str(exc_info.value).lower()
     assert "upstream" in str(exc_info.value)
     assert "fork" in str(exc_info.value)
+    # The remedy must be a real invocation of `remote add <url> [--name NAME]` — not a config
+    # key gitman never wired in (`[gitman].default_remote` doesn't exist), and not the url/name
+    # positions swapped (the CLI takes the url positional first, name is `--name`).
+    assert "default_remote" not in str(exc_info.value)
+    assert "gitman remote add <url>" in str(exc_info.value)
 
 
 def test_pick_remote_no_remotes_returns_origin(tmp_path: Path):
