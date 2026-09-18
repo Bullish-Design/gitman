@@ -502,11 +502,21 @@ not a plan — no `src/`/`tests/` touched.
 
 ---
 
-## Stale `origin` branches (found 2026-09-18, not deleted — recorded here, not acted on)
+## Stale `origin` branches (found 2026-09-18 — DELETED the same day, on the owner's call)
 
-`git ls-remote --heads origin` shows two branches with no local lane: `wave3-land-gitman-20260914`
-and `fix-reconcile-divergent-lane`. Neither is deleted by this pass — deleting a remote branch is
-an operator decision, not a doc-fix one. What each one is:
+**Both are gone. `origin` now carries `refs/heads/main` only.** They were deleted through
+pyjutsu in-process (`ws.git_push(remote, branch, delete=True)` — the same call `land` makes),
+not with raw git: project 14 reduced gitman's raw-git subprocess surface to zero and shelling
+out would have re-introduced it.
+
+**This exposed a real gap: gitman has no verb for it.** `gitman remote` offers only `add`, and
+`land`/`pull` delete a remote branch only for a lane they are retiring. A stale remote branch
+that names no local lane can be *seen* (it is an untracked remote bookmark, and therefore part
+of the immutability set) but not removed through any intent. That is why this cleanup needed a
+script. Worth an item if it recurs; one occurrence is not yet a friction signal.
+
+`git ls-remote --heads origin` had shown two branches with no local lane:
+`wave3-land-gitman-20260914` and `fix-reconcile-divergent-lane`. What each one was:
 
 - **`wave3-land-gitman-20260914`** — the source branch for PR #30, "Land Stage 37 devman consumer
   migration," merged 2026-09-14. `git merge-base --is-ancestor origin/wave3-land-gitman-20260914
@@ -524,6 +534,8 @@ an operator decision, not a doc-fix one. What each one is:
   row, `repair.py`'s twin-resolution path); `git log` shows the commit "docs: mark issue 42 G0
   superseded; add issue 44 kickoff" marking that transition explicitly. Nothing in current
   `src/gitman/` calls the function this branch added, and it does not exist in the tree today.
-  **Deleting it would lose one superseded commit**, recoverable only via the reflog/branch ref
-  itself (not via `main`) — worth a deliberate call, not an automatic one, since it is dead work
-  rather than live risk.
+  **Deleting it lost one superseded commit** from `origin`. The owner made that call
+  deliberately on 2026-09-18. The full id is recorded here so the commit stays addressable while
+  the object survives locally: **`783751b49cd280f82b0cd1b3fc4c53bda7702555`**. It is reachable
+  from no branch, so a `git gc` will eventually collect it. Nothing in `src/gitman/` calls what
+  it added.
