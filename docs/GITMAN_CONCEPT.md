@@ -737,12 +737,13 @@ remote, frozen trunk, uv) and reports canonicity.
 **Shipped (this concept):** the lane model + invariants + transactional enforcement (§5, §11);
 the intent set (§7), incl. lane lifecycle, `shape`, `split --hunks` and workspaces (§8);
 `RepoState` + capture (§9–10); undo (§12); versioning + release (§13); config + policy (§14–15);
-compact reports (§16); the agent skill (§17); `init`/`doctor`/`repair`; the devenv boundary.
+compact reports (§16); the agent skill (§17); `init`/`doctor`/`repair`; the devenv boundary; a
+write mode for `resolve` (`--show`/`--from`).
 
 **Deferred until dogfooding demands it:** the forge extra (PR-backed fold and PR status),
 stacked PRs, an interactive prompt-driven `split` (hunk-level `split --hunks` shipped),
-pre-release/build version metadata, pluggable forges (GitLab/Gitea), a write mode for
-`resolve`, `gitman absorb`, and signing visibility in `doctor`.
+pre-release/build version metadata, pluggable forges (GitLab/Gitea), `gitman absorb`, and
+signing visibility in `doctor`.
 
 ## 20. Resolved questions
 
@@ -792,7 +793,20 @@ The four prior open questions are now resolved by the lane model + the spike:
   note. The cascade continues past it (never blocks). Bare `abandon <lane>` of a single named
   workspace still removes its dir (an explicit, targeted teardown).
 
-**Genuinely still open (decide during implementation):**
+**Resolved during implementation (issue 44 stage 3a — the anomaly registry):**
 
-- **`repair` UX** — how much it decides automatically vs asks, given it runs in an
-  agent (non-interactive) context.
+- **`repair` UX — how much it decides automatically vs asks.** `src/gitman/anomalies.py`
+  holds one `REGISTRY: dict[str, AnomalyKind]`, and its row shape *is* the policy: a unique
+  safe resolution gets a `repair` intent name and runs automatically; anything with more
+  than one defensible outcome carries a `manual` string instead, naming the operator's
+  options rather than guessing. A row must carry one or the other — the module asserts this
+  at import. `lane-divergent` is the worked example of a row that needs both: `repair`
+  resolves the three cases where one side's history contains the other's, and `manual`
+  (`gitman repair --keep local|origin`) names the fourth case, a genuine fork, where no
+  automatic choice is safe.
+
+  `manual` text is not a dead field — it reaches the operator at the point of refusal:
+  `render.py` prints it in the `status` recovery hint, `repair.py` quotes it when a
+  divergence can't be resolved automatically, and `invariants.py` reads it for the
+  dirty-trunk-working-copy refusal. Every anomaly the registry can name ends in either an
+  automatic fix or an honest instruction — never a guess.

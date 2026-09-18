@@ -1,20 +1,24 @@
 # 24 — Deferred backlog (the standing "build-when-friction-proves-it" list)
 
 **Date:** 2026-07-10
+**Re-verified:** 2026-09-18 against trunk (`main` at `0bb60a5`) — every item below was checked
+against the actually-shipped CLI (`gitman --help`, `src/gitman/cli.py`) and code, not just prose.
+D5 and D8 had shipped since the last pass and are now marked so; D4 is resolved (see its entry).
+See the end of this file for a note on two stale `origin` branches found during the pass.
 **Status:** REFERENCE — not an active roadmap. This is the catalogue of everything the CONCEPT
 deliberately leaves unbuilt, captured in detail so that when dogfooding friction surfaces one of these,
 the next session has the framing, the code anchors, the design sketch, and the trigger already written
 down. **Nothing here is blocking.** The fractal-lanes effort (projects 21–23) is COMPLETE: Phases 1,
 2A, 2B, 3A, 3B all shipped; trunk `4d0890a3`, 204 tests.
 
-**Governing principle (CONCEPT §7, line 183):** *"Anything not listed is deferred until friction proves
-it."* The bar to pull an item off this list is a concrete, recurring dogfooding pain — not "it would be
-nice." Each entry below names the **friction signal** that should trigger it.
+**Governing principle (CONCEPT §7, near the intent table):** *"Anything not listed is deferred until
+friction proves it."* The bar to pull an item off this list is a concrete, recurring dogfooding pain —
+not "it would be nice." Each entry below names the **friction signal** that should trigger it.
 
 **Authority for every item:** `docs/GITMAN_CONCEPT.md` §7 (intent table), §19 (Scope — v1 vs deferred),
-§20 (Resolved questions + "Genuinely still open"); `.scratch/projects/23-trunk-model-tier4-lane-stacking/
+§20 (Resolved questions); `.scratch/projects/23-trunk-model-tier4-lane-stacking/
 PLAN_PHASE3.md` §9 (what stays deferred beyond Phase 3). Line/section refs throughout were verified
-against the tree at trunk `4d0890a3`.
+against the tree at trunk `4d0890a3`, except where a later re-verification date is given.
 
 ---
 
@@ -24,13 +28,13 @@ against the tree at trunk `4d0890a3`.
 |---|------|------|------|-----------------------|
 | D1 | **Forge extra** — PR-aware `publish`/`land`/`pr-status` + stacked PRs | New subsystem (`advanced/`) | L | You start running the review flow against GitHub for real |
 | D2 | **`decompose <task> --into a,b,c [--workspace]`** batch fan-out | Ergonomic wrapper | S | Looping `subtask` N× becomes a repeated chore |
-| D3 | **`reconcile` *repair*** — re-root an orphaned child | New recovery path | M | Out-of-band parent deletes actually happen and stick |
-| D4 | **`reconcile` UX** — auto-decide vs ask | Open *design* decision | S–M | First real ambiguous reconcile in an agent (non-interactive) context |
-| D5 | **`shape`** — squash/reorder + **hunk-level/interactive `split`** | New intent | M | You need partial-file carving or history tidy-up before land |
+| D3 | **`repair`** — re-root an orphaned child | New recovery path | M | Out-of-band parent deletes actually happen and stick |
+| ~~D4~~ | ~~**`repair` UX** — auto-decide vs ask~~ | **RESOLVED 2026-09-18** — see `docs/GITMAN_CONCEPT.md` §20 | S–M | — |
+| ~~D5~~ | ~~**`shape`** squash/reorder + hunk-level `split`~~ | **SHIPPED 2026-07-22** (this catalogue missed it) — interactive split remains, see entry | M | — |
 | D6 | **Pre-release / build version metadata** | Semver extension | S | A real pre-release/RC flow is needed |
 | D7 | **Pluggable forges** (GitLab / Gitea) | Forge abstraction | M | A repo lives somewhere other than GitHub |
 | ~~D8~~ | ~~**`resolve --show` / `--from -`** — a write mode for the existing intent~~ | **SHIPPED 2026-09-18** (project 49) | S | — |
-| D9 | **`gitman absorb`** — fold a fixup draft into the lane commits that introduced the lines | New intent | M | Hand `squash`-after-`save` becomes a repeated chore |
+| D9 | **`gitman absorb`** — fold a fixup draft into the lane commits that introduced the lines | New intent | M | Hand `squash`-after-`describe` becomes a repeated chore |
 | D10 | **Signing visibility** — a `doctor` check over `Commit.is_signed` | `doctor` row | S | A repo with a signing backend produces unsigned commits and nothing says so |
 
 Size: S ≈ hours, M ≈ a focused PR, L ≈ a multi-PR effort. All estimates assume the current architecture
@@ -39,8 +43,9 @@ holds.
 **Project 35 (2026-08-28) closed project 32's G1–G4** — published wheels, uv as the only
 version backend, and the documented release sequence. See
 [`../35-wheel-distribution/OUTCOME.md`](../35-wheel-distribution/OUTCOME.md). Nothing on this
-list changed, but D8 gained a second friction signal: `gitman resolve --list` reports
-conflicted *lanes* and not the files, which cost time during that project.
+list changed at the time, but D8 gained a second friction signal: `gitman resolve --list` reports
+conflicted *lanes* and not the files, which cost time during that project. (D8 has since
+shipped — see its entry.)
 
 **D8–D10 were added 2026-08-27** from project 34 lane 9. Unlike D1–D7 they arrive **already
 decided** — the design question each one carried is answered in
@@ -72,7 +77,8 @@ is the trigger.
 **Where it plugs in.**
 - `src/gitman/advanced/` — currently just `__init__.py`. This is the sanctioned home; the `github` extra
   is already declared in `pyproject.toml` (`[project.optional-dependencies] github = [...]`).
-- `src/gitman/cli.py` — `publish` (§ line ~186) gains PR open/update behind a capability check; a new
+- `src/gitman/cli.py` — `publish` (`cli.py:368`, re-verified 2026-09-18) gains PR open/update behind a
+  capability check; a new
   `pr-status` command. The base must degrade cleanly when the extra isn't installed (import-guarded).
 - `docs/GITMAN_CONCEPT.md` §7 already lists the forge-aware variants parenthetically ("forge extra: +
   open/update PR"); §8.1 describes the review flow the extra automates; §19 lists it deferred.
@@ -134,15 +140,19 @@ at build time:** all-or-nothing (roll back created children on any failure) vs p
 
 ---
 
-## D3 — `reconcile` *repair*: re-root an orphaned child
+## D3 — `repair`: re-root an orphaned child
 
 **What it is.** A recovery that re-parents an **orphaned** lane. An orphan arises when an out-of-band
-edit deletes a parent bookmark, leaving a `/`-path child whose name-parent is no longer a live lane —
+edit deletes a parent bookmark, leaving a `+`-path child whose name-parent is no longer a live lane —
 violating I3′ (base == name-parent). Today the orphan is **detected and surfaced** but not *repaired*:
-`status` reports it (with an `ORPHANED` marker and a `reconcile` pointer), `capture_state` flags it
-without crashing, and canonicity is preserved (CONCEPT §"I3′" line 110–114; `state.py:_orphan_working_copy`
-:332, the `orphaned` derivation :435; `models.Lane.orphaned`). What's missing is a `reconcile` action that
-actually re-roots the child onto trunk (or an explicit new base) and clears the orphan.
+`status` reports it (an `ORPHANED` marker naming `gitman repair`, `render.py:109`), `capture_state`
+flags it as the note-only `lane-orphaned` anomaly kind without crashing, and canonicity is preserved.
+`anomalies.py`'s registry row for `lane-orphaned` is explicit about the gap: `repair=None`, with
+`manual="rename the lane, or `gitman start <parent>` to re-root"` — i.e. the operator, not gitman,
+currently chooses. (Anchors, re-verified 2026-09-18: `state.py:720` `_orphan_working_copy`,
+`state.py:872` the `orphaned` derivation, `models.py:136` `Lane.orphaned`.) What's missing is a
+`repair` branch that actually re-roots the child onto trunk (or an explicit new base) and clears the
+orphan, rather than pointing the operator at `start`/a rename.
 
 **Why deferred (P2 §6).** Orphaning requires someone to bypass gitman and delete a parent bookmark by
 hand — rare by construction (gitman is the sole writer). Detection + honest reporting is enough until it
@@ -150,74 +160,118 @@ demonstrably happens; the *repair* is added only when real orphans accumulate.
 
 **Friction signal.** `status` starts reporting `ORPHANED` lanes in real use (an agent or human deleted a
 parent out-of-band, or a botched external rebase), and leaving them for manual jj surgery becomes a
-recurring recovery cost.
+recurring recovery cost. **This has already fired once, and was not acted on:** the pyjutsu repo
+carried 19 pre-existing orphaned lanes as of 2026-08-27
+(`.scratch/projects/34-pyjutsu-0-19-adoption/BASELINE.md:259`, "worth a separate `gitman reconcile`
+pass"), noted as unrelated to that project's own work and left untouched. That is a signal against
+pyjutsu, not gitman's own repo, and it was a one-off cleanup opportunity rather than a *recurring*
+cost — so it has not, on its own, forced this item off the backlog. Re-verified 2026-09-18: no
+`lane-orphaned` row in the registry is wired to a repair yet, and no later note records the pyjutsu
+orphans being cleaned up or recurring.
 
-**Where it plugs in.**
-- `src/gitman/reconcile.py` — `do_reconcile` is the established "external edits handled in one place"
-  recovery surface (it already heals colocated-ref drift, stale-`@` refresh via
-  `_refresh_stale_working_copy`, and conflicted-bookmark resolution). Add an orphan-repair branch here.
-- `src/gitman/state.py` — the orphan is already computed (`Lane.orphaned`); repair consumes that.
+**Where it plugs in.** The recovery module was renamed `reconcile.py` → `repair.py` and the intent
+`reconcile` → `repair` (project 46 S6; `reconcile` still works as a deprecated alias,
+`cli.py:_VERB_ALIASES`). The registry/repair split from issue 44 stage 3f also changed the shape:
+- `src/gitman/anomalies.py` — add a `repair="repair"` value to the `lane-orphaned` row (today
+  `repair=None`); the design question that blocked this (auto-pick a base, or ask) is now
+  answered — see D4.
+- `src/gitman/repairs.py` — `REPAIRS`/`REPAIRS_ORDER` is the table `do_repair` actually dispatches
+  through (issue 44 stage 3f); add an orphan entry here, keyed the same way the other five rows are.
+- `src/gitman/repair.py` — `do_repair` is the established "external edits handled in one place"
+  recovery surface (it already heals colocated-ref drift, stale-`@` refresh, conflicted-bookmark
+  resolution, and lane-divergent twins).
+- `src/gitman/state.py` — the orphan is already computed (`Lane.orphaned`); a repair would consume
+  that, not re-derive it.
 
 **Design sketch.** For each orphaned lane: rebase its `base..head` range onto trunk (or a caller-named
-`--onto <live-lane>`), then either rename it to a flat name (drop the dead `/`-prefix) or record the new
+`--onto <live-lane>`), then either rename it to a flat name (drop the dead `+`-prefix) or record the new
 base — closing I3′ by making name-parent == actual base again. Reuse the `do_sync` stacked-rebase path
 (cross-base rebase already handles the `mode="branch"` stale-commit-id footgun via change-id +
 `_merge_tree_conflicts`). An overlap surfaces as a first-class conflict commit, non-blocking (the
-survivor pattern), never a crash. **Open question folds into D4:** does repair auto-pick trunk, or ask?
+survivor pattern), never a crash. **The auto-vs-ask question that used to gate this (D4) is now
+answered** (see D4, and `docs/GITMAN_CONCEPT.md` §20): an orphan has more than one defensible
+re-root target, so per that policy this stays a `manual` report, not an auto-repair — unless the
+implementer can narrow it to a single safe target (e.g. "the nearest live ancestor"), in which case it
+qualifies for `repair=`.
 
-**Dependencies / risks.** Coupled to D4 (reconcile UX): re-rooting is a *decision* (which base?), so the
-auto-vs-ask policy must be settled first. The rename-vs-rebase choice needs an owner call. Must never
-drop the child's commits.
+**Dependencies / risks.** No longer gated on an open design question (D4 is resolved) — only on the
+rename-vs-rebase implementation call and on real orphans actually accumulating. Must never drop the
+child's commits.
 
 **Rough size:** M.
 
 ---
 
-## D4 — `reconcile` UX: how much it decides automatically vs asks
+## D4 — `repair` UX: how much it decides automatically vs asks
 
-**What it is.** The one item CONCEPT flags as *genuinely still open* rather than merely deferred (§20,
-line 692–695): *"how much [reconcile] decides automatically vs asks, given it runs in an agent
+> **RESOLVED 2026-09-18.** The design question below is answered in code and now recorded in
+> `docs/GITMAN_CONCEPT.md` §20 ("Resolved during implementation (issue 44 stage 3a — the anomaly
+> registry)"): `src/gitman/anomalies.py`'s `REGISTRY` gives every anomaly kind either a `repair`
+> intent (a unique safe resolution, applied automatically) or a `manual` string (more than one
+> defensible outcome, named for the operator to choose) — never a guess, and a row must carry one
+> or the other (`anomalies.py` asserts this at import). `lane-divergent` is the worked case that
+> needs both: `repair="repair"` for the three shapes where one side's history contains the
+> other's, `manual="gitman repair --keep local|origin"` for the fourth, a genuine fork. This
+> closes the "genuinely still open" question CONCEPT §20 used to carry. **D3 (re-rooting an
+> orphaned child) is gated by this no longer — it is still unbuilt, but the policy that governs
+> how its repair should behave is now settled.** The entry below is kept as the historical
+> rationale.
+
+**What it is.** The one item CONCEPT used to flag as *genuinely still open* rather than merely
+deferred: *"how much [repair] decides automatically vs asks, given it runs in an agent
 (non-interactive) context."* Not a feature — a **design decision** that governs D3 and every future
-reconcile branch.
+repair branch.
 
-**Why open.** `reconcile` runs in an agent context with no human at the keyboard, so the usual
+**Why it was open.** `repair` runs in an agent context with no human at the keyboard, so the usual
 "prompt the user" escape hatch doesn't exist. Every recovery it performs must either be safe-by-default
-(auto) or produce a structured "decision needed" report (exit 1) that an agent can act on — and where the
-line sits hasn't been forced by a real case yet.
+(auto) or produce a structured "decision needed" report (exit 1) that an agent can act on — and the line
+hadn't been forced by a real case when this item was written.
 
-**Friction signal.** The first reconcile situation where the "obviously safe" auto-action is *not*
-obvious — e.g. two plausible re-root targets for an orphan, or a stale refresh that could pick either of
-two heads. That's the case that forces the policy.
+**How it was resolved.** Issue 44 stage 3a (`anomalies.py`'s own docstring cites it, and
+`ISSUE.md` §4 "Fault 2 — the canonical gate is global, binary, and blocks by default" / "Fix G2 —
+typed anomalies with subjects; one detect/repair registry" is the source) built the registry this
+policy now lives in, ahead of any single forced case — the policy shipped as the shape of the data
+model itself, not as a decision written down separately first.
 
-**Where it plugs in.** `src/gitman/reconcile.py` (`do_reconcile`), and the exit-code contract (`0` ok /
-`1` VC decision needed). The pattern already exists elsewhere: mutating intents that hit a genuine fork
-return exit 1 with a compact "here's the decision" report rather than guessing.
+**Where it plugs in.** `src/gitman/anomalies.py` (`REGISTRY`, `AnomalyKind`), `src/gitman/repairs.py`
+(`REPAIRS`, the dispatch table the registry's `repair=` names point at), `src/gitman/repair.py`
+(`do_repair`), and the exit-code contract (`0` ok / `1` VC decision needed). `render.py`, `repair.py`,
+and `invariants.py` all read a row's `manual` text rather than hand-composing recovery hints.
 
-**Design sketch (the policy to write down, not code).** Draw the line as: *auto* anything with a unique
-safe resolution (stale-`@` refresh, colocated-ref re-sync, conflicted-bookmark structural fix — all
-already auto); *report exit 1* anything with more than one defensible outcome (orphan re-root target,
-ambiguous divergence), naming the options in the report so the calling agent chooses via an explicit
-follow-up intent. Document the rule in CONCEPT §20 and make D3 conform to it.
-
-**Dependencies / risks.** Gates D3. Low code cost, but the decision has blast radius across all future
-reconcile work — worth resolving deliberately the first time a real ambiguous case appears (cheapest item
-on this list, and the only true open *question*).
-
-**Rough size:** S–M (mostly a written policy + conforming the branches).
+**Rough size:** S–M (a written policy + the registry rows that conform to it) — done.
 
 ---
 
-## D5 — `shape`: squash / reorder + hunk-level / interactive `split`
+## D5 — `shape`: squash / reorder + hunk-level `split`
+
+> **SHIPPED 2026-07-22** (commit `e4c1e2a`, "hunk-level split selection and a new shape
+> intent" — this catalogue missed it until the 2026-09-18 re-verification pass). `gitman shape
+> --squash <rev> [--into <rev>]` and `gitman shape --reorder <rev>...` both ship
+> (`cli.py:331`, `core.py:1058` `do_shape`), scoped to the lane's own `base..head` range exactly
+> as designed below. `gitman split --hunks 'file.py:0,2;util.py:1'` also ships (`cli.py:301`,
+> `core.py:912` `do_split`, `core.py:883` `_validate_hunk_selection`): it rejects binary,
+> removed, renamed, and type-changed paths with a named exit-3 message rather than a raw
+> `PyjutsuError`, exactly the risk this entry flagged. `tests/test_hunk_split_integration.py`
+> and `tests/test_s7_verb_migrations.py` cover it. The entry below is kept as the rationale.
+>
+> **One genuine remainder: an *interactive*, prompt-driven `split` is still deferred.**
+> `--hunks` is a machine-drivable selector (an agent computes `path:index` pairs from the
+> structured diff) — there is no TUI, no prompt loop, and none is planned; `docs/GITMAN_CONCEPT.md`
+> §19 lists "an interactive prompt-driven `split`" separately, alongside "hunk-level `split
+> --hunks` shipped." Gitman is an agent-first tool, so it is not obvious this remainder is worth
+> building at all — no friction signal for it has been proposed. Treat it as a live open
+> question rather than a scheduled item: raise it again only if a *human* operator, not an
+> agent, needs to split interactively.
 
 **What it is.** A history-tidying intent (`shape`) covering squash, reorder, and — the part with a real
-dependency — **hunk-level / interactive `split`** (carve *part of a file* into a sibling lane). The
-**path-scoped** `split --paths <sel> --into <lane>` already shipped (project 08); only **partial-file
-(hunk) selection** is missing (CONCEPT §19, §7 note lines 231–234, §643).
+dependency — **hunk-level `split`** (carve *part of a file* into a sibling lane). The
+**path-scoped** `split --paths <sel> --into <lane>` already shipped (project 08); partial-file
+(hunk) selection was the missing half.
 
-**Why deferred — and what changed.** The original reason was a hard block: partial-file selection
-"needs a native pyjutsu `split` binding" (CONCEPT line 233), and pyjutsu exposed no hunk-level split
-primitive. **That block is gone.** The binding landed in **pyjutsu 0.11.0** and is present in the
-0.20.0 engine gitman runs today (re-verified against the running API, 2026-08-27):
+**Why it was deferred, and what changed.** The original reason was a hard block: partial-file selection
+needed a native pyjutsu `split` binding, and pyjutsu exposed no hunk-level split primitive. **That
+block was gone by the time this was written.** The binding landed in pyjutsu 0.11.0 and was present in
+the 0.20.0 engine gitman ran at the time (re-verified against the running API, 2026-08-27):
 
 - `tx.split(commit, selection, mode="siblings"|"stacked")` splits at hunk granularity and returns
   `(first, second)`. `selection` maps each path to `None` (whole file) or a list of **0-based hunk
@@ -226,32 +280,30 @@ primitive. **That block is gone.** The binding landed in **pyjutsu 0.11.0** and 
 - `Hunk` / `HunkLine` are read-surface models, so the indices come from the same structured hunks
   gitman would show. **No patch-header parsing anywhere.**
 
-Two consequences. First, the "machine-drivable selector, not a TUI" requirement in *Dependencies*
-below is already satisfied by construction — a path→hunk-index map is exactly that. Second, pyjutsu's
-own docstring notes that a whole-file selection through `split` reproduces the path-scoped `restore`
-carve, so `split` **subsumes** gitman's shipped path-scoped `split` rather than sitting beside it.
-That makes this a single unified implementation, not a second code path.
+Two consequences. First, a machine-drivable selector (not a TUI) was satisfied by construction — a
+path→hunk-index map is exactly that. Second, pyjutsu's own docstring notes that a whole-file selection
+through `split` reproduces the path-scoped `restore` carve, so `split` **subsumes** gitman's
+already-shipped path-scoped `split` rather than sitting beside it — one unified implementation, not a
+second code path. That is what shipped: `do_split` picks the hunk path or the whole-file path off the
+same `--hunks`/`--paths` mutual-exclusion, in one function.
 
-Constraints to respect: hunk-level selection covers plain modified/added text files only. Binary,
-symlink, conflicted, removed, and renamed/copied paths must be selected whole-file (`None`). An empty
-or a full selection raises `PyjutsuError`.
+Constraints respected in the shipped code: hunk-level selection covers plain modified/added text files
+only. Binary, removed, renamed, copied, and type-changed paths must be selected whole-file (`None`) —
+`_validate_hunk_selection` enforces this with a named message. An empty or full-cover selection is
+refused before pyjutsu ever sees it.
 
-**A full implementation guide already exists** and reached the same conclusion independently:
-[`../27-implementation-guides/D5_HUNK_SPLIT_GUIDE.md`](../27-implementation-guides/D5_HUNK_SPLIT_GUIDE.md)
-(file anchors, code sketches, test plan, verification recipe). Read it before starting; this entry is
-the framing, that one is the build.
+**A full implementation guide existed** and reached the same conclusion independently:
+[`../27-implementation-guides/D5_HUNK_SPLIT_GUIDE.md`](../27-implementation-guides/D5_HUNK_SPLIT_GUIDE.md).
 
-Squash/reorder remain deferred as lower-value until history-tidiness before land becomes a felt need.
+**Friction signal.** You repeatedly needed to peel a few hunks (not whole files) out of an entangled
+`@` into another lane, or you were landing messy multi-commit lanes that wanted a squash/reorder pass
+first.
 
-**Friction signal.** You repeatedly need to peel a few hunks (not whole files) out of an entangled `@`
-into another lane, or you're landing messy multi-commit lanes that want a squash/reorder pass first.
-
-**Where it plugs in.**
-- `src/gitman/core.py` — extend the existing `split` path (path-scoped today) with a hunk selector over
-  `tx.split(..., mode="siblings")`, which is the carve-into-two-siblings topology gitman already means;
-  add `do_shape` for squash/reorder over `parentHead..laneHead`.
-- `src/gitman/cli.py` — `split` gains a hunk selector; new `shape` command.
-- **pyjutsu: nothing.** The binding shipped in 0.20.0. No MP is needed.
+**Where it plugged in.**
+- `src/gitman/core.py` — extended the existing `split` path (path-scoped) with a hunk selector over
+  `tx.split(..., mode="siblings")`; added `do_shape` for squash/reorder over `parentHead..laneHead`.
+- `src/gitman/cli.py` — `split` gained a hunk selector; a new `shape` command.
+- pyjutsu: nothing new needed. The binding shipped in 0.20.0.
 
 **Design sketch.** Squash/reorder operate within a lane's own `base..head` range (never crossing the
 base, so no invariant exemption — same property as land's internal folds). Hunk-split mirrors the
@@ -261,11 +313,11 @@ change id, bookmarks, descendants, and the working copy, which is what gitman's 
 the surviving lane.
 
 **Dependencies / risks.** No longer blocked — the pyjutsu binding shipped in 0.20.0. The remaining risk
-is interface, not plumbing: the CLI needs a selector syntax for `path:hunk-index` that an agent can emit
-without a TUI, and it must reject the file kinds that only accept whole-file selection with a clear
-message rather than a `PyjutsuError`.
+was interface, not plumbing: the CLI needed a selector syntax for `path:hunk-index` that an agent could
+emit without a TUI, and it needed to reject the file kinds that only accept whole-file selection with a
+clear message rather than a `PyjutsuError`. Both landed (`_validate_hunk_selection`).
 
-**Rough size:** M (squash/reorder) + M (hunk-split, now that the binding exists).
+**Rough size:** M (squash/reorder) + M (hunk-split) — done.
 
 ---
 
@@ -273,7 +325,7 @@ message rather than a `PyjutsuError`.
 
 **What it is.** Extend the version model beyond `MAJOR.MINOR.PATCH` to carry pre-release / build metadata
 (e.g. `1.2.0-rc.1`, `+build.5`). Today gitman's `version`/`release` handle core semver only (CONCEPT
-§13, §19; line 547: "pre-release/build metadata deferred").
+§13, §19; line 621: "pre-release/build metadata deferred").
 
 **Why deferred.** No RC/pre-release flow has been needed for gitman's own releases; core semver covers
 the dogfooded path.
@@ -300,7 +352,7 @@ recommended flow is `version bump → land → release`).
 ## D7 — Pluggable forges (GitLab / Gitea)
 
 **What it is.** Generalize the forge extra (D1) beyond GitHub to GitLab/Gitea via the same `Forge`
-protocol (CONCEPT §19, line 644).
+protocol (CONCEPT §19, line 745).
 
 **Why deferred.** Everything lives on GitHub today; a second forge is pure speculation until a repo lives
 elsewhere.
@@ -366,10 +418,10 @@ report must say so rather than mangling bytes. `ConflictError` (path not conflic
 rewritten_destinations, num_rebased, skipped_paths)`. Each hunk of the source moves to the closest
 mutable ancestor that last modified its lines.
 
-**Why deferred.** No design question remains; it is simply unbuilt. `save` then a hand `squash` covers
+**Why deferred.** No design question remains; it is simply unbuilt. `describe` then a hand `squash` covers
 the case today.
 
-**Friction signal.** You repeatedly `save` a fixup and then hand-`squash` it into the commit it
+**Friction signal.** You repeatedly `describe` a fixup and then hand-`squash` it into the commit it
 belongs to.
 
 **Where it plugs in.** `src/gitman/core.py` (a `do_absorb` inside `canonical_tx`) and
@@ -434,7 +486,9 @@ mistake a stale note for open work):
   the N-agent harness (3A), `abandon --recursive` (3B). Model complete.
 - **The single local-authored trunk model** — `remote add`/`push`/`pull`/`untrack`; `adopt` deleted
   (projects 16–21).
-- **Path-scoped `split`** (project 08) — only the *hunk-level* variant remains (D5).
+- **Path-scoped `split`** (project 08) **and hunk-level `split` / `shape`** (D5, shipped
+  2026-07-22, this catalogue caught up 2026-09-18). Only an *interactive*, prompt-driven `split`
+  UI is unbuilt — see D5's remainder note; no backlog item currently tracks it.
 - **`sync --all`** (Phase 1) and the content-aware `status` / total sync / `@`-repark (Tier 1).
 
 ---
@@ -445,3 +499,31 @@ Route VC through **gitman** (this doc is on lane `deferred-backlog-doc`; land + 
 cmds inside **devenv**; jj-lib in-process via **pyjutsu** (no jj CLI, no `-T`). No AI-authorship
 trailers. This is a **tracked** design doc under `.scratch/projects/` (commit it). It is a *reference*,
 not a plan — no `src/`/`tests/` touched.
+
+---
+
+## Stale `origin` branches (found 2026-09-18, not deleted — recorded here, not acted on)
+
+`git ls-remote --heads origin` shows two branches with no local lane: `wave3-land-gitman-20260914`
+and `fix-reconcile-divergent-lane`. Neither is deleted by this pass — deleting a remote branch is
+an operator decision, not a doc-fix one. What each one is:
+
+- **`wave3-land-gitman-20260914`** — the source branch for PR #30, "Land Stage 37 devman consumer
+  migration," merged 2026-09-14. `git merge-base --is-ancestor origin/wave3-land-gitman-20260914
+  origin/main` confirms every commit on it is already an ancestor of `main`. **Nothing would be
+  lost by deleting it** — it is a fully-merged, retired PR branch that GitHub did not auto-delete.
+
+- **`fix-reconcile-divergent-lane`** — one commit (`783751b`, "fix: reconcile unbookmarked
+  divergent lane sides," 2026-09-09), built on a `main` from 2026-09-08 (merge-base `9babc9a`).
+  `git merge-base --is-ancestor origin/fix-reconcile-divergent-lane origin/main` says it is **not**
+  an ancestor of `main` — its one commit is not reachable from trunk. `gh pr list --state all` and
+  a direct API query for its head ref both return no PR, open or closed: this branch was pushed and
+  never turned into a pull request. Its content — a narrower, issue-42-era fix to `reconcile.py`
+  (`find_unbookmarked_divergent_lane_commits`) — was superseded by issue 44's later, more general
+  content-based classification (`state.find_divergent_lane_twins`, the `lane-divergent` registry
+  row, `repair.py`'s twin-resolution path); `git log` shows the commit "docs: mark issue 42 G0
+  superseded; add issue 44 kickoff" marking that transition explicitly. Nothing in current
+  `src/gitman/` calls the function this branch added, and it does not exist in the tree today.
+  **Deleting it would lose one superseded commit**, recoverable only via the reflog/branch ref
+  itself (not via `main`) — worth a deliberate call, not an automatic one, since it is dead work
+  rather than live risk.
