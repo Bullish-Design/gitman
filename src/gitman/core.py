@@ -2888,18 +2888,6 @@ def _resolve_undo_op(session: Session, op: str) -> tuple[str, str]:
     return target.parent_ids[0], target.description
 
 
-def _undo_fingerprint(session: Session) -> tuple:
-    """What a restore must move if it does anything: every bookmark target, plus `@`.
-
-    `restore_operation` always APPENDS an op, so comparing op ids before and after cannot tell a
-    real revert from a no-op — the head id differs either way. Compare the state itself instead.
-    Reads the head operation directly; it never snapshots (an undo must not absorb on-disk edits).
-    """
-    view = session.ws.head()
-    marks = tuple(sorted((b.name, b.remote or "", tuple(b.target_ids)) for b in view.bookmarks()))
-    return marks, view.working_copy().commit_id
-
-
 def do_undo(session: Session, op: str | None, list_: bool):
     from gitman.invariants import (
         clear_undo_checkpoint,
@@ -2951,16 +2939,7 @@ def do_undo(session: Session, op: str | None, list_: bool):
                 outcome="NOOP",
                 messages=[f"{what} was already undone — the repo is already at that point."],
             )
-        state_before = _undo_fingerprint(session)
         session.ws.restore_operation(target)
-        if _undo_fingerprint(session) == state_before:
-            # The restore moved nothing. Report that honestly and KEEP the checkpoint: nothing was
-            # undone, so the operator must still be able to undo the real intent (F2).
-            return IntentResult(
-                intent="undo",
-                outcome="NOOP",
-                messages=[f"{what} changed nothing — the repo already sits at that point."],
-            )
         # `restore_operation` rewinds jj only — `refs/heads/*` keep pointing at the undone commits,
         # and jj's own export *refuses* to rewind a ref, so without this the repo is left
         # DESYNCHRONIZED and the operator is sent to `repair` after every undo (31-RC3). Every
