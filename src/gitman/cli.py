@@ -394,12 +394,22 @@ def abandon(
         bool,
         typer.Option("--recursive", "-r", help="Tear down the whole subtree bottom-up (child→parent)."),
     ] = False,
+    keep_remote: Annotated[
+        bool,
+        typer.Option("--keep-remote", help="Leave a published lane's remote branch in place."),
+    ] = False,
 ) -> None:
-    """Discard a lane (terminal); `--recursive` tears down its whole subtree bottom-up."""
+    """Discard a lane (terminal); `--recursive` tears down its whole subtree bottom-up.
+
+    A published lane's remote branch is deleted too, as `land` does. `--keep-remote` leaves it —
+    but no gitman verb removes it later, so the report names the out-of-gitman path.
+    """
     from gitman.core import do_abandon
     from gitman.lanes import normalise_lane_name
 
-    _finish_intent(do_abandon(_session(), normalise_lane_name(lane) if lane else lane, recursive))
+    _finish_intent(
+        do_abandon(_session(), normalise_lane_name(lane) if lane else lane, recursive, keep_remote)
+    )
 
 
 # --- M3 ------------------------------------------------------------------------------

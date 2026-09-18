@@ -1754,7 +1754,36 @@ def _abandon_range(session: Session, trunk: str, target: str) -> None:
     _retire_git_ref(session, target)
 
 
-def do_abandon(session: Session, lane: str | None, recursive: bool = False):
+def _retire_remote_branch(session: Session, lane: str, *, keep: bool) -> list[str]:
+    """Discard a published lane's remote branch, mirroring `land`'s cleanup.
+
+    `land` deletes a retired lane's remote branch and says so. `abandon` did neither, so
+    discarding a published lane left a branch on the remote that no local lane named — and that
+    no gitman verb can remove, because `remote` ships only `add`. That silent leak is the likely
+    source of the stale branches found on origin on 2026-09-18.
+
+    Best-effort and one-way, exactly as in `land`: the local bookmark is already gone but the
+    remote-tracking ref persists until pruned, so the delete-push still resolves, and a failure
+    never undoes the abandon. `keep` is the escape for a lane whose branch someone is still
+    reading — it names the out-of-gitman path, because there is no in-gitman one.
+    """
+    from pyjutsu import PyjutsuError
+
+    if not has_remote(session.ws):
+        return []
+    if keep:
+        return [
+            f"remote branch '{lane}' kept (--keep-remote) — no gitman verb removes it later; "
+            f"delete it on the forge, or with `git push <remote> --delete {lane}` outside gitman."
+        ]
+    try:
+        session.ws.git_push(pick_remote(session.ws), lane, delete=True)
+        return [f"deleted remote branch '{lane}' (one-way; `gitman undo` won't restore it)."]
+    except PyjutsuError as exc:
+        return [f"remote branch '{lane}' not deleted (delete it manually): {exc}"]
+
+
+def do_abandon(session: Session, lane: str | None, recursive: bool = False, keep_remote: bool = False):
     """Discard a lane. Deliberately UNGATED (issue 44 stage 3b, guide §3.5): `abandon`'s row in the
     blocks matrix is empty on purpose — it is the escape hatch every other verb's refusal points
     at, so it must never itself refuse for an anomaly reason. Issue 42 was exactly this: a
@@ -1767,7 +1796,7 @@ def do_abandon(session: Session, lane: str | None, recursive: bool = False):
     from gitman.invariants import _assert_fresh, _export_colocated_git, repo_lock, write_undo_checkpoint
     from gitman.lanes import children, lane_depth, lane_names, require_current_lane, subtree
     from gitman.models import IntentResult
-    from gitman.state import _conflicted_lanes, capture_state
+    from gitman.state import _conflicted_lanes, _lane_index, capture_state
 
     trunk = require_trunk(session.config)
     target = lane or require_current_lane(session, trunk)
@@ -1798,10 +1827,17 @@ def do_abandon(session: Session, lane: str | None, recursive: bool = False):
                     exit_code=1,
                 )
             op_before = session.ws.head_operation()
+            # Read the published set BEFORE the discard — `_lane_index` reads bookmarks, and the
+            # local half is about to go.
+            _, published = _lane_index(session.view())
+            was_published = target in published
             _abandon_range(session, trunk, target)
             notes = _cleanup_workspace(session, target)
             notes += _export_colocated_git(session)
             write_undo_checkpoint(session.repo_root, op_before, "abandon")
+        # Outside the lock, as `land` does: the network call never runs while the repo is held.
+        if was_published:
+            notes += _retire_remote_branch(session, target, keep=keep_remote)
         return IntentResult(
             intent="abandon",
             outcome="ABANDONED",
@@ -1837,10 +1873,14 @@ def do_abandon(session: Session, lane: str | None, recursive: bool = False):
                         exit_code=1,
                     )
                 op_before = session.ws.head_operation()
+                _, published = _lane_index(session.view())
+                node_published = node in published
                 _abandon_range(session, trunk, node)
                 node_notes = _cleanup_workspace(session, node, keep_foreign=True)
                 node_notes += _export_colocated_git(session)
                 write_undo_checkpoint(session.repo_root, op_before, "abandon")
+            if node_published:
+                node_notes += _retire_remote_branch(session, node, keep=keep_remote)
             abandoned.append(node)
             notes += node_notes
             last_undo = "gitman undo"
