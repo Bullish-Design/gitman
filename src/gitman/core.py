@@ -2824,11 +2824,141 @@ def do_untrack(session: Session, paths: list[str]):
     )
 
 
-def do_resolve(session: Session, list_: bool):
+def _conflicted_at_head(view) -> dict[str, int]:
+    """`view`'s conflicted paths at `@` → their side count."""
+    return {c.path: c.num_sides for c in view.conflicts("@")}
+
+
+def _require_conflicted(session: Session, path: str) -> tuple[object, int]:
+    """Snapshot, then refuse a path that is not conflicted at `@`, naming the ones that are.
+
+    Returns the view it decided on, so the caller reads content from the same snapshot.
+    """
+    view = session.fresh_view()
+    conflicts = _conflicted_at_head(view)
+    if path in conflicts:
+        return view, conflicts[path]
+    if not conflicts:
+        raise GitmanError(f"'{path}' is not conflicted — nothing at @ is.", exit_code=3)
+    listed = ", ".join(sorted(conflicts))
+    raise GitmanError(f"'{path}' is not conflicted at @. Conflicted: {listed}.", exit_code=3)
+
+
+def _resolve_show(session: Session, path: str):
+    """`resolve <path> --show` — hand back the marked text, so a caller can compute a resolution."""
+    from gitman.models import IntentResult
+
+    view, num_sides = _require_conflicted(session, path)
+    try:
+        content = view.conflict_content(path, "@")
+    except UnicodeDecodeError as exc:  # pyjutsu is UTF-8 only; say so rather than mangling bytes
+        raise GitmanError(
+            f"'{path}' is not UTF-8 text — gitman cannot show or write a binary conflict. "
+            f"Resolve it on disk and let gitman re-snapshot.",
+            exit_code=1,
+        ) from exc
+    return IntentResult(
+        intent="resolve",
+        outcome="SHOWN",
+        messages=[
+            f"{path} ({num_sides}-sided), with jj conflict markers "
+            f"(<<<<<<< %%%%%%% +++++++ >>>>>>>).",
+            f"Write the resolution back with `gitman resolve {path} --from -`.",
+        ],
+        content=content,
+        exit_code=0,
+    )
+
+
+def _resolve_write(session: Session, path: str, source: str):
+    """`resolve <path> --from <file|->` — write a resolution into `@`.
+
+    jj-lib honours markers left in the content, so a partial resolution is a legal outcome: the
+    path stays conflicted and the report still exits 1. A fully cleared file exits 0.
+    """
+    import sys
+
+    from pyjutsu.errors import ImmutableCommitError
+
+    from gitman.invariants import canonical_tx
+    from gitman.models import IntentResult
+
+    if source == "-":
+        content = sys.stdin.read()
+    else:
+        src = Path(source)
+        if not src.is_file():
+            raise GitmanError(f"--from '{source}': no such file (use `-` to read stdin).", exit_code=3)
+        try:
+            content = src.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            raise GitmanError(f"--from '{source}': not UTF-8 text.", exit_code=3) from exc
+
+    _, before = _require_conflicted(session, path)
+    try:
+        with canonical_tx(session, "resolve") as tx:
+            tx.resolve_conflict(path, content)
+    except ImmutableCommitError as exc:
+        raise explain_immutable(session, exc, f"resolve '{path}' at @") from exc
+
+    after = _conflicted_at_head(session.fresh_view())
+    still = after.get(path)
+    if still is None:
+        messages = [f"resolved {path} ({before}-sided) — no markers left."]
+        remaining = sorted(after)
+        if remaining:
+            messages.append(f"still conflicted: {', '.join(remaining)}")
+            outcome, exit_code = "CONFLICTS", 1
+        else:
+            messages.append("no conflicts remain at @.")
+            outcome, exit_code = "RESOLVED", 0
+    else:
+        # Markers survived the write. That is expressible on purpose — say so plainly.
+        messages = [
+            f"wrote {path}, still conflicted ({still}-sided) — the content kept conflict markers.",
+            "That is a partial resolution, not a failure; clear the markers and write it again.",
+        ]
+        outcome, exit_code = "CONFLICTS", 1
+    return IntentResult(
+        intent="resolve",
+        outcome=outcome,
+        messages=messages,
+        exit_code=exit_code,
+        undo_command="gitman undo",
+    )
+
+
+def do_resolve(
+    session: Session,
+    list_: bool,
+    *,
+    path: str | None = None,
+    show: bool = False,
+    from_: str | None = None,
+):
     from gitman.models import IntentResult
     from gitman.state import capture_state
 
+    # Order matters: the most specific complaint wins, so `--list f.txt` is told about --list
+    # rather than being told to pick --show or --from.
+    if show and from_ is not None:
+        raise GitmanError("`resolve` takes --show or --from, not both.", exit_code=3)
+    if list_ and (path is not None or show or from_ is not None):
+        raise GitmanError("--list reports every conflict; it takes no PATH, --show or --from.", exit_code=3)
+    if (show or from_ is not None) and path is None:
+        raise GitmanError("--show and --from need a PATH: `gitman resolve <path> --show`.", exit_code=3)
+    if path is not None and not show and from_ is None:
+        raise GitmanError(
+            f"`gitman resolve {path}` needs --show to read it or --from to write a resolution.",
+            exit_code=3,
+        )
+
     require_trunk(session.config)
+    if show:
+        return _resolve_show(session, path)
+    if from_ is not None:
+        return _resolve_write(session, path, from_)
+
     state = capture_state(session)  # tolerates off-canonical
     view = session.view()
     files = view.conflicts("@") if state.current_lane else []
@@ -2852,6 +2982,11 @@ def do_resolve(session: Session, list_: bool):
             bits.append(f"{len(conflicted_lanes)} conflicted lane(s): {', '.join(conflicted_lanes)}")
         messages.append("; ".join(bits) + "  (`gitman resolve --list` for files)")
     messages.append("Not blocked — edit the files (jj markers: <<<<<<< %%%%%%% +++++++ >>>>>>>), then continue.")
+    if files:
+        messages.append(
+            f"Or work through gitman: `gitman resolve {files[0].path} --show` reads the marked text, "
+            f"`gitman resolve {files[0].path} --from -` writes the resolution back."
+        )
     return IntentResult(intent="resolve", outcome="CONFLICTS", messages=messages, exit_code=1)
 
 

@@ -29,7 +29,7 @@ against the tree at trunk `4d0890a3`.
 | D5 | **`shape`** — squash/reorder + **hunk-level/interactive `split`** | New intent | M | You need partial-file carving or history tidy-up before land |
 | D6 | **Pre-release / build version metadata** | Semver extension | S | A real pre-release/RC flow is needed |
 | D7 | **Pluggable forges** (GitLab / Gitea) | Forge abstraction | M | A repo lives somewhere other than GitHub |
-| D8 | **`resolve --show` / `--from -`** — a write mode for the existing intent | Intent extension | S | An agent computes a resolution and has to write it to disk itself; **or `--list` not naming the conflicted files costs time** |
+| ~~D8~~ | ~~**`resolve --show` / `--from -`** — a write mode for the existing intent~~ | **SHIPPED 2026-09-18** (project 49) | S | — |
 | D9 | **`gitman absorb`** — fold a fixup draft into the lane commits that introduced the lines | New intent | M | Hand `squash`-after-`save` becomes a repeated chore |
 | D10 | **Signing visibility** — a `doctor` check over `Commit.is_signed` | `doctor` row | S | A repo with a signing backend produces unsigned commits and nothing says so |
 
@@ -320,6 +320,13 @@ new impl + auth wiring, no core change. Build only after D1 and only for a concr
 ---
 
 ## D8 — `resolve --show` / `resolve --from -`: a write mode for the existing intent
+
+> **SHIPPED 2026-09-18 (project 49).** Built as decided below, with no design change: content in,
+> marked text out, no `--ours`/`--theirs`. `IntentResult` gained a `content` field so `--show`
+> returns the file verbatim — splitting it into report lines would lose the trailing newline and
+> change the tree. A partial resolution (markers left in the content) is honoured by jj-lib, stays
+> conflicted and exits 1, and the report says so. `tests/test_d8_resolve_write.py` (22 tests).
+> The entry below is kept as the rationale.
 
 **What it is.** The write half of `gitman resolve`. The intent already ships as a **read**
 (`cli.py:343`, `core.py:2181`): it lists conflicted paths at `@` with their side count and returns

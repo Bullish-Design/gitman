@@ -466,12 +466,18 @@ def remote_add(
 
 @app.command()
 def resolve(
+    path: Annotated[str | None, typer.Argument(help="A conflicted path, for --show or --from.")] = None,
     list_: Annotated[bool, typer.Option("--list", help="List remaining conflicts.")] = False,
+    show: Annotated[bool, typer.Option("--show", help="Print PATH's marked text (jj conflict markers).")] = False,
+    from_: Annotated[
+        str | None,
+        typer.Option("--from", help="Write PATH's resolution from FILE, or `-` for stdin."),
+    ] = None,
 ) -> None:
-    """Surface remaining conflicts / confirm cleared."""
+    """Surface remaining conflicts, show one marked, or write a resolution back."""
     from gitman.core import do_resolve
 
-    _finish_intent(do_resolve(_session(), list_))
+    _finish_intent(do_resolve(_session(), list_, path=path, show=show, from_=from_))
 
 
 @app.command()

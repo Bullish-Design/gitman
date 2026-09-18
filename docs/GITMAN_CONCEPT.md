@@ -222,7 +222,7 @@ They forward every option and exit code and name the replacement in the report's
 | `push` | `gitman push [--reset-origin]` | Publish local trunk → origin under **two gates**: content (the remote holds nothing local lacks) and push safety (the push would not drop a commit object the remote names). A refusal names the commits `--reset-origin` would drop. | `ws.git_push(<remote>, <trunk>)` (force-with-lease engine; both gates are gitman policy) |
 | `remote add` | `gitman remote add <url> [--name origin]` | Add a git remote (in-process; never touches git HEAD), bootstrapping trunk toward its first `push`. | `ws.add_remote` |
 | `untrack` | `gitman untrack <path>…` | Stop tracking machine-local file(s): add to `.gitignore` + drop from the tree (files kept on disk; on the current lane). | `.gitignore` + `ws.untrack_paths` |
-| `resolve` | `gitman resolve [--list]` | Surface remaining conflicts / confirm cleared. | `jj resolve --list` |
+| `resolve` | `gitman resolve [<path> --show \| --from <file\|->] [--list]` | Surface remaining conflicts / confirm cleared; `--show` hands back one path's marked text and `--from` writes a resolution into `@`. Markers left in the content are honoured, so a partial resolution stays exit 1. | `jj resolve` |
 | `undo` | `gitman undo [--op <id>] [--list]` | Revert the last intent, or the intent named by a `--list` id. | `jj undo` / `jj op restore` |
 | `doctor` | `gitman doctor` | Validate the execution boundary and toolchain (pyjutsu/jj-lib version, git, colocation, remote, frozen trunk, uv, colocated HEAD/refs/index) and report canonicity. | preflight checks |
 | `init` | `gitman init [--trunk <name>] [--colocate]` | Resolve + freeze trunk; scaffold `gitman.toml` + the agent skill. `--colocate` adopts an existing `.git` or creates one first. | colocation + trunk freeze + config write |
@@ -267,9 +267,9 @@ every non-leaf tree (D-A2), which the pre-D-A2 `/` encoding could not do.
 batch fan-out wrapper (loop `start` for now); an interactive, prompt-driven `split` selection
 (hunk-level selection ships as `split --hunks`; see `.scratch/projects/27-implementation-guides/
 D5_HUNK_SPLIT_GUIDE.md`); re-rooting an orphaned child (a `repair` extension); pre-release version
-metadata; pluggable forges. Three further items are **designed and unbuilt** — a write mode for
-`resolve`, `gitman absorb`, and a signing-visibility check in `doctor`; see
-`.scratch/projects/24-deferred-backlog/BACKLOG.md` D8–D10.
+metadata; pluggable forges. Two further items are **designed and unbuilt** — `gitman absorb` and a
+signing-visibility check in `doctor`; see `.scratch/projects/24-deferred-backlog/BACKLOG.md` D9–D10.
+(D8, a write mode for `resolve`, shipped — the row above.)
 
 ## 8. Lane & workspace flow (parallel agents)
 

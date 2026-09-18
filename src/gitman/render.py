@@ -187,6 +187,10 @@ def render_intent(result: IntentResult) -> str:
     lane = f" [{result.lane}]" if result.lane else ""
     lines = [f"Gitman {result.intent}{lane} — {result.outcome}"]
     lines.extend(result.messages)
+    if result.content is not None:
+        # Verbatim, never reflowed — this is file content, not a report line. The trailing
+        # newline is dropped here only because `"\n".join` re-adds one at the end.
+        lines.append(result.content[:-1] if result.content.endswith("\n") else result.content)
     lines.extend(f"note: {n}" for n in result.notes)
     if result.undo_command:
         lines.append(f"Undo: `{result.undo_command}`")

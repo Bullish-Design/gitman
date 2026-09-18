@@ -242,3 +242,8 @@ class IntentResult(BaseModel):
     notes: list[str] = Field(default_factory=list)
     undo_command: str | None = None
     state: RepoState | None = None
+    # Verbatim file content, for an intent whose job is to hand bytes back (`resolve --show`).
+    # It is NOT `messages`: a report line may be reworded, but this is the file, and a caller
+    # writes it back unchanged. Splitting it into lines would lose the trailing newline, which
+    # changes the tree. `--json` carries it losslessly; the text report prints it as-is.
+    content: str | None = None
