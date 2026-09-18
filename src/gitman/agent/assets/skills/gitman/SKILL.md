@@ -123,7 +123,8 @@ for migrating a repo that already carries re-hash-twin residue).
 ## Safety net
 
 - **`gitman undo`** reverts the last intent (whole-intent, via jj's op-log).
-  `gitman undo --list` shows recent ops; `gitman undo --op <id>` restores any of them.
+  `gitman undo --list` shows recent ops; `gitman undo --op <id>` undoes the intent that id
+  names (restores to its parent op, not to the op itself).
 - **`gitman resolve [--list]`** surfaces conflicts. Conflicts are *not* blocking — keep
   working and resolve later (jj records conflicts in commits).
 - **`gitman repair`** is the one recovery path when `status` says OFF-CANONICAL or

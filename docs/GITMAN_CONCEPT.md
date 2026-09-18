@@ -223,7 +223,7 @@ They forward every option and exit code and name the replacement in the report's
 | `remote add` | `gitman remote add <url> [--name origin]` | Add a git remote (in-process; never touches git HEAD), bootstrapping trunk toward its first `push`. | `ws.add_remote` |
 | `untrack` | `gitman untrack <path>…` | Stop tracking machine-local file(s): add to `.gitignore` + drop from the tree (files kept on disk; on the current lane). | `.gitignore` + `ws.untrack_paths` |
 | `resolve` | `gitman resolve [--list]` | Surface remaining conflicts / confirm cleared. | `jj resolve --list` |
-| `undo` | `gitman undo [--op <id>] [--list]` | Revert the last intent, or to a chosen op. | `jj undo` / `jj op restore` |
+| `undo` | `gitman undo [--op <id>] [--list]` | Revert the last intent, or the intent named by a `--list` id. | `jj undo` / `jj op restore` |
 | `doctor` | `gitman doctor` | Validate the execution boundary and toolchain (pyjutsu/jj-lib version, git, colocation, remote, frozen trunk, uv, colocated HEAD/refs/index) and report canonicity. | preflight checks |
 | `init` | `gitman init [--trunk <name>] [--colocate]` | Resolve + freeze trunk; scaffold `gitman.toml` + the agent skill. `--colocate` adopts an existing `.git` or creates one first. | colocation + trunk freeze + config write |
 | `repair` | `gitman repair [--abandon] [--keep local\|origin]` | The one recovery path: adopt stray changes into lanes (or `--abandon` discard them) and heal jj↔git ref/HEAD drift, never discarding history unless asked. | anomaly registry + ref repair + `git_import` |
@@ -582,8 +582,10 @@ Constraints that are only *documented* drift. The lane model holds by constructi
 - **Intent-level checkpoints.** A single intent (e.g. `sync` = fetch + rebase) may be
   several jj ops. Capture the op-id before; "undo this intent" = `jj op restore
   <captured>` — reverts the *whole* intent atomically.
-- **`gitman undo`** = undo the last intent. **`--op <id>`** = restore to any op.
-  **`--list`** = show recent undoable intents (descriptions from op-log `tags.args`).
+- **`gitman undo`** = undo the last intent. **`--op <id>`** = undo the intent that op id
+  names — restore to that op's PARENT, not to the op itself (mirrors `jj op undo`).
+  **`--list`** = show recent undoable intents (descriptions from op-log `tags.args`), and
+  the ids it prints are the ones `--op` expects.
 - **Every mutating report ends with its own undo command** — the escape hatch is always
   inline. The single strongest reason to route VC through Gitman.
 

@@ -2855,6 +2855,51 @@ def do_resolve(session: Session, list_: bool):
     return IntentResult(intent="resolve", outcome="CONFLICTS", messages=messages, exit_code=1)
 
 
+def _state_signature(view) -> tuple:
+    """A cheap content fingerprint of a view: the working copy plus every bookmark's target.
+
+    `restore_operation` always appends a fresh op to the log, even when it lands on state
+    identical to the one we started from — so comparing op ids before vs. after a restore
+    never catches a no-op (F2). Comparing content does: two views with the same working copy
+    and the same bookmarks are the same repo state, whatever op id records it.
+    """
+    wc = view.working_copy().commit_id
+    rows = [(b.name, b.remote or "", tuple(b.target_ids)) for b in view.bookmarks()]
+    return (wc, tuple(sorted(rows)))
+
+
+def _resolve_undo_op(session: Session, op: str) -> tuple[str, str]:
+    """Resolve an op id/prefix — as `--list` prints it — to (parent id, that op's description).
+
+    `--list` prints the id of the operation an intent's OWN transaction produced (the state
+    right after the intent ran). `--op <id>` names the intent to undo, mirroring `jj op undo`:
+    undoing operation X means restoring to X's PARENT, not to X itself. Restoring to X (the old,
+    wrong behaviour) lands back on the intent's own result and reports success for doing nothing.
+    """
+    matches = [o for o in session.view().operations(None) if o.id.startswith(op)]
+    if not matches:
+        raise GitmanError(f"no operation matches '{op}'.", exit_code=3)
+    if len(matches) > 1:
+        ids = ", ".join(m.id[:12] for m in matches)
+        raise GitmanError(f"'{op}' is ambiguous — matches {ids}.", exit_code=3)
+    target = matches[0]
+    if not target.parent_ids:
+        raise GitmanError(f"operation {target.id[:12]} is the root — nothing came before it.", exit_code=3)
+    return target.parent_ids[0], target.description
+
+
+def _undo_fingerprint(session: Session) -> tuple:
+    """What a restore must move if it does anything: every bookmark target, plus `@`.
+
+    `restore_operation` always APPENDS an op, so comparing op ids before and after cannot tell a
+    real revert from a no-op — the head id differs either way. Compare the state itself instead.
+    Reads the head operation directly; it never snapshots (an undo must not absorb on-disk edits).
+    """
+    view = session.ws.head()
+    marks = tuple(sorted((b.name, b.remote or "", tuple(b.target_ids)) for b in view.bookmarks()))
+    return marks, view.working_copy().commit_id
+
+
 def do_undo(session: Session, op: str | None, list_: bool):
     from gitman.invariants import (
         clear_undo_checkpoint,
@@ -2872,20 +2917,50 @@ def do_undo(session: Session, op: str | None, list_: bool):
     with repo_lock(session.repo_root):
         undoing_repair = False
         if op:
-            target, what = op, f"op {op[:12]}"
+            target, undone_desc = _resolve_undo_op(session, op)
+            what = f"op {op[:12]} ({undone_desc})"
         else:
             rec = read_undo_checkpoint(session.repo_root)
             undoing_repair = bool(rec) and rec.get("intent") in ("repair", "reconcile")
             if not rec:
-                session.ws.undo()  # fallback: revert the head op
+                # No checkpoint means no recorded intent — `ws.undo()` just rewinds whatever the
+                # head operation happens to be, which may be a snapshot, not a `gitman` command.
+                # Name it so the operator can tell this apart from a targeted intent undo.
+                head_desc = session.view().operations(1)[0].description
+                session.ws.undo()  # rewinds the head op; raises if it has no parent (root op)
                 return IntentResult(
                     intent="undo",
-                    outcome="UNDONE",
-                    messages=["undid the last operation (no recorded intent checkpoint)."]
+                    outcome="REWOUND",
+                    messages=[
+                        f"rewound the head operation ({head_desc}) — no intent checkpoint was "
+                        "recorded, so this may not be your last `gitman` command."
+                    ]
                     + sync_colocated_refs(session),
                 )
             target, what = rec["op"], f"intent '{rec.get('intent', '?')}'"
+        sig_before = _state_signature(session.view())
+        sig_target = _state_signature(session.ws.at_operation(target))
+        if sig_before == sig_target:
+            # Restoring would land on the exact state we are already in — `restore_operation`
+            # still appends a fresh (no-diff) op, so comparing op ids never catches this.
+            # Reporting success here is the field defect: the operator sees "UNDONE" while trunk
+            # never moves (e.g. `--op` given the intent's own id, pre-fix, or the same undo run
+            # twice in a row).
+            return IntentResult(
+                intent="undo",
+                outcome="NOOP",
+                messages=[f"{what} was already undone — the repo is already at that point."],
+            )
+        state_before = _undo_fingerprint(session)
         session.ws.restore_operation(target)
+        if _undo_fingerprint(session) == state_before:
+            # The restore moved nothing. Report that honestly and KEEP the checkpoint: nothing was
+            # undone, so the operator must still be able to undo the real intent (F2).
+            return IntentResult(
+                intent="undo",
+                outcome="NOOP",
+                messages=[f"{what} changed nothing — the repo already sits at that point."],
+            )
         # `restore_operation` rewinds jj only — `refs/heads/*` keep pointing at the undone commits,
         # and jj's own export *refuses* to rewind a ref, so without this the repo is left
         # DESYNCHRONIZED and the operator is sent to `repair` after every undo (31-RC3). Every
@@ -2903,7 +2978,7 @@ def do_undo(session: Session, op: str | None, list_: bool):
         intent="undo",
         outcome="UNDONE",
         messages=[f"reverted {what}."] + ref_notes,
-        notes=["older intents: `gitman undo --list`, then `gitman undo --op <id>`."],
+        notes=["older intents: `gitman undo --list`, then `gitman undo --op <id>` undoes that op."],
     )
 
 

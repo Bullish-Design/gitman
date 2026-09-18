@@ -476,10 +476,10 @@ def resolve(
 
 @app.command()
 def undo(
-    op: Annotated[str | None, typer.Option("--op", help="Restore to a specific op id.")] = None,
+    op: Annotated[str | None, typer.Option("--op", help="Undo the intent this op id names.")] = None,
     list_: Annotated[bool, typer.Option("--list", help="List recent undoable intents.")] = False,
 ) -> None:
-    """Revert the last intent, or restore to a chosen op."""
+    """Revert the last intent, or a chosen one named by `--list`."""
     from gitman.core import do_undo
 
     _finish_intent(do_undo(_session(), op, list_))
