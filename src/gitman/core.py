@@ -1123,13 +1123,27 @@ def do_shape(
             tx.set_bookmark(lane, order[-1])
             summary = f"reordered {len(order)} change(s) on lane '{lane}'."
 
+    # `tx.squash` rewrites the change `@` sat on, and jj leaves `@` as a fresh empty child that
+    # carries no bookmark — so a lane verb can hand back a working copy no longer ON the lane.
+    # Say so, and name the verb that returns. Silence here is not neutral: the next `describe`
+    # raises the GENERIC `lanes.require_current_lane` refusal, which points at `gitman start` —
+    # and following that literally opens a NEW lane instead of resuming this one.
+    state = capture_state(session)
+    notes: list[str] = []
+    if state.current_lane != lane:
+        notes.append(
+            f"@ is parked off the lane — `gitman switch {lane}` to resume it "
+            f"(not `start`, which opens a new one)."
+        )
+
     return IntentResult(
         intent="shape",
         outcome="SHAPED",
         lane=lane,
         messages=[summary],
+        notes=notes,
         undo_command="gitman undo",
-        state=capture_state(session),
+        state=state,
     )
 
 
