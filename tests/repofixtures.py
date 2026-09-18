@@ -13,7 +13,10 @@ They are fixtures of one test file, not of the suite.
 
 from __future__ import annotations
 
+import atexit
+import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 from pyjutsu import Workspace
@@ -29,6 +32,38 @@ def session(d: Path, cfg: GitmanConfig | None = None) -> Session:
     return Session.load(d, cfg or CFG)
 
 
+def _make_repo(dest: Path, path: str, content: str, child: bool, export: bool) -> Workspace:
+    """Build a repo from nothing. Called once per variant per process; see `build_repo`."""
+    dest.mkdir(parents=True, exist_ok=True)
+    ws = Workspace.init(dest, colocate=True)
+    (dest / path).write_text(content)  # auto-snapshot folds it into @
+    with ws.transaction("initial") as tx:
+        tx.describe("@", "initial")
+        tx.create_bookmark("main", "@")
+        if child:
+            tx.new(["main"])
+    if export:
+        ws.git_export()
+    return ws
+
+
+_templates: dict[tuple, Path] = {}
+_template_root: Path | None = None
+
+
+def _template(key: tuple) -> Path:
+    """The prototype repo for one variant, built on first use and kept for the process."""
+    global _template_root
+    if _template_root is None:
+        _template_root = Path(tempfile.mkdtemp(prefix="gitman-tests-templates-"))
+        atexit.register(shutil.rmtree, _template_root, ignore_errors=True)
+    if key not in _templates:
+        dest = _template_root / f"t{len(_templates)}"
+        _make_repo(dest, *key)
+        _templates[key] = dest
+    return _templates[key]
+
+
 def build_repo(
     dest: Path,
     *,
@@ -41,18 +76,21 @@ def build_repo(
 
     `path`/`content` name that file. `child` parks `@` on a fresh empty child of trunk, which
     is the state `gitman init` leaves behind. `export` writes the refs through to the git side.
+
+    The repo is **copied from a per-process template**, not built from nothing. The suite builds
+    one repo per test, ~374 in all; building costs ~56 ms and copying the finished 16 KiB repo
+    costs ~6 ms. That bought 24.2 s -> 19.0 s of wall clock on an 8-core machine. Total CPU did
+    not move: `Workspace.init` spends its time in small synced writes, so what the copy saves is
+    blocking I/O, and workers stall less.
+
+    Nothing inside a colocated repo names its own absolute path — verified by a binary-inclusive
+    scan — so the copy is a faithful repo, and `copytree` keeps mtimes so jj still reads the
+    working copy as clean. A test that needs a repo built from nothing calls `_make_repo`.
     """
+    src = _template((path, content, child, export))
     dest.mkdir(parents=True, exist_ok=True)
-    ws = Workspace.init(dest, colocate=True)
-    (dest / path).write_text(content)  # auto-snapshot folds it into @
-    with ws.transaction("initial") as tx:
-        tx.describe("@", "initial")
-        tx.create_bookmark("main", "@")
-        if child:
-            tx.new(["main"])
-    if export:
-        ws.git_export()
-    return ws
+    shutil.copytree(src, dest, symlinks=True, dirs_exist_ok=True)
+    return Workspace.load(dest)
 
 
 def build_remote(tmp_path: Path, **kwargs) -> tuple[Path, Path, Workspace]:
