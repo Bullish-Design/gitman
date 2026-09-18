@@ -50,8 +50,8 @@ def lane_has_content(session: Session, trunk: str, lane: str) -> bool:
 
 
 # --- fractal lanes: name-path derivation (Phase 2A, D1) -------------------------------
-# base/children/depth are a pure function of the lane's `/`-path NAME (never a DAG search, never a
-# side-car). `name_parent('T/api') == 'T'`; the base is that name-parent *iff* it is a live lane. This
+# base/children/depth are a pure function of the lane's `+`-path NAME (never a DAG search, never a
+# side-car). `name_parent('T+api') == 'T'`; the base is that name-parent *iff* it is a live lane. This
 # retires Phase-1's ancestry search (`state._base_of`) and closes its "child-behind-its-base loses the
 # link" gap by construction — the name is authoritative, the head is resolved live. See PLAN_PHASE2 §1.
 

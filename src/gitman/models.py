@@ -132,7 +132,7 @@ class Lane(BaseModel):
 
     name: str  # = bookmark = git branch (readable)
     base: str | None = None  # the lane this one is stacked on (fractal lanes); None = based on trunk
-    depth: int = 0  # task-tree depth = the `/`-path segment count below the root (`T`→0, `T/api`→1)
+    depth: int = 0  # task-tree depth = the `+`-path segment count below the root (`T`→0, `T+api`→1)
     orphaned: bool = False  # name-parent deleted out-of-band (I3′) — reported by `status`/`repair`
     state: LaneState = LaneState.draft
     head: Change | None = None  # None for a *conflicted* lane bookmark — it names no single commit

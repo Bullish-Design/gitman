@@ -92,8 +92,10 @@ def _remote_relation(trunk) -> str:
 def _lane_line(lane: Lane, current: str | None) -> str:
     here = lane.name == current
     marker = "*" if here else " "
-    # Fractal lanes: indent by task-tree depth. Alphabetical enumeration of `/`-path names IS pre-order
-    # DFS (`T`, `T/api`, `T/api/handler`, `T/web`), so the indent alone renders the work-breakdown tree.
+    # Fractal lanes: indent by task-tree depth. Alphabetical enumeration of `+`-path names IS pre-order
+    # DFS (`T`, `T+api`, `T+api+handler`, `T+web`), so the indent alone renders the work-breakdown tree.
+    # `+` (0x2B) sorts before every character a segment may start with, so a parent always precedes its
+    # children — the property the `/` separator had, kept by the D-A2 migration.
     indent = "  " * lane.depth
     # A conflicted lane bookmark (head is None) names no single commit — show the divergence, not a
     # diff summary, and point at the recovery verb.

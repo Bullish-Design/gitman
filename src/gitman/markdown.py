@@ -56,8 +56,11 @@ def _bool(value: bool) -> str:
 
 
 def _object_path(root: Path, kind: str, identity: str) -> Path:
-    # Lane names are `/`-paths, so encode the whole identity into one reversible
-    # filename rather than colliding `T.md` with the directory needed by `T/api`.
+    # Encode the whole identity into one reversible filename, so an identity can never be read
+    # as a path. The original hazard was the `/` separator: `T.md` collided with the directory
+    # `T/api` needed. D-A2 made `+` the separator, so lane names carry no `/` and that specific
+    # collision is gone — the encoding stays because nothing here should depend on an identity
+    # (a lane name or a change id) happening to be filesystem-safe.
     return root / f"{kind}s" / f"{quote(identity, safe='')}.md"
 
 
