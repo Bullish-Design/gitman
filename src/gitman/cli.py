@@ -534,7 +534,7 @@ def init(
         ),
     ] = False,
 ) -> None:
-    """Resolve + freeze trunk; scaffold gitman.toml + the agent skill."""
+    """Resolve + freeze trunk and write gitman.toml."""
     from gitman.init import do_init, ensure_colocated
     from gitman.session import Session
 
@@ -600,66 +600,6 @@ def workspace_prune() -> None:
     from gitman.core import do_workspace_prune
 
     _finish_intent(do_workspace_prune(_session()))
-
-
-# --- agent-files noun -----------------------------------------------------------------
-
-agent_files_app = typer.Typer(help="Materialize/check the shipped agent skill in a target repo.", no_args_is_help=True)
-app.add_typer(agent_files_app, name="agent-files")
-
-
-@agent_files_app.command("export")
-def agent_files_export(
-    target: Annotated[
-        Path | None, typer.Option("--target", help="Repo to write into (default: this repo's root).")
-    ] = None,
-) -> None:
-    """Write the shipped agent skill to `<target>/.agents/skills/gitman/SKILL.md`."""
-    from gitman.agent_files import export_agent_files
-    from gitman.models import IntentResult
-
-    dest = target or _repo_root()
-    result = export_agent_files(dest)
-    verb = "updated" if result.changed else "already current"
-    _finish_intent(
-        IntentResult(
-            intent="agent-files export",
-            outcome="OK",
-            messages=[f"{verb}: {result.written}"],
-            notes=["export writes files outside version control — no undo checkpoint."],
-        )
-    )
-
-
-@agent_files_app.command("check")
-def agent_files_check(
-    target: Annotated[
-        Path | None, typer.Option("--target", help="Repo to check (default: this repo's root).")
-    ] = None,
-    strict: Annotated[bool, typer.Option("--strict", help="Exit 1 if the local skill is missing or stale.")] = False,
-) -> None:
-    """Compare the target's agent skill against the shipped asset."""
-    from gitman.agent_files import check_agent_files
-    from gitman.models import IntentResult
-
-    dest = target or _repo_root()
-    result = check_agent_files(dest)
-    if not result.present:
-        message = f"missing: {dest}/.agents/skills/gitman/SKILL.md"
-    elif result.current:
-        message = "current: the local skill matches the shipped skill."
-    else:
-        message = "stale: the local skill differs from the shipped skill. Run `gitman agent-files export`."
-    conformant = result.present and result.current
-    exit_code = 0 if conformant or not strict else 1
-    _finish_intent(
-        IntentResult(
-            intent="agent-files check",
-            outcome="OK" if conformant else "DRIFT",
-            exit_code=exit_code,
-            messages=[message],
-        )
-    )
 
 
 # --- deprecated verb aliases (project 46 S6) ------------------------------------------

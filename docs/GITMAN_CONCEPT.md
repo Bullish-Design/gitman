@@ -225,15 +225,13 @@ They forward every option and exit code and name the replacement in the report's
 | `resolve` | `gitman resolve [<path> --show \| --from <file\|->] [--list]` | Surface remaining conflicts / confirm cleared; `--show` hands back one path's marked text and `--from` writes a resolution into `@`. Markers left in the content are honoured, so a partial resolution stays exit 1. | `jj resolve` |
 | `undo` | `gitman undo [--op <id>] [--list]` | Revert the last intent, or the intent named by a `--list` id. | `jj undo` / `jj op restore` |
 | `doctor` | `gitman doctor` | Validate the execution boundary and toolchain (pyjutsu/jj-lib version, git, colocation, remote, frozen trunk, uv, colocated HEAD/refs/index) and report canonicity. | preflight checks |
-| `init` | `gitman init [--trunk <name>] [--colocate]` | Resolve + freeze trunk; scaffold `gitman.toml` + the agent skill. `--colocate` adopts an existing `.git` or creates one first. | colocation + trunk freeze + config write |
+| `init` | `gitman init [--trunk <name>] [--colocate]` | Resolve + freeze trunk and write `gitman.toml`. `--colocate` adopts an existing `.git` or creates one first. | colocation + trunk freeze + config write |
 | `repair` | `gitman repair [--abandon] [--keep local\|origin]` | The one recovery path: adopt stray changes into lanes (or `--abandon` discard them) and heal jj↔git ref/HEAD drift, never discarding history unless asked. | anomaly registry + ref repair + `git_import` |
 | `version` | `gitman version [bump <major\|minor\|patch>]` | Show or bump the repo's semver. | uv version read/write |
 | `release` | `gitman release [<level> \| --version X.Y.Z]` | (bump →) tag `vX.Y.Z` → push tag. Verify hook first; refuses a stale `uv.lock`. Normally called with no level, after `land` + `push`. | version write + `git tag` + push |
 | `workspace list` | `gitman workspace list` | List workspace registrations; mark the ones with no live lane. | `ws.workspaces()` |
 | `workspace forget` | `gitman workspace forget <name>` | Drop a jj workspace registration; never removes the directory. | `ws.forget_workspace` |
 | `workspace prune` | `gitman workspace prune` | Retire every registration with no live lane and an empty `@`. | `ws.forget_workspace` |
-| `agent-files export` | `gitman agent-files export [--target <dir>]` | Write the shipped agent skill to `<target>/.agents/skills/gitman/SKILL.md`, overwriting it. No undo checkpoint: it writes outside version control. | `importlib.resources` read + file write |
-| `agent-files check` | `gitman agent-files check [--target <dir>] [--strict]` | Compare the target's agent skill against the shipped asset; report present/current. `--strict` exits 1 on drift, else it is a report only. | byte compare |
 
 **Global flags:** `--json`, `--repo <path>`.
 **Exit codes:** `0` ok · `1` VC decision needed (conflict / push rejected / verify
@@ -629,7 +627,7 @@ push_tag   = true
   commit that `land` will later rewrite: `start` → `version bump` → `describe` → `land` → `push`
   → `release` (no level; tags trunk). The inline `release <level>` bump still works, but only
   from clean trunk. The refusal names the sequence — project 32, G4.
-- **Agent angle:** `gitman init` scaffolds `.agents/skills/gitman/SKILL.md` documenting
+- **Agent angle:** the central Devman link plane supplies `.agents/skills/gitman/SKILL.md`, documenting
   the lane loop *and* where this repo's version lives + how to bump it. Versioning is not
   configurable: a repo with an unusual scheme is a repo uv does not manage.
 
@@ -720,7 +718,7 @@ name the lane.
 
 ## 17. Agent integration
 
-`gitman init` scaffolds `.agents/skills/gitman/SKILL.md` (mirrors Testee's skill): route
+The central Devman link plane supplies `.agents/skills/gitman/SKILL.md` (mirrors Testee's skill): route
 *all* version control through Gitman, never raw `jj`/`git` (it breaks canonicity);
 documents the lane loop, the trunk↔origin verbs (`push`/`sync --trunk`), and the safety net; explains exit
 codes; points at `gitman undo` and `gitman repair` (off-canonical); and records the repo's
