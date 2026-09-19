@@ -13,6 +13,7 @@ __pycache__/
 # tools
 .coverage*
 /htmlcov/
+.testee/
 
 # devenv / direnv
 .devenv/
