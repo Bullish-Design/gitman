@@ -103,7 +103,7 @@ nix/gitman.nix  reusable devenv module (tasks + enterTest)
 
 ## Agent-files convention
 
-`.agents/skills/gitman/SKILL.md` is this repo's skill — route all VC through
+`.agents/skills/gitman/SKILL.md` is supplied by the central Devman link plane — route all VC through
 `gitman` and defer cross-phase ordering to the `repoman` skill. `AGENTS.md` is
 canonical; `CLAUDE.md` is a symlink to it. The family's one convention lives in
 repoman's `docs/AGENT-FILES.md`.

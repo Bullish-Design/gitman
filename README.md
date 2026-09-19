@@ -115,11 +115,11 @@ See **[`docs/USING_GITMAN.md`](docs/USING_GITMAN.md)** for the full adoption gui
 (devenv toolchain, install, `gitman init --colocate`, config, exit codes). The short version:
 
 ```bash
-devenv shell -- gitman init --colocate   # colocate jj onto git (new or existing) + freeze trunk + scaffold
+devenv shell -- gitman init --colocate   # colocate jj onto git (new or existing) + freeze trunk
 devenv shell -- gitman status
 ```
 
-`gitman init` scaffolds `.agents/skills/gitman/SKILL.md` so coding agents know the loop.
+The central Devman link plane supplies `.agents/skills/gitman/SKILL.md` so coding agents know the loop.
 
 ## Examples
 

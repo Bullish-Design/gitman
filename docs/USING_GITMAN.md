@@ -5,7 +5,7 @@ set of **intents** and gets back compact, structured reports instead of raw `jj`
 porcelain. This guide gets Gitman working in *another* repo. For the full design see
 [`GITMAN_CONCEPT.md`](GITMAN_CONCEPT.md); new to jujutsu, see
 [`JUJUTSU_PRIMER.md`](JUJUTSU_PRIMER.md); for the daily loop see the per-repo skill that
-`gitman init` scaffolds at `.agents/skills/gitman/SKILL.md`.
+the central Devman link plane supplies at `.agents/skills/gitman/SKILL.md`.
 
 ## Prerequisites
 
@@ -81,9 +81,8 @@ colocate=True)'` then plain `gitman init` — but `--colocate` is the supported 
   never re-detected).
 - Writes **`gitman.toml`** (trunk). There is no version source to configure — uv owns the
   version.
-- Scaffolds **`.agents/skills/gitman/SKILL.md`** — the agent's how-to for this repo.
-
-Commit `gitman.toml` and the skill. Gitman's own state lives under `.gitman/` (a
+Gitman does not create agent files. Install or link the Gitman skill through the central Devman
+configuration. Commit `gitman.toml`. Gitman's own state lives under `.gitman/` (a
 self-ignoring dir); add `.gitman/` to `.gitignore` if you prefer it explicit. A `--workspace`
 lane's checkout lives under a second self-ignoring dir, `.worktrees/<lane>/` (in-repo by
 default — see `[lanes].workspace_dir`); both carry their own `*` `.gitignore`, so neither shows
