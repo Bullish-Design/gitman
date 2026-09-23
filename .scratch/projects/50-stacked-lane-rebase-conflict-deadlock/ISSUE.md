@@ -1,5 +1,11 @@
 # ISSUE — a stacked child that cannot rebase deadlocks its whole stack, and the escape hatch is destructive
 
+> **RESOLVED (2026-09-23, project 51).** `sync` now materializes a conflicting stacked rebase
+> instead of leaving the lane on its prior base (D1-a) — the deadlock this issue describes no
+> longer reproduces. Full analysis: `RESEARCH_REPORT_49_50.md` (this directory). Fix and test
+> matrix: `.scratch/projects/51-conflict-materialization-and-land-honesty/
+> IMPLEMENTATION_GUIDE.md`. The text below is the original field report, kept as history.
+
 > **Status:** open, captured 2026-09-23 from a `paloma-text-pipeline` session that landed a
 > 10-lane narrative stack into trunk.
 > **gitman version at capture:** 0.10.3 · pyjutsu 0.22.0 (jj-lib 0.44.0)

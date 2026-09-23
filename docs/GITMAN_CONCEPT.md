@@ -215,10 +215,10 @@ They forward every option and exit code and name the replacement in the report's
 | `shape` | `gitman shape --squash <rev> [--into <rev>] [-m <desc>] \| --reorder <rev>…` | Tidy the current lane's own `base..head` range: fold one change into a neighbour, or re-stack the listed changes. Never crosses the base, so trunk is unchanged. | `tx.squash` / `tx.rebase` + `tx.set_bookmark` |
 | `describe` | `gitman describe [-m <desc>] [--dry-run]` | Describe the current lane's change. With no `-m`, print the current description. | `jj describe` |
 | `seed` | `gitman seed -m <desc>` | One-shot: make a fresh repo's first commit on trunk, leaving a clean `@`. Refuses once trunk has history. | `jj describe` @ + bookmark trunk |
-| `publish` | `gitman publish` | Push the current lane; branch = lane name. Verify hook first. | `jj git push` (forge extra: + open/update PR) |
-| `land` | `gitman land [<lane>…] [--all] [--dry-run]` | Fold lane(s) into their **base** — the parent lane (advance the parent bookmark) or **local** trunk (advance trunk, the one local trunk-advance). Refuses a lane with a live child (fold the child in first); multi-arg orders child→parent. **`--all`** folds the whole forest **bottom-up** (child→parent→trunk) and records **one** undo checkpoint for the invocation (fractal lanes, D3). | rebase + ff base/trunk + bookmark/workspace cleanup |
+| `publish` | `gitman publish` | Push the current lane; branch = lane name. **Refuses a lane with a conflicted change** in its own range, before the verify hook and before any network call — git cannot represent a conflict, so the pushed branch would hold one side and lose the rest (D4-b). Verify hook next. | `jj git push` (forge extra: + open/update PR) |
+| `land` | `gitman land [<lane>…] [--all] [--dry-run]` | Fold lane(s) into their **base** — the parent lane (advance the parent bookmark) or **local** trunk (advance trunk, the one local trunk-advance). Refuses a lane with a live child (fold the child in first); multi-arg orders child→parent. **`--all`** folds the whole forest **bottom-up** (child→parent→trunk) and records **one** undo checkpoint for the invocation (fractal lanes, D3). **Notes, never refuses, an empty and undescribed change it folds** (D2-b) — an empty change carrying a description is deliberate and is never mentioned; `--dry-run` carries the same note. | rebase + ff base/trunk + bookmark/workspace cleanup |
 | `abandon` | `gitman abandon [<lane>] [--recursive]` | Discard a lane (terminal); abandons only the lane's **own** commits (`base..lane`, so a stacked lane's parent survives). **`--recursive`** tears down the whole `+`-path subtree **bottom-up** (child→parent), each node its own undo checkpoint; a foreign workspace an agent may still be in is forgotten but its dir is **kept** (never rmtree'd) (fractal lanes, D6). | `jj abandon` (`base..lane`) + bookmark delete + workspace cleanup |
-| `sync` | `gitman sync [--all] [--trunk] [--dry-run]` | Fetch + rebase. Plain: rebase the current lane (or `--all` lanes, parent→child) onto its **base** (parent lane head, or **local** trunk — never advances trunk). `--trunk` integrates a genuinely-moved `origin/<trunk>`: advance or rebase local trunk, retire/rebase surviving lanes, repark `@`; with `--all`, refresh every stale workspace too. | `jj git fetch` + `jj rebase` (+ content relation and trial merge for `--trunk`) |
+| `sync` | `gitman sync [--all] [--trunk] [--dry-run]` | Fetch + rebase. Plain: rebase the current lane (or `--all` lanes, parent→child) onto its **base** (parent lane head, or **local** trunk — never advances trunk). **A conflicting rebase is recorded in the lane** (non-blocking, exit 1), trunk-rooted or stacked alike (D1-a, §8); skips a lane that already records a conflict or whose base conflicted this run, and names the resolution order instead. `--trunk` integrates a genuinely-moved `origin/<trunk>`: advance or rebase local trunk, retire/rebase surviving lanes, repark `@`; with `--all`, refresh every stale workspace too — that rollback-on-conflict path is unchanged. **`--dry-run` is a real, read-only report** on either shape: no fetch, no snapshot, no mutation. | `jj git fetch` + `jj rebase` (+ content relation and trial merge for `--trunk`) |
 | `push` | `gitman push [--reset-origin]` | Publish local trunk → origin under **two gates**: content (the remote holds nothing local lacks) and push safety (the push would not drop a commit object the remote names). A refusal names the commits `--reset-origin` would drop. | `ws.git_push(<remote>, <trunk>)` (force-with-lease engine; both gates are gitman policy) |
 | `remote add` | `gitman remote add <url> [--name origin]` | Add a git remote (in-process; never touches git HEAD), bootstrapping trunk toward its first `push`. | `ws.add_remote` |
 | `untrack` | `gitman untrack <path>…` | Stop tracking machine-local file(s): add to `.gitignore` + drop from the tree (files kept on disk; on the current lane). | `.gitignore` + `ws.untrack_paths` |
@@ -313,6 +313,21 @@ $ gitman land T                                     # T → trunk (the root fold
   from its own dir keeps that (now parked, reusable) workspace — `cd` out and delete it, or start the
   next child lane in it. A reviewed flow opens a PR for CI/audit, but the trunk advance is still the
   local `land` (§8.1), not a forge merge button.
+- **An overlap at fan-in materializes, and it always did — trunk-rooted or stacked alike (D1-a,
+  project 51).** `sync` rebases every lane whose head is clean onto its base. When two sibling lanes
+  edit the same line and one lands first, the other's `sync` rebases anyway; jj records the conflict
+  **in the lane's own commit**, with markers on disk wherever that lane's `@` lives — never left on
+  its prior base, never silently declined. This is a first-class recorded state, not a reason to
+  leave a lane behind: `resolve --list` names it, `resolve <path> --show`/`--from` clears it, then
+  `land` folds normally. `sync` skips exactly two shapes a rebase cannot help, and reports the
+  resolution order instead of attempting them: a lane that **already records a conflict** (rebasing
+  again cannot clear it — only editing its markers can), and a lane whose **base conflicted this
+  run** (rebasing onto a conflicted head only buries the lane's own change inside the marker block).
+  Conflicts resolve **per lane, top-down, by editing markers** — resolving a parent auto-rebases its
+  children and changes their markers too, so a child is resolved after its parent, never in
+  parallel, and never by re-syncing (§20 records the three measured facts this rests on). This rule
+  is **specific to lanes**; `sync --trunk`'s rebase of un-pushed lands still rolls back on conflict,
+  because trunk is shared history and rolling back protects it (§8.1) — that path is unchanged.
 - **Tear down a whole branch with `abandon <node> --recursive`.** When a subtree is a dead end, the
   opt-in cascade discards it **bottom-up** (deepest child → … → the node), each node its own tx/undo
   checkpoint (`gitman undo` reverses one node per call). It's the teardown mirror of `land --all`:
@@ -716,6 +731,13 @@ undone, and the report says so). Per-intent layouts (clean / behind / conflicted
 blocked / infra-error) follow `05-vcs-brainstorming/CONCEPT_BRAINSTORM.md` §17, adapted to
 name the lane.
 
+**The resolution-order rule (project 51):** a conflict line must name the lane, the paths, the
+position to run from (`@` here, `cd <workspace dir>`, or `gitman switch <lane>` first), and the one
+verb that changes the state from there. If a report line cannot name a verb that works from where
+the operator is standing, it is not finished. A report may **never** suggest a re-sync as a way to
+clear a conflict — resolving is per lane, top-down, by editing markers, and a rebase cannot clear a
+conflict a lane already records (§20).
+
 ## 17. Agent integration
 
 The central Devman link plane supplies `.agents/skills/gitman/SKILL.md` (mirrors Testee's skill): route
@@ -809,3 +831,43 @@ The four prior open questions are now resolved by the lane model + the spike:
   divergence can't be resolved automatically, and `invariants.py` reads it for the
   dirty-trunk-working-copy refusal. Every anomaly the registry can name ends in either an
   automatic fix or an honest instruction — never a guess.
+
+**Resolved during implementation (project 51 — conflict materialization, the publish conflict
+gate, and honest `land`/`sync` reports):**
+
+- **A stacked lane's conflicting rebase now materializes, reversing project 23's "never
+  materialize markers into tracked source" rule — for lanes only (D1-a, option C).** That rule was
+  correct where it came from (`sync --trunk`'s rebase of un-pushed lands, where rolling back
+  protects **trunk**, a shared resource) and wrong where it was copied to (a lane's own `sync`,
+  where declining to rebase protects nothing and removes the operator's only resolution surface —
+  no markers, no path list, no diff, an undiscoverable escape). Before this, a stacked lane whose
+  rebase conflicted was left on its prior base forever, invisible to `resolve`, unlandable, and
+  blocking its own parent — the only exit was `abandon`, discarding the work. `sync --trunk`'s own
+  rollback-on-conflict is untouched: trunk is still shared history.
+- **Three measured jj-lib facts decided the shape of the fix; do not re-derive them.**
+  **F1** — jj propagates a conflict to descendants automatically: rebasing a parent lane that
+  conflicts also rebases every commit below it, including a stacked child's, **in the same
+  transaction**, and the child inherits the conflict whether or not gitman's own code touches it.
+  **F2** — a rebase never clears a conflict: resolving a parent completely and then rebasing its
+  already-conflicted child leaves the child conflicted, with the same markers; only **editing that
+  lane's own markers** clears it. This is why a report may never suggest a re-sync as the fix.
+  **F3** — rebasing onto a conflicted head makes a conflict *worse*, measured: three sides instead
+  of two, with the lane's own change buried inside the marker block instead of intact on its own
+  line. `sync` therefore rebases every lane whose head is clean, and skips exactly two shapes a
+  rebase cannot help — a lane that already records a conflict (F2), and a lane whose base
+  conflicted this run (F3) — reporting the resolution order instead of attempting either. Neither
+  skip is an anomaly kind: a materialized conflict is a first-class recorded state, not off-canonical,
+  and a blocking kind here would make landing an unrelated sibling roll itself back for having
+  introduced a conflict elsewhere.
+- **`land` warns rather than refusing an empty, undescribed fold (D2-b).** `start L; land L` used to
+  fold a contentless, messageless commit onto trunk in silence — two such commits already sit beside
+  `v0.9.1`/`v0.9.2` in this repo's own history. The owner chose a note over a refusal: `land` never
+  drops or refuses a change for being empty, so no workflow is locked out and there is no
+  `--allow-empty` flag to add. An empty change that carries a description is a deliberate marker
+  (`start` + `describe -m` is a supported shape) and is never mentioned.
+- **`publish` refuses a lane with a conflicted change, before any network call (D4-b).** A conflicted
+  change cannot be represented in git — jj exports one side of the conflict, so a pushed branch
+  silently held neither the markers nor the lane's own content (reproduced: the remote got the
+  base's side, at the lane's own commit id, with the lane's work simply absent). Folded into this
+  project rather than filed separately, because materializing more conflicts (D1-a) increases how
+  often a conflicted lane exists to publish.

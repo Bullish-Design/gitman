@@ -39,6 +39,16 @@ From `PLAN.md §1` + `PLAN_PHASE2.md §0`. The ones Phase 3 rests on:
 4. **Allow overlap, resolve at fan-in, non-blocking** — siblings MAY touch the same files; overlap
    conflicts surface **only at fan-in** via the `sync`/`land`/`resolve` survivor machinery (roll the tx
    back, leave the lane on its prior base, report — never materialize markers into tracked source).
+
+   > **Superseded (2026-09-23, project 51).** "Resolve at fan-in" and "never materialize" cannot both
+   > hold — with nothing materialized there is nothing to resolve. This rule is correct where it
+   > still applies (`sync --trunk`'s rebase of un-pushed lands, where rolling back protects trunk, a
+   > shared resource) but was wrong for a lane's own `sync`, which it was copied to: declining to
+   > rebase protected nothing and removed the operator's only resolution surface, deadlocking a
+   > stacked child forever with no markers, no path list, and no exit but `abandon` (project 50). For
+   > **lanes**, `sync` now rebases onto the base even when it conflicts, and jj records the conflict
+   > in the lane's own commit — see `docs/GITMAN_CONCEPT.md` §8 and §20 (D1-a). This paragraph is left
+   > as written above; it is history, not the current rule.
 5. **D6 (deferred to P3):** `abandon --recursive` — the cascade that P2 deliberately left out (P2
    `abandon` of a node with a live child still *refuses*). Phase 3 is where the cascade is designed.
 

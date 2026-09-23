@@ -7,8 +7,9 @@ needed only when `@` holds work to isolate from. A `@` that is empty and undescr
 
 Creating a change there put a contentless, messageless commit on the lane, and `land` folded it
 onto trunk: `264eedd` and `923c11d` sit beside the v0.9.1 and v0.9.2 tags for that reason. These
-tests pin both halves — the empty head is reused, and a head with real work still gets its own
-change.
+tests pin both halves — the empty placeholder is abandoned (not reused — a dedicated `tx.new`
+change is created and the placeholder is abandoned once the bump exists, load-bearing for
+`bump → undo → bump` at the same level), and a head with real work still gets its own change.
 """
 
 from __future__ import annotations

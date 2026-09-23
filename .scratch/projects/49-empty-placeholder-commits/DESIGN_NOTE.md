@@ -78,10 +78,32 @@ trailing placeholder is a different case again, and option 3 says nothing about 
 ## What would settle it
 
 A real occurrence outside the release flow — someone lands a lane and is surprised by what reaches
-trunk, in either direction. Until then this is a judgement call with no forcing case, which is
-exactly the kind of decision `.scratch/projects/24-deferred-backlog/BACKLOG.md` exists to hold
-rather than rush.
+trunk, in either direction.
+
+**Correction (2026-09-23, project 51):** the paragraph above originally said this was "a judgement
+call with no forcing case." That was wrong — project 43 §6 (D5) is exactly that forcing case, from
+the field: `land` folded an *undescribed* change into a published integration lane and said
+nothing. That report's proposed fix (G6: refuse or warn, with `--allow-empty-message` to override)
+was never built. So there were two independent field sightings, not one release-flow wart, by the
+time this was decided.
 
 **Not filed as a backlog item.** The backlog catalogues deferred *work* with a friction signal;
 this is an undecided *question* about an existing verb. It is recorded here so the next reader
 finds the argument already made.
+
+## Decision (2026-09-23, project 51 — D2-b)
+
+**Option 2, warn rather than refuse.** `land` never refuses or drops a change for being empty. When
+a fold includes a change that is empty **and** undescribed, the report names it in a note. An empty
+change that carries a description is never mentioned — it is a deliberate marker (the "case
+against" above), and no policy here may touch it.
+
+This is *not* option 3 (refuse an all-disposable lane): the owner chose the note because a refusal
+would lock out `gitman start L; gitman land L` as a deliberate no-op shape, and D3 (an
+`--allow-empty` override) is therefore moot — there is nothing to override. If the note fires often
+enough to be noise, revisit with real usage data, not in the abstract.
+
+Implemented as `lanes.disposable_changes` (empty ∧ undescribed, over `land`'s own fold range) plus
+one note line in `land`'s `Plan.messages`, surfaced on both the real fold and `--dry-run`. See
+`docs/GITMAN_CONCEPT.md` §20 and `.scratch/projects/51-conflict-materialization-and-land-honesty/
+IMPLEMENTATION_GUIDE.md` §5/S6.
