@@ -49,6 +49,18 @@ def lane_has_content(session: Session, trunk: str, lane: str) -> bool:
     return any(not c.is_empty for c in session.view().log(f"{trunk}..{lane}"))
 
 
+def disposable_changes(session: Session, trunk: str, lane: str) -> list[str]:
+    """Change-ids in `lane`'s own range that are empty AND undescribed — a placeholder, not work.
+
+    Empty alone is not enough: an empty change that carries a description is a deliberate marker
+    and must never be called disposable (`start L` + `describe -m` is a supported shape). The range
+    is `base..lane`, the same range `land` folds, so a stacked lane never reports its parent's
+    changes (project 51 D2-b).
+    """
+    base = lane_base(session, trunk, lane) or trunk
+    return [c.change_id for c in session.view().log(f"{base}..{lane}") if c.is_empty and not c.description.strip()]
+
+
 # --- fractal lanes: name-path derivation (Phase 2A, D1) -------------------------------
 # base/children/depth are a pure function of the lane's `+`-path NAME (never a DAG search, never a
 # side-car). `name_parent('T+api') == 'T'`; the base is that name-parent *iff* it is a live lane. This

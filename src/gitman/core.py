@@ -1594,6 +1594,19 @@ def _do_land_locked(
                 ]
                 if on_landed_lane:
                     steps.append(New(base))  # repark @ off the just-folded node
+            # D2-b: never refuse or drop a change for being empty — just name it. An empty change
+            # that carries a description is deliberate (project 49's placeholder-marker shape) and
+            # is never mentioned here.
+            from gitman.lanes import disposable_changes
+
+            empties = disposable_changes(session, trunk, lane)
+            fold_messages = []
+            if empties:
+                fold_messages.append(
+                    f"folded {len(empties)} empty, undescribed change(s) in '{lane}' "
+                    f"({', '.join(e[:8] for e in empties)}) — `gitman describe -m …` records intent "
+                    f"before the fold, `gitman abandon {lane}` discards a lane that holds no work."
+                )
             return Plan(
                 intent="land",
                 subjects=sorted(subjects_for("land", state, lane=lane), key=lambda s: (s.kind, s.name)),
@@ -1603,6 +1616,7 @@ def _do_land_locked(
                 postcondition=lambda st: (
                     None if lane not in {lo.name for lo in st.lanes} else f"lane '{lane}' was not folded"
                 ),
+                messages=fold_messages,
             )
 
         return build
@@ -1613,6 +1627,7 @@ def _do_land_locked(
         # run performs, in order.
         steps: list = []
         outside: list = []
+        fold_notes: list[str] = []
         for lane in targets:
             try:
                 plan = _build_fold(lane)(capture_state(session, snapshot=False))
@@ -1626,12 +1641,13 @@ def _do_land_locked(
                 ), None
             steps += plan.steps
             outside += plan.outside_steps
+            fold_notes += plan.messages  # D2-b: warn before the fold too, not only after
         return Plan(
             intent="land",
             subjects=[],
             steps=steps,
             outside_steps=outside,
-            messages=[f"would fold: {', '.join(targets)}."],
+            messages=[f"would fold: {', '.join(targets)}."] + fold_notes,
         ), None
 
     if pre_config.command:
@@ -1695,6 +1711,7 @@ def _do_land_locked(
                     canon.notes.append(f"remote branch '{lane}' not deleted (delete it manually): {exc}")
             landed.append(lane)
             notes += canon.notes
+            notes += canon.plan.messages if canon.plan is not None else []
             last_state = canon.state
         except GitmanError as exc:
             blocked = exc
