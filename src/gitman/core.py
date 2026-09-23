@@ -1920,6 +1920,28 @@ def do_abandon(session: Session, lane: str | None, recursive: bool = False, keep
 # --- sync / resolve / undo (M3) ------------------------------------------------------
 
 
+def _lane_conflicted(session: Session, lane: str) -> bool:
+    """Whether `lane`'s head records a conflict, read back AFTER a rebase committed.
+
+    `tx.rebase(..., mode="branch")` returns a commit whose `commit_id` and `has_conflict` are
+    stale when the rebased change has a descendant `@` — the documented footgun (`plan.py:Rebase`
+    docstring). jj's own record is authoritative, so read it fresh rather than trusting the
+    returned flag (project 51 S2).
+    """
+    return session.view().resolve(lane).has_conflict
+
+
+def _location_hint(session: Session, lane: str, current: str | None) -> str:
+    """Where an operator must stand to resolve `lane`'s conflict: `@` if already there, else its
+    own workspace directory, else `gitman switch <lane>` first."""
+    if lane == current:
+        return "here"
+    rec = next((w for w in session.ws.workspaces() if w.name == lane), None)
+    if rec is not None and rec.path is not None:
+        return f"cd {rec.path}"
+    return f"`gitman switch {lane}` first"
+
+
 def do_sync(session: Session, all_: bool, *, trunk_: bool = False, dry_run: bool = False):
     """Fetch and rebase lanes onto their base; `--trunk` integrates `origin/<trunk>` instead.
 
@@ -1950,6 +1972,46 @@ def do_sync(session: Session, all_: bool, *, trunk_: bool = False, dry_run: bool
         if cl is None:
             raise GitmanError("not on a lane — `gitman start <name>` or use `--all`.", exit_code=1)
         targets = [cl]
+
+    if dry_run:
+        # Reads only: no fetch (a fetch writes refs), no snapshot, no transaction. Reports against
+        # the last fetch and says so — S5, the honest counterpart to real `sync`'s S1 loop.
+        todo_ = sorted(targets, key=lambda lane: (lane_depth(session, trunk, lane), lane))
+        blocked_bases_: set[str] = set()
+        rows: list[str] = []
+        for lane in todo_:
+            base = lane_base(session, trunk, lane)
+            target = base if base is not None else trunk
+            behind = len(session.view().log(f"{lane}..{target}"))
+            if _lane_conflicted(session, lane):
+                rows.append(f"'{lane}' already records a conflict — a rebase would not clear it; would not run.")
+                continue
+            if base is not None and base in blocked_bases_:
+                rows.append(f"'{lane}' would be deferred — its base '{base}' would conflict this run.")
+                continue
+            verdict = _merge_tree_conflicts(
+                session.view(), session.view().resolve(lane).commit_id, session.view().resolve(target).commit_id
+            )
+            if verdict is None:
+                rows.append(
+                    f"'{lane}' undecidable — gitman could not determine whether the rebase onto "
+                    f"'{target}' conflicts; would not rebase."
+                )
+            elif verdict:
+                blocked_bases_.add(lane)
+                rows.append(
+                    f"would rebase '{lane}' onto '{target}' ({behind} behind) — conflicts; markers "
+                    f"would be recorded in '{lane}'."
+                )
+            else:
+                rows.append(f"would rebase '{lane}' onto '{target}' ({behind} behind) — clean.")
+        return IntentResult(
+            intent="sync",
+            outcome="DRY-RUN",
+            messages=rows,
+            notes=["dry run — nothing changed; no fetch ran, so this reflects the last fetch."],
+            exit_code=0,
+        )
 
     messages: list[str] = []
     notes: list[str] = []
@@ -2007,30 +2069,45 @@ def do_sync(session: Session, all_: bool, *, trunk_: bool = False, dry_run: bool
             (lane for lane in targets if lane in surviving),
             key=lambda lane: (lane_depth(session, trunk, lane), lane),
         )
+        # D1-a (option C, project 51): a lane whose head is clean rebases onto its base like any
+        # other, trunk-rooted or stacked alike. When that rebase conflicts, jj records the conflict
+        # in the lane's commit — never left on its prior base, never silently skipped. Two shapes
+        # a rebase cannot help are skipped, in this order (§1.1 F1-F3; do not reorder):
+        # `already` first (a property of the lane alone — checking it before the engine call keeps
+        # a conflicted lane from ever reaching `_merge_tree_conflicts`, which would report "conflict"
+        # for any base, true but useless); `deferred` second (a property of this lane's base, only
+        # knowable once the sweep has rebased that base); `undecidable` last (costs an engine call).
+        current = current_lane(session, trunk)
+        blocked_bases: set[str] = set()  # lanes whose head became conflicted THIS run
+        already: list[str] = []  # lanes that arrived conflicted — a rebase cannot clear it (F2)
+        deferred: list[tuple[str, str]] = []  # (lane, base) skipped because the base conflicted this run (F3)
+        undecidable: list[str] = []  # the engine could not tell whether the rebase conflicts
+        conflict_paths: dict[str, list[str]] = {}
         for lane in todo:
             base = lane_base(session, trunk, lane)
-            if base is None:
-                # trunk-based: today's behavior — a conflicting rebase is *materialized* into the lane
-                # (non-blocking) for `gitman resolve`, exactly as before stacking.
-                with session.ws.transaction("gitman:sync", auto_snapshot=False) as tx:
-                    rebased = tx.rebase(lane, onto=trunk, mode="branch")
-                    if rebased.has_conflict:
-                        conflicted.append(lane)  # DO NOT raise — sync is non-blocking
-                synced.append(lane)
-            else:
-                # stacked: rebase onto the parent head. The cross-base `mode="branch"` footgun makes the
-                # return's has_conflict unreliable, and committing a conflicted stacked rebase would
-                # materialize markers into tracked source — so pre-check textually and, on conflict,
-                # leave the lane on its prior base untouched (§4; the `pull` survivor pattern).
-                view = session.view()
-                base_head = view.resolve(base).commit_id
-                lane_head = view.resolve(lane).commit_id
-                if _merge_tree_conflicts(session.view(), lane_head, base_head) is not False:
-                    conflicted.append(lane)  # left on prior base — do not rebase / materialize
-                    continue
-                with session.ws.transaction("gitman:sync", auto_snapshot=False) as tx:
-                    tx.rebase(lane, onto=base, mode="branch")
-                synced.append(lane)
+            target = base if base is not None else trunk
+            if _lane_conflicted(session, lane):
+                already.append(lane)
+                conflict_paths[lane] = [c.path for c in session.view().conflicts(lane)]
+                continue
+            if base is not None and base in blocked_bases:
+                deferred.append((lane, base))
+                continue
+            verdict = _merge_tree_conflicts(
+                session.view(), session.view().resolve(lane).commit_id, session.view().resolve(target).commit_id
+            )
+            if verdict is None:
+                undecidable.append(lane)
+                continue
+            with session.ws.transaction("gitman:sync", auto_snapshot=False) as tx:
+                tx.rebase(lane, onto=target, mode="branch")
+            synced.append(lane)
+            # S2: never trust `mode="branch"`'s returned has_conflict — it is stale when the rebased
+            # change has a descendant `@` (the documented footgun). Read it back fresh.
+            if _lane_conflicted(session, lane):
+                conflicted.append(lane)
+                blocked_bases.add(lane)
+                conflict_paths[lane] = [c.path for c in session.view().conflicts(lane)]
         # After rebasing lanes, check for stale secondary workspaces (L2): a rebased lane may
         # have a live `--workspace` checkout elsewhere whose @ is now stale. Append a note
         # naming each so the agent knows to `gitman sync --trunk --all` in that workspace.
@@ -2051,19 +2128,51 @@ def do_sync(session: Session, all_: bool, *, trunk_: bool = False, dry_run: bool
                     pass
             if stale_workspaces:
                 notes.append(f"stale workspace(s): {', '.join(stale_workspaces)} — run `gitman sync --trunk --all`.")
-    if synced:
-        messages.append(f"rebased {', '.join(synced)}.")
-    if conflicted:
+    # S4: one line per shape, naming the lane, the paths, the position to run from, and the one verb
+    # that changes the state. Never suggest a re-sync as a way to clear a conflict — F2 measured that
+    # it does not.
+    clean = [lane for lane in synced if lane not in conflicted]
+    conflicted_synced = [lane for lane in synced if lane in conflicted]
+    if clean and conflicted_synced:
+        messages.append(f"rebased {', '.join(clean)}; {', '.join(conflicted_synced)} rebased with conflicts.")
+    elif clean:
+        messages.append(f"rebased {', '.join(clean)}.")
+    elif conflicted_synced:
+        messages.append(f"{', '.join(conflicted_synced)} rebased with conflicts.")
+    for lane in conflicted:
+        paths = conflict_paths.get(lane, [])
+        shown = ", ".join(paths[:8]) + (" …" if len(paths) > 8 else "")
+        where = _location_hint(session, lane, current)
         notes.append(
-            f"conflicts in {', '.join(conflicted)} — not blocked; `gitman resolve` (a stacked lane is "
-            f"left on its prior base — sync its base, then re-sync), then continue."
+            f"'{lane}' conflicts in {shown or '(path unknown)'} — resolve {where}: `gitman resolve "
+            f"--list`, then `gitman resolve <path> --show` / `--from`."
         )
+    for lane in already:
+        paths = conflict_paths.get(lane, [])
+        shown = ", ".join(paths[:8]) + (" …" if len(paths) > 8 else "")
+        where = _location_hint(session, lane, current)
+        notes.append(
+            f"'{lane}' not rebased — it already records a conflict in {shown or '(path unknown)'}; "
+            f"resolve {where}: `gitman resolve --list`, then resolve its markers. A rebase cannot "
+            f"clear it."
+        )
+    for lane, base in deferred:
+        notes.append(
+            f"'{lane}' deferred — its base '{base}' is conflicted. Resolve '{base}' first, then "
+            f"resolve '{lane}' — resolving its markers, never a re-sync, is what clears it."
+        )
+    for lane in undecidable:
+        notes.append(
+            f"'{lane}' not rebased — gitman could not determine whether the rebase conflicts; "
+            f"nothing was changed."
+        )
+    outcome_pending = bool(conflicted or already or deferred or undecidable)
     return IntentResult(
         intent="sync",
-        outcome="CONFLICT" if conflicted else "SYNCED",
+        outcome="CONFLICT" if outcome_pending else "SYNCED",
         messages=messages,
         notes=notes,
-        exit_code=1 if conflicted else 0,
+        exit_code=1 if outcome_pending else 0,
         undo_command="gitman undo",
         state=canon.state,
     )
@@ -3038,6 +3147,13 @@ def do_resolve(
             bits.append(f"{len(conflicted_lanes)} conflicted lane(s): {', '.join(conflicted_lanes)}")
         messages.append("; ".join(bits) + "  (`gitman resolve --list` for files)")
     messages.append("Not blocked — edit the files (jj markers: <<<<<<< %%%%%%% +++++++ >>>>>>>), then continue.")
+    # S4 change B: a lane that is not `@` has no markers on disk here — "edit the files" cannot be
+    # followed. Name where to actually stand for each such lane.
+    elsewhere = [lane for lane in conflicted_lanes if lane != state.current_lane]
+    if elsewhere:
+        for lane in elsewhere:
+            where = _location_hint(session, lane, state.current_lane)
+            messages.append(f"'{lane}' is not @ — resolve {where}, then `gitman resolve --list` there.")
     if files:
         messages.append(
             f"Or work through gitman: `gitman resolve {files[0].path} --show` reads the marked text, "

@@ -27,7 +27,7 @@ from pathlib import Path
 from pyjutsu import Workspace
 
 from gitman.config import GitmanConfig
-from gitman.core import GitmanError, do_abandon, do_land, do_save, do_start, do_subtask, do_sync
+from gitman.core import GitmanError, do_abandon, do_land, do_resolve, do_save, do_start, do_subtask, do_sync
 from gitman.repair import do_reconcile
 from gitman.state import capture_state
 from tests.repofixtures import build_repo, session
@@ -188,9 +188,14 @@ def test_moved_parent_leaves_sibling_behind_then_sync(tmp_path: Path):
 
 def test_overlap_at_fanin_is_non_blocking(tmp_path: Path):
     """`T/api` and `T/storage` edit the SAME line. Land storage → T carries storage's line. `sync
-    T/api` detects the overlap and is NON-BLOCKING: it declines to rebase (leaves api on its prior
-    base, exit 1 CONFLICT), never crashes, never materializes markers into api's tracked source, and
-    the repo stays canonical. Resolve by accepting the incoming change, then `land T/api` folds clean."""
+    T/api` detects the overlap and is NON-BLOCKING: it exits 1 CONFLICT, never crashes, and the
+    repo stays canonical throughout.
+
+    Project 51 (D1-a) reverses project 23's "never materialize markers into tracked source" rule
+    for lanes: `sync` now rebases api onto its base anyway, and jj records the conflict IN api's
+    commit (markers on disk) exactly as it already did for a trunk-rooted lane — `resolve` then
+    clears it. See `tests/test_project51_conflict_materialization.py` for the full materialize →
+    resolve → land loop this reverses; this test keeps only the original end-to-end shape."""
     work = tmp_path / "work"
     work.mkdir()
     _init(work)
@@ -211,21 +216,24 @@ def test_overlap_at_fanin_is_non_blocking(tmp_path: Path):
     r = do_land(_sess(storage_w), ["T+storage"])
     assert r.outcome == "LANDED", r.messages  # T now has shared.txt = "storage\n"
 
-    # sync T/api: overlapping edit → non-blocking CONFLICT, api left on its prior base, no markers.
+    # sync T/api: overlapping edit → non-blocking CONFLICT, rebased with markers materialized.
     r = do_sync(_sess(api_w), all_=False)
     assert r.outcome == "CONFLICT", r.messages
     assert r.exit_code == 1
-    assert "<<<<<<<" not in (api_w / "shared.txt").read_text()  # no markers materialized
-    assert capture_state(_sess(work)).canonical  # declining kept the repo canonical
+    assert "<<<<<<<" in (api_w / "shared.txt").read_text()  # materialized (D1-a reverses this)
+    assert capture_state(_sess(work)).canonical  # materializing kept the repo canonical
 
     # Resolve at fan-in by accepting the incoming (storage's) change, then land folds clean.
-    _edit_and_save(api_w, "shared.txt", "storage\n", "api accepts storage's line")
+    resolved = api_w / "_resolved.txt"
+    resolved.write_text("storage\n")
+    r = do_resolve(_sess(api_w), False, path="shared.txt", from_=str(resolved))
+    assert r.outcome == "RESOLVED", r.messages
     r = do_land(_sess(api_w), ["T+api"])
     assert r.outcome == "LANDED", r.messages
 
-    r = do_land(_sess(work), ["T"])
+    r = do_land(_sess(api_w), ["T"])  # land T from api_w — its own checkout is up to date
     assert r.outcome == "LANDED", r.messages
-    final = capture_state(_sess(work))
+    final = capture_state(_sess(api_w))
     assert final.lanes == [] and final.canonical
     assert "shared.txt" in _trunk_paths_since(work, trunk0)  # the resolved overlap reached trunk
 
