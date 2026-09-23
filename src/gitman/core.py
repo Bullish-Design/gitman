@@ -1301,6 +1301,23 @@ def do_publish(session: Session):
         try:
             with canonical_guard(session, "publish", acquire_lock=False, export=True) as canon:
                 lane = require_current_lane(session, trunk)
+                # A conflicted change cannot be represented in git. jj exports one side of the
+                # conflict, so the pushed branch silently holds neither the markers nor the lane's
+                # own content (reproduced: origin got the base's side at the lane's commit id).
+                # Refuse before the verify hook and before any network call (D4-b).
+                from gitman.lanes import lane_base
+
+                pub_base = lane_base(session, trunk, lane) or trunk
+                conflicted_changes = [c for c in session.view().log(f"{pub_base}..{lane}") if c.has_conflict]
+                if conflicted_changes:
+                    raise GitmanError(
+                        f"lane '{lane}' has {len(conflicted_changes)} conflicted change(s) — git "
+                        f"cannot represent a conflict, so the pushed branch would hold one side and "
+                        f"lose the rest. `gitman resolve --list`, resolve, then publish.",
+                        exit_code=1,
+                        subject=lane,
+                        remedies=["resolve --list"],
+                    )
                 ok, out = run_verify(
                     session.config.publish.verify, session.repo_root, session.config.publish.verify_timeout
                 )
