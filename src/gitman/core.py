@@ -1462,14 +1462,13 @@ def do_land(session: Session, lane_args: list[str] | None, all_: bool = False, *
 def _do_land_locked(
     session: Session, lane_args: list[str] | None, all_: bool, pre_config, dry_run: bool = False
 ):
-    from pyjutsu import PyjutsuError
-
     from gitman.invariants import run_plan, subjects_for, write_undo_checkpoint
     from gitman.lanes import children, lane_base, lane_depth, lane_names, require_current_lane
     from gitman.models import IntentResult, LandFold
     from gitman.plan import (
         CleanupWorkspace,
         DeleteBookmark,
+        DeleteRemoteBranch,
         New,
         Plan,
         Rebase,
@@ -1551,6 +1550,7 @@ def _do_land_locked(
             base = lane_base(session, trunk, lane)  # None → trunk-based (exactly today's land)
             targets_map[lane] = base if base is not None else trunk
             view = session.view()
+            _, published = _lane_index(view)
             # Is `@` sitting on the lane we're about to fold in? If so, advancing the target to the
             # lane head leaves `@` *coinciding* with the target — repark it onto a fresh child (the
             # `@`-never-on-the-just-moved-node invariant; generalizes the 13-RC2/RC3/RC4 repark).
@@ -1612,6 +1612,9 @@ def _do_land_locked(
                 subjects=sorted(subjects_for("land", state, lane=lane), key=lambda s: (s.kind, s.name)),
                 steps=steps,
                 outside_steps=[RetireGitRef(lane), CleanupWorkspace(lane)],
+                irreversible_steps=(
+                    [DeleteRemoteBranch(lane, pick_remote(session.ws))] if lane in published else []
+                ),
                 lane=lane,
                 postcondition=lambda st: (
                     None if lane not in {lo.name for lo in st.lanes} else f"lane '{lane}' was not folded"
@@ -1627,6 +1630,7 @@ def _do_land_locked(
         # run performs, in order.
         steps: list = []
         outside: list = []
+        irreversible: list = []
         fold_notes: list[str] = []
         for lane in targets:
             try:
@@ -1641,12 +1645,14 @@ def _do_land_locked(
                 ), None
             steps += plan.steps
             outside += plan.outside_steps
+            irreversible += plan.irreversible_steps
             fold_notes += plan.messages  # D2-b: warn before the fold too, not only after
         return Plan(
             intent="land",
             subjects=[],
             steps=steps,
             outside_steps=outside,
+            irreversible_steps=irreversible,
             messages=[f"would fold: {', '.join(targets)}."] + fold_notes,
         ), None
 
@@ -1691,24 +1697,11 @@ def _do_land_locked(
     batch_op: str | None = None
     for lane in targets:
         try:
-            _, published = _lane_index(session.view())
-            was_published = lane in published
             canon = run_plan(
                 session, "land", _build_fold(lane), acquire_lock=False, checkpoint=False, lane=lane
             )
             if batch_op is None:
                 batch_op = canon.op_before
-            # Postcondition passed (guard exited cleanly) → the land is committed. The remote-branch
-            # cleanup runs AFTER the postcondition so a postcondition revert never leaves the local
-            # lane restored while its remote branch is already gone (review L1). One-way and
-            # best-effort: the local bookmark is gone but the remote-tracking ref persists until
-            # pruned, so the delete-push still resolves; failure doesn't undo the land.
-            if was_published:
-                try:
-                    session.ws.git_push(pick_remote(session.ws), lane, delete=True)
-                    canon.notes.append(f"deleted remote branch '{lane}' (one-way; `gitman undo` won't restore it).")
-                except PyjutsuError as exc:
-                    canon.notes.append(f"remote branch '{lane}' not deleted (delete it manually): {exc}")
             landed.append(lane)
             notes += canon.notes
             notes += canon.plan.messages if canon.plan is not None else []

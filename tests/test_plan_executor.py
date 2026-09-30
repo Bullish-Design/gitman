@@ -8,17 +8,18 @@ check; and a dry run builds a plan without mutating.
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import pytest
 
 from gitman.anomalies import Subject
 from gitman.config import GitmanConfig
-from gitman.core import GitmanError, do_start
+from gitman.core import GitmanError, do_land, do_publish, do_save, do_start
 from gitman.invariants import build_plan, read_undo_checkpoint, run_plan
 from gitman.plan import CreateBookmark, New, Plan, SetBookmark, describe_plan
 from gitman.state import capture_state
-from tests.repofixtures import build_repo, session
+from tests.repofixtures import build_remote, build_repo, session
 
 CFG = GitmanConfig(trunk="main")
 
@@ -146,6 +147,26 @@ def _setup_lane(d: Path) -> None:
     do_start(_sess(d), "lane-x", workspace=False)
 
 
+def _setup_published_lane(d: Path) -> tuple[Path, Path]:
+    work, remote, _ws = build_remote(d)
+    do_start(_sess(work), "lane-x", workspace=False)
+    (work / "f.txt").write_text("base\nfeature\n")
+    do_save(_sess(work), "feature work")
+    published = do_publish(_sess(work))
+    assert published.outcome == "PUBLISHED", published.messages
+    return work, remote
+
+
+def _remote_branch_exists(remote: Path, lane: str) -> bool:
+    result = subprocess.run(
+        ["git", "--git-dir", str(remote), "show-ref", "--verify", f"refs/heads/{lane}"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode == 0
+
+
 def _setup_two_lanes(d: Path) -> None:
     _init(d)
     do_start(_sess(d), "lane-a", workspace=False)
@@ -197,6 +218,67 @@ def test_dry_run_performs_no_mutation(tmp_path: Path):
         assert _opid(d) == before, f"{name} mutated the repo on --dry-run"
         lines = describe_plan(plan)
         assert any(expected in line for line in lines), (name, lines)
+
+
+def test_land_dry_run_omits_remote_delete_for_an_unpublished_lane(tmp_path: Path):
+    from gitman.core import do_land
+
+    _setup_lane(tmp_path)
+
+    plan = do_land(_sess(tmp_path), ["lane-x"], dry_run=True)
+
+    assert isinstance(plan, Plan)
+    assert not any("delete remote branch" in line for line in describe_plan(plan))
+
+
+def test_land_dry_run_names_published_remote_delete_without_mutating(tmp_path: Path):
+    work, remote = _setup_published_lane(tmp_path)
+    before = _opid(work)
+
+    plan = do_land(_sess(work), ["lane-x"], dry_run=True)
+
+    assert isinstance(plan, Plan)
+    lines = describe_plan(plan)
+    assert any("delete remote branch 'lane-x'" in line and "one-way" in line for line in lines)
+    assert _opid(work) == before
+    assert _remote_branch_exists(remote, "lane-x")
+
+
+def test_published_land_deletes_branch_after_the_postcondition(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    work, remote = _setup_published_lane(tmp_path)
+
+    import gitman.invariants as inv
+
+    original = inv._postcondition
+    branch_existed_during_postcondition: list[bool] = []
+
+    def observe(*args, **kwargs):
+        if args[1] == "land":
+            branch_existed_during_postcondition.append(_remote_branch_exists(remote, "lane-x"))
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(inv, "_postcondition", observe)
+
+    result = do_land(_sess(work), ["lane-x"])
+
+    assert result.outcome == "LANDED", result.messages
+    assert branch_existed_during_postcondition == [True]
+    assert not _remote_branch_exists(remote, "lane-x")
+    assert any("deleted remote branch 'lane-x'" in note for note in result.notes)
+
+
+def test_remote_delete_failure_does_not_undo_land(tmp_path: Path):
+    work, remote = _setup_published_lane(tmp_path)
+    hook = remote / "hooks" / "pre-receive"
+    hook.write_text("#!/bin/sh\nexit 1\n")
+    hook.chmod(0o755)
+
+    result = do_land(_sess(work), ["lane-x"])
+
+    assert result.outcome == "LANDED", result.messages
+    assert {lane.name for lane in capture_state(_sess(work)).lanes} == set()
+    assert _remote_branch_exists(remote, "lane-x")
+    assert any("not deleted" in note for note in result.notes)
 
 
 def test_batch_undo_rewinds_all_landed_lanes(tmp_path: Path):

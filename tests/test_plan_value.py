@@ -10,6 +10,7 @@ from gitman.plan import (
     CleanupWorkspace,
     CreateBookmark,
     DeleteBookmark,
+    DeleteRemoteBranch,
     Describe,
     Edit,
     New,
@@ -38,6 +39,7 @@ def test_describe_plan_is_deterministic():
             Edit("@"),
         ],
         outside_steps=[RetireGitRef("T"), CleanupWorkspace("T", keep_foreign=True)],
+        irreversible_steps=[DeleteRemoteBranch("T", "origin")],
     )
     assert describe_plan(plan) == describe_plan(plan)
     assert describe_plan(plan) == [
@@ -50,6 +52,7 @@ def test_describe_plan_is_deterministic():
         "move @ onto @",
         "retire colocated git ref 'T'",
         "forget workspace for 'T'",
+        "delete remote branch 'T' on 'origin' (one-way; `gitman undo` won't restore it)",
     ]
 
 
@@ -69,9 +72,11 @@ def test_describe_plan_renders_every_step_kind():
         RetireGitRef("T"),
         CleanupWorkspace("T"),
     ]
-    lines = describe_plan(Plan(intent="x", subjects=[], steps=steps))
-    assert len(lines) == len(steps)
+    plan = Plan(intent="x", subjects=[], steps=steps, irreversible_steps=[DeleteRemoteBranch("T", "origin")])
+    lines = describe_plan(plan)
+    assert len(lines) == len(steps) + 1
     assert all(line and "unrenderable" not in line for line in lines)
+    assert "one-way" in lines[-1]
 
 
 def test_empty_plan_renders_nothing_to_do():

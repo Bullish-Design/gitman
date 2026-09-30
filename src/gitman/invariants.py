@@ -40,7 +40,7 @@ if TYPE_CHECKING:
 
     from gitman.anomalies import Subject
     from gitman.models import RepoState
-    from gitman.plan import OutsideStep, Plan, Step
+    from gitman.plan import IrreversibleStep, OutsideStep, Plan, Step
     from gitman.session import Session
 
 LOCK_PATH = ".gitman/lock"
@@ -807,6 +807,24 @@ def apply_outside_steps(session: Session, steps: Iterable[OutsideStep]) -> list[
     return notes
 
 
+def apply_irreversible_steps(session: Session, steps: Iterable[IrreversibleStep]) -> list[str]:
+    """Run one-way plan effects after the canonical guard has fully exited."""
+    from pyjutsu import PyjutsuError
+
+    from gitman.plan import DeleteRemoteBranch
+
+    notes: list[str] = []
+    for step in steps:
+        if not isinstance(step, DeleteRemoteBranch):
+            raise AssertionError(f"unknown irreversible plan step: {step!r}")
+        try:
+            session.ws.git_push(step.remote, step.lane, delete=True)
+            notes.append(f"deleted remote branch '{step.lane}' (one-way; `gitman undo` won't restore it).")
+        except PyjutsuError as exc:
+            notes.append(f"remote branch '{step.lane}' not deleted (delete it manually): {exc}")
+    return notes
+
+
 def build_plan(session: Session, build: Callable[[RepoState], Plan]) -> Plan:
     """Build a `Plan` from a NON-snapshotting state capture — the `--dry-run` entry point.
 
@@ -864,6 +882,7 @@ def run_plan(
         with session.ws.transaction(f"gitman:{intent}", auto_snapshot=False) as tx:
             apply_steps(tx, plan.steps)
         canon.notes += apply_outside_steps(session, plan.outside_steps)
+    canon.notes += apply_irreversible_steps(session, plan.irreversible_steps)
     return canon
 
 

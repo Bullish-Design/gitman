@@ -142,8 +142,17 @@ class CleanupWorkspace:
     keep_foreign: bool = False
 
 
+@dataclass(frozen=True)
+class DeleteRemoteBranch:
+    """Delete a published lane branch after the canonical rollback guard has exited."""
+
+    lane: str
+    remote: str
+
+
 Step = New | Edit | Describe | CreateBookmark | SetBookmark | DeleteBookmark | Rebase | Restore | Split
 OutsideStep = RetireGitRef | CleanupWorkspace
+IrreversibleStep = DeleteRemoteBranch
 
 
 # --- the plan --------------------------------------------------------------------------
@@ -164,6 +173,9 @@ class Plan:
     subjects: list[Subject]
     steps: list[Step] = field(default_factory=list)
     outside_steps: list[OutsideStep] = field(default_factory=list)
+    # These network effects run only after the canonical guard exits. The guard must be able to
+    # roll local state back without leaving an irreversible remote deletion behind (project 45).
+    irreversible_steps: list[IrreversibleStep] = field(default_factory=list)
     postcondition: Callable[[RepoState], str | None] | None = None
     export: bool = False
     messages: list[str] = field(default_factory=list)
@@ -178,7 +190,7 @@ def _rev(revision: str) -> str:
     return revision if revision == "@" else f"'{revision}'"
 
 
-def _step_line(step: Step | OutsideStep) -> str:
+def _step_line(step: Step | OutsideStep | IrreversibleStep) -> str:
     if isinstance(step, New):
         if step.parents is None:
             return "new change at @"
@@ -205,6 +217,11 @@ def _step_line(step: Step | OutsideStep) -> str:
         return f"retire colocated git ref '{step.lane}'"
     if isinstance(step, CleanupWorkspace):
         return f"forget workspace for '{step.lane}'"
+    if isinstance(step, DeleteRemoteBranch):
+        return (
+            f"delete remote branch '{step.lane}' on '{step.remote}' "
+            "(one-way; `gitman undo` won't restore it)"
+        )
     raise AssertionError(f"unrenderable plan step: {step!r}")  # every Step above is handled
 
 
@@ -212,4 +229,5 @@ def describe_plan(plan: Plan) -> list[str]:
     """Render a plan as one line per step, for `--dry-run`. Deterministic; never runs a step."""
     lines = [_step_line(step) for step in plan.steps]
     lines += [_step_line(step) for step in plan.outside_steps]
+    lines += [_step_line(step) for step in plan.irreversible_steps]
     return lines or ["nothing to do."]
