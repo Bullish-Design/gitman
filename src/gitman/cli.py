@@ -417,20 +417,25 @@ def abandon(
 
 @app.command()
 def sync(
+    lanes: Annotated[list[str] | None, typer.Argument(help="Lane(s) to sync (default: current).")] = None,
     all_: Annotated[bool, typer.Option("--all", help="Every lane (or, with --trunk, every stale workspace).")] = False,
+    recursive: Annotated[bool, typer.Option("--recursive", help="Include each named lane's subtree.")] = False,
     trunk: Annotated[bool, typer.Option("--trunk", help="Integrate origin/<trunk> (the old `pull`).")] = False,
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Report the plan without mutating.")] = False,
 ) -> None:
     """Fetch + rebase: the current lane onto its base, or `--trunk` for origin/<trunk> vs local trunk.
 
-    Plain `sync` rebases the current lane onto its base (parent lane or local trunk). `--all`
-    rebases every lane, parent→child. `--trunk` integrates a moved origin/<trunk> — advance or
-    rebase local trunk, retire/rebase surviving lanes, repark `@` — and with `--all` it also
-    refreshes every stale workspace. `--dry-run` reports the plan without mutating.
+    Plain `sync` rebases the current lane onto its base (parent lane or local trunk). Named lanes
+    target only those lanes; `--recursive` includes each named lane's subtree. `--all` rebases every
+    lane, parent→child. `--trunk` integrates a moved origin/<trunk> — advance or rebase local trunk,
+    retire/rebase surviving lanes, repark `@` — and with `--all` it also refreshes every stale
+    workspace. `--dry-run` reports the plan without mutating.
     """
     from gitman.core import do_sync
 
-    _finish_intent(do_sync(_session(), all_, trunk_=trunk, dry_run=dry_run))
+    _finish_intent(
+        do_sync(_session(), all_, lanes=lanes, recursive=recursive, trunk_=trunk, dry_run=dry_run)
+    )
 
 
 @app.command()

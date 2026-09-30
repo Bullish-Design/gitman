@@ -1969,12 +1969,21 @@ def _location_hint(session: Session, lane: str, current: str | None) -> str:
     return f"`gitman switch {lane}` first"
 
 
-def do_sync(session: Session, all_: bool, *, trunk_: bool = False, dry_run: bool = False):
+def do_sync(
+    session: Session,
+    all_: bool,
+    *,
+    lanes: list[str] | None = None,
+    recursive: bool = False,
+    trunk_: bool = False,
+    dry_run: bool = False,
+):
     """Fetch and rebase lanes onto their base; `--trunk` integrates `origin/<trunk>` instead.
 
     The one catch-up verb (project 46 S6). Three targets, one entry point:
 
     - plain `sync` — the current lane rebased onto its base (parent lane or local trunk);
+    - `sync <lane>...` — the named lane(s), optionally with their subtrees;
     - `sync --all` — every lane rebased, parent→child;
     - `sync --trunk` — trunk vs `origin/<trunk>` (the old `pull`); add `--all` to also refresh
       every stale workspace (the old `catchup`).
@@ -1983,17 +1992,42 @@ def do_sync(session: Session, all_: bool, *, trunk_: bool = False, dry_run: bool
     fast-forward vs rebase, and `push` stays the only way out. `--dry-run` reports the plan for
     either shape without mutating.
     """
+    if recursive and not lanes:
+        raise GitmanError(
+            "`gitman sync --recursive` requires at least one lane argument — name a lane, or use `--all`.",
+            exit_code=3,
+        )
+    if all_ and lanes:
+        raise GitmanError(
+            "`gitman sync --all` targets every lane — don't also name lanes "
+            "(drop `--all` to sync only those, or drop the names to sync all).",
+            exit_code=3,
+        )
+    if trunk_ and lanes:
+        raise GitmanError("`gitman sync --trunk` does not accept lane arguments.", exit_code=3)
     if trunk_:
         return _do_sync_trunk(session, refresh_all=all_, dry_run=dry_run)
 
     from gitman.invariants import canonical_guard
     from gitman.lanes import current_lane, lane_base, lane_depth, lane_names
+    from gitman.lanes import subtree as lane_subtree
     from gitman.models import IntentResult
     from gitman.state import _merge_tree_conflicts
 
     trunk = require_trunk(session.config)
     if all_:
         targets = sorted(lane_names(session, trunk))
+    elif lanes:
+        live = lane_names(session, trunk)
+        for lane in lanes:
+            if lane not in live:
+                raise GitmanError(f"no such lane '{lane}'.", exit_code=3)
+        requested = list(dict.fromkeys(lanes))
+        if recursive:
+            expanded = {name for lane in requested for name in lane_subtree(session, trunk, lane)}
+            targets = sorted(expanded, key=lambda lane: (lane_depth(session, trunk, lane), lane))
+        else:
+            targets = requested
     else:
         cl = current_lane(session, trunk)
         if cl is None:
