@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import tomllib
 from pathlib import Path
+from typing import get_args
 
 from pydantic import BaseModel, Field, ValidationError
 
@@ -86,6 +87,64 @@ RETIRED_TABLES: dict[str, str] = {
 }
 
 
+def _config_model(annotation: object) -> type[BaseModel] | None:
+    """Return a declared config model from a field annotation, including optional models."""
+    if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+        return annotation
+    for candidate in get_args(annotation):
+        if isinstance(candidate, type) and issubclass(candidate, BaseModel):
+            return candidate
+    return None
+
+
+def _nested_field_paths() -> dict[str, str]:
+    """Index nested config field names by their first declared path."""
+    paths: dict[str, str] = {}
+
+    def visit(model: type[BaseModel], table_path: str = "") -> None:
+        for name, field in model.model_fields.items():
+            if field.exclude:
+                continue
+            nested = _config_model(field.annotation)
+            if nested is not None:
+                path = f"{table_path}.{name}" if table_path else name
+                visit(nested, path)
+            elif table_path:
+                paths.setdefault(name, f"[{table_path}] {name}")
+
+    visit(GitmanConfig)
+    return paths
+
+
+def _unknown_config_warnings(table: dict, source: str) -> list[str]:
+    """Describe unknown config keys while leaving Pydantic's ignore behavior intact."""
+    paths = _nested_field_paths()
+    warnings: list[str] = []
+
+    def inspect(values: dict, model: type[BaseModel], table_path: str = "") -> None:
+        for key, value in values.items():
+            field = model.model_fields.get(key)
+            if field is None or field.exclude:
+                target = paths.get(key)
+                location = f"[{table_path}] `" if table_path else "top-level `"
+                suffix = "`"
+                if target is not None:
+                    message = f"{source}: {location}{key}{suffix} is ignored — gitman reads it as {target}."
+                else:
+                    subject = f"[{table_path}] `{key}`" if table_path else f"`{key}`"
+                    message = f"{source}: {subject} is not a gitman config key — ignored."
+                warnings.append(message)
+                continue
+
+            nested = _config_model(field.annotation)
+            if nested is not None and isinstance(value, dict):
+                child_path = f"{table_path}.{key}" if table_path else key
+                inspect(value, nested, child_path)
+
+    inspect(table, GitmanConfig)
+    return warnings
+
+
 def _read_toml(path: Path) -> dict:
     with path.open("rb") as fh:
         return tomllib.load(fh)
@@ -119,6 +178,14 @@ def load_config(repo_root: Path) -> GitmanConfig:
     deprecations = [f"{source}: {note}" for key, note in RETIRED_TABLES.items() if key in table]
     for key in RETIRED_TABLES:
         table.pop(key, None)
+
+    deprecations.extend(_unknown_config_warnings(table, source))
+
+    # These excluded fields are Gitman's load-time metadata, not config. Drop them after
+    # reporting them so they cannot override metadata or make an otherwise ignored key fatal.
+    for key, field in GitmanConfig.model_fields.items():
+        if field.exclude:
+            table.pop(key, None)
 
     try:
         cfg = GitmanConfig.model_validate(table)

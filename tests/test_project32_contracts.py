@@ -14,8 +14,9 @@ import pytest
 from typer.testing import CliRunner
 
 from gitman.cli import _global_options_first, app
-from gitman.config import load_config
+from gitman.config import GitmanConfig, PublishConfig, load_config
 from gitman.core import GitmanError
+from gitman.doctor import OK, WARN, run_doctor
 from gitman.version import check_lock, read_version, write_version
 
 needs_uv = pytest.mark.skipif(shutil.which("uv") is None, reason="uv is the version backend")
@@ -77,6 +78,72 @@ def test_a_malformed_config_is_still_a_hard_failure(tmp_path: Path):
     with pytest.raises(GitmanError) as exc:
         load_config(tmp_path)
     assert exc.value.exit_code == 2
+
+
+def test_a_top_level_verify_key_warns_about_the_publish_table_without_adopting_it(tmp_path: Path):
+    (tmp_path / "gitman.toml").write_text('trunk = "main"\nverify = ["echo", "verify"]\n')
+
+    cfg = load_config(tmp_path)
+
+    assert cfg.publish.verify == []
+    assert len(cfg.deprecations) == 1
+    assert "top-level `verify` is ignored" in cfg.deprecations[0]
+    assert "[publish] verify" in cfg.deprecations[0]
+
+
+def test_a_misspelled_nested_key_warns_and_names_its_table(tmp_path: Path):
+    (tmp_path / "gitman.toml").write_text('[publish]\nverfiy = ["echo", "verify"]\n')
+
+    cfg = load_config(tmp_path)
+
+    assert len(cfg.deprecations) == 1
+    assert "[publish] `verfiy`" in cfg.deprecations[0]
+    assert "not a gitman config key" in cfg.deprecations[0]
+
+
+def test_an_unknown_key_without_a_match_warns_without_a_spelling_suggestion(tmp_path: Path):
+    (tmp_path / "gitman.toml").write_text('verfiy = ["echo", "verify"]\n')
+
+    cfg = load_config(tmp_path)
+
+    assert len(cfg.deprecations) == 1
+    assert "`verfiy` is not a gitman config key" in cfg.deprecations[0]
+    assert "reads it as" not in cfg.deprecations[0]
+
+
+def test_a_valid_config_covering_every_table_has_no_deprecations(tmp_path: Path):
+    (tmp_path / "gitman.toml").write_text(
+        'trunk = "main"\n'
+        '\n[lanes]\nworkspace_dir = ".worktrees/{lane}"\nalways_workspace = true\n'
+        '\n[publish]\nverify = ["echo", "verify"]\non_fail = "warn"\n'
+        'branch_prefix = "feature/"\nverify_timeout = 20.0\n'
+        '\n[release]\ntag_format = "release-{version}"\nverify = ["echo", "release"]\n'
+        'push_tag = false\n'
+        '\n[land.pre_hook]\ncommand = ["echo", "before"]\ntimeout_seconds = 30.0\n'
+        'allowed_paths = ["src"]\n'
+        '\n[land.post_hook]\ncommand = ["echo", "after"]\ntimeout_seconds = 40.0\n'
+        'allowed_paths = ["docs"]\n'
+        '\n[policy]\nprotected = ["main"]\n'
+    )
+
+    assert load_config(tmp_path).deprecations == []
+
+
+def test_doctor_warns_when_blocking_publish_has_no_verify_command(tmp_path: Path):
+    cfg = GitmanConfig(trunk="main", publish=PublishConfig(on_fail="block", verify=[]))
+
+    check = next(c for c in run_doctor(tmp_path, cfg).checks if c.name == "publish-verify")
+
+    assert check.level == WARN
+    assert "nothing is gated" in check.detail
+
+
+def test_doctor_accepts_a_blocking_publish_with_a_verify_command(tmp_path: Path):
+    cfg = GitmanConfig(trunk="main", publish=PublishConfig(on_fail="block", verify=["echo", "verify"]))
+
+    check = next(c for c in run_doctor(tmp_path, cfg).checks if c.name == "publish-verify")
+
+    assert check.level == OK
 
 
 @needs_uv

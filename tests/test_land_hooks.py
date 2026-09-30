@@ -156,3 +156,4 @@ def test_hook_runner_maps_missing_command_and_timeout(tmp_path: Path):
     timed_out = run_hook(LandHookConfig(command=sleeper, timeout_seconds=0.01), event, tmp_path)
     assert timed_out.exit_code == 2
     assert "timed out" in timed_out.output
+    assert "raise [land.pre_hook] timeout_seconds" in timed_out.output

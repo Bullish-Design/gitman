@@ -39,7 +39,7 @@ and mirrors its shape. The authority is `docs/GITMAN_CONCEPT.md`.
     `PartialWorkspaceError`, mapped to exit 2 with its recovery action.
 - **Dogfood:** route version control through `gitman` (never raw `jj`/`git` — that breaks
   canonicity). `gitman doctor` checks the toolchain; `gitman status` reports canonicity.
-- **Dev verification** (lint + tests) is `devenv shell -- bash -c 'gitman:lint && gitman:test'`
+- **Dev verification** (lint + tests) is `devenv shell -- bash -c 'ruff check src tests && pytest -q'`
   (or `devenv test`). This is gitman's *own* CI — separate from the generic, off-by-default
   publish verify hook in config.
 - The Python venv (tools + the `gitman` console script) is at `$DEVENV_STATE/venv/bin`.

@@ -122,6 +122,23 @@ def run_doctor(repo_root: Path, config: GitmanConfig | None = None) -> DoctorRep
     for note in cfg.deprecations:
         checks.append(Check(WARN, "config", note))
 
+    if cfg.publish.on_fail == "block" and not cfg.publish.verify:
+        checks.append(
+            Check(
+                WARN,
+                "publish-verify",
+                "publish is configured to block on verify failure, but no verify command is configured, "
+                "so nothing is gated",
+            )
+        )
+    else:
+        detail = (
+            "publish verify command is configured"
+            if cfg.publish.verify
+            else "publish verify is empty and does not block"
+        )
+        checks.append(Check(OK, "publish-verify", detail))
+
     # An orphaned `.git/HEAD` breaks *every* colocated export while every other check passes.
     # It reported HEALTHY through a whole session in which no export had succeeded, so it gets
     # its own row (project 29).

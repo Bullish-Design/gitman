@@ -65,10 +65,12 @@ def run_hook(config: LandHookConfig, event: LandHookEvent, cwd: Path) -> HookRun
     except FileNotFoundError:
         return HookRun(False, 2, f"hook command not found: {config.command[0]}")
     except subprocess.TimeoutExpired:
+        hook_setting = "pre_hook" if event.event == "pre_land" else "post_hook"
         return HookRun(
             False,
             2,
-            f"{event.event} hook timed out after {config.timeout_seconds}s: {_command_text(config.command)}",
+            f"{event.event} hook timed out after {config.timeout_seconds}s: {_command_text(config.command)} "
+            f"— raise [land.{hook_setting}] timeout_seconds",
         )
     except OSError as exc:
         return HookRun(False, 2, f"could not start {event.event} hook: {exc}")
