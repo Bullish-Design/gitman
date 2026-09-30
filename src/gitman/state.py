@@ -1148,8 +1148,9 @@ def log_range(session: Session, revset: str) -> list[Change]:
     reverse of what a changelog reader wants, so the order is flipped here — a caller never
     re-sorts. A revset that does not parse raises `GitmanError` (exit 3) naming the revset.
     """
+    view = session.view()
     try:
-        commits = session.view().log(revset)
+        commits = view.log(revset)
     except RevsetError as exc:
         raise GitmanError(f"bad revset {revset!r}: {exc}", exit_code=3) from exc
-    return [_change(c) for c in reversed(commits)]
+    return [_change(c, view.diff_stat(c.commit_id)) for c in reversed(commits)]

@@ -47,6 +47,38 @@ def _session(d: Path) -> Session:
     return Session.load(d, GitmanConfig(trunk="main"))
 
 
+def _build_two_file_change(d: Path) -> Workspace:
+    """A one-change lane that replaces one line and adds two more across two files."""
+    ws = Workspace.init(d, colocate=True)
+    (d / "a.txt").write_text("alpha\nkeep\nomega\n")
+    (d / "b.txt").write_text("base\n")
+    with ws.transaction("initial") as tx:
+        tx.describe("@", "initial")
+        tx.create_bookmark("main", "@")
+    with ws.transaction("start feature") as tx:
+        tx.new("main")
+    (d / "a.txt").write_text("beta\nkeep\nomega\n")
+    (d / "b.txt").write_text("base\nadded one\nadded two\n")
+    with ws.transaction("two-file update") as tx:
+        tx.describe("@", "two-file update")
+        tx.create_bookmark("feature", "@")
+    return ws
+
+
+def _build_empty_change(d: Path) -> Workspace:
+    """A one-change lane whose commit has the same tree as trunk."""
+    ws = Workspace.init(d, colocate=True)
+    (d / "a.txt").write_text("same\n")
+    with ws.transaction("initial") as tx:
+        tx.describe("@", "initial")
+        tx.create_bookmark("main", "@")
+    with ws.transaction("empty feature") as tx:
+        tx.new("main")
+        tx.describe("@", "empty feature")
+        tx.create_bookmark("feature", "@")
+    return ws
+
+
 def test_empty_range_is_an_empty_list(tmp_path: Path):
     _build(tmp_path)
     assert log_range(_session(tmp_path), "main..main") == []
@@ -66,6 +98,28 @@ def test_range_is_oldest_first(tmp_path: Path):
     subjects = [c.description.splitlines()[0] for c in log_range(_session(tmp_path), "main..feature")]
 
     assert subjects == ["first", "second"]  # newest last, as the changelog workflow reads it
+
+
+def test_change_reports_real_diff_stats_for_multiple_files(tmp_path: Path):
+    _build_two_file_change(tmp_path)
+
+    [change] = log_range(_session(tmp_path), "main..feature")
+
+    assert change.files_changed == 2
+    assert change.insertions == 3
+    assert change.deletions == 1
+    assert change.empty is False
+
+
+def test_empty_change_keeps_zero_stats_and_is_marked_empty(tmp_path: Path):
+    _build_empty_change(tmp_path)
+
+    [change] = log_range(_session(tmp_path), "main..feature")
+
+    assert change.files_changed == 0
+    assert change.insertions == 0
+    assert change.deletions == 0
+    assert change.empty is True
 
 
 def test_unparseable_revset_names_the_revset(tmp_path: Path):
