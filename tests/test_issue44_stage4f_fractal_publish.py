@@ -199,3 +199,40 @@ def test_reconcile_renames_slash_lanes_and_leaves_the_parent_alone(tmp_path: Pat
     assert res.outcome == "PUBLISHED", res.messages
     refs = _remote_refs(remote)
     assert "refs/heads/T+api" in refs
+
+
+def test_reconcile_never_renames_a_slash_trunk(tmp_path: Path):
+    """A repo whose TRUNK name holds `/` must still repair. The rename is for lanes only —
+    renaming trunk breaks the config that names it, and `repair` then cannot run at all."""
+    remote = tmp_path / "remote.git"
+    subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True)
+    work = tmp_path / "work"
+    work.mkdir()
+    ws = Workspace.init(work, colocate=True)
+    (work / "f.txt").write_text("base\n")
+    with ws.transaction("initial") as tx:
+        tx.describe("@", "initial")
+        tx.create_bookmark("fix/slash-trunk", "@")
+    do_init(Session.load(work, GitmanConfig()), trunk_opt="fix/slash-trunk")
+    cfg = GitmanConfig(trunk="fix/slash-trunk")
+    ws.add_remote("origin", str(remote))
+    ws.git_push("origin", "fix/slash-trunk", allow_new=True)
+
+    with ws.transaction("legacy T/api") as tx:
+        tx.new("fix/slash-trunk")
+        tx.create_bookmark("T/api", "@")
+    (work / "api.txt").write_text("api\n")
+    ws.snapshot()
+    with ws.transaction("legacy describe T/api") as tx:
+        tx.describe("@", "api work")
+    with ws.transaction("park @") as tx:
+        tx.new("fix/slash-trunk")
+
+    result = do_reconcile(Session.load(work, cfg), abandon_=False)
+
+    assert result.outcome == "REPAIRED", result.messages
+    local = {b.name for b in Session.load(work, cfg).view().bookmarks() if b.remote is None}
+    assert "fix/slash-trunk" in local  # trunk keeps its name
+    assert "fix+slash-trunk" not in local  # and was never migrated
+    assert "T/api" not in local  # the real lane still migrates
+    assert "T+api" in local

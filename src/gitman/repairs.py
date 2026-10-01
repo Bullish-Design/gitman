@@ -128,11 +128,21 @@ def _repair_legacy_lane_names(
     a `@` in a foreign workspace (the same rule `do_land`'s fold-refusal enforces), and this
     repair call may be running from a completely different workspace. Reports it as an honest
     note instead of silently risking uncommitted on-disk edits there.
+
+    Trunk is skipped, exactly as the detector skips it (`state.py` filters `local_names -
+    {trunk_name}`). A `/` in TRUNK's name is not a stale lane name: trunk is frozen by I1 and is
+    never a lane, so renaming it to the `+` form only breaks the config that names it. Without
+    this filter, a repo on a `/` trunk cannot run `repair` at all — the rename lands, the
+    configured trunk stops resolving, and the intent rolls back with `bad revision/revset:
+    Revision <trunk> doesn't exist` (exit 3). The detector never flagged trunk, so `status` stays
+    silent and the failure appears only when `repair` runs.
     """
     from gitman.lanes import normalise_lane_name
 
     view = session.fresh_view()
-    legacy = sorted(b.name for b in view.bookmarks() if b.remote is None and "/" in b.name)
+    legacy = sorted(
+        b.name for b in view.bookmarks() if b.remote is None and b.name != trunk and "/" in b.name
+    )
     if not legacy:
         return
     workspace_names = {w.name for w in session.ws.workspaces()}
