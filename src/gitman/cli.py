@@ -607,6 +607,32 @@ def workspace_prune() -> None:
     _finish_intent(do_workspace_prune(_session()))
 
 
+# --- trunk noun (design 58) ------------------------------------------------------------
+
+trunk_app = typer.Typer(
+    help="Rename the frozen trunk bookmark (invariant I1-respecting, operator-named).",
+    no_args_is_help=True,
+)
+app.add_typer(trunk_app, name="trunk")
+
+
+@trunk_app.command("rename")
+def trunk_rename(
+    new_name: Annotated[str, typer.Argument(help="The new trunk bookmark name.")],
+) -> None:
+    """Rename trunk to NEW_NAME: same commit, new bookmark, gitman.toml rewritten in one step.
+
+    Retires the old trunk name's LOCAL bookmark unconditionally — there is no `--keep-lane`:
+    an un-retired old name is one `gitman sync --trunk` away from gitman deleting its remote
+    branch with no opt-out. This verb never deletes a remote branch itself; if the old name was
+    published, the report names the surviving branch and says gitman will never remove it —
+    delete it on the forge, or with `git push <remote> --delete <old-name>`, outside gitman.
+    """
+    from gitman.core import do_trunk_rename
+
+    _finish_intent(do_trunk_rename(_session(), new_name))
+
+
 # --- deprecated verb aliases (project 46 S6) ------------------------------------------
 #
 # Every rename ships behind a hidden alias that forwards to the new verb and appends a note

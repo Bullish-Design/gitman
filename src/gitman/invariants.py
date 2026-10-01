@@ -49,13 +49,23 @@ LOCK_PATH = ".gitman/lock"
 LAST_UNDO_PATH = ".gitman/last-undo"
 
 
-# --- state dir + undo checkpoint (UNCHANGED API; stores an op-id string) --------------
+# --- state dir + undo checkpoint (stores an op-id string; `config_before` is additive) -----
 
 
-def write_undo_checkpoint(repo_root: Path, op_before: str, intent: str) -> None:
+def write_undo_checkpoint(
+    repo_root: Path, op_before: str, intent: str, *, config_before: str | None = None
+) -> None:
+    """Record the op to restore on `gitman undo`, plus the intent name.
+
+    `config_before` is additive (design 58): the exact pre-write bytes of `gitman.toml`, for the
+    one intent (`trunk-rename`) whose undo must also revert a plain-file write that jj's op log
+    cannot cover. Every other caller omits it, so the sidecar's shape is unchanged for them."""
     path = repo_root / LAST_UNDO_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"op": op_before, "intent": intent}))
+    body = {"op": op_before, "intent": intent}
+    if config_before is not None:
+        body["config_before"] = config_before
+    path.write_text(json.dumps(body))
 
 
 def read_undo_checkpoint(repo_root: Path) -> dict | None:
@@ -897,6 +907,7 @@ def canonical_tx(
     lane: str | None = None,
     lanes: Iterable[str] | None = None,
     export: bool = False,
+    config_before: str | None = None,
 ) -> Iterator[Transaction]:
     """Run a single-transaction intent transactionally under the shared-root lock.
 
@@ -911,6 +922,9 @@ def canonical_tx(
     write. `_postcondition` still runs unconditionally; a ref left lagging by skipping export
     classifies as `ref-lagging` (`state.py`), which stage 4c made note-only, so it never rolls
     this intent back.
+
+    `config_before` (design 58): passed through verbatim to the undo checkpoint. Every caller but
+    `trunk-rename` omits it, so this is additive, not a behaviour change, for every other intent.
     """
     with repo_lock(session.repo_root):
         _assert_fresh(session)
@@ -924,7 +938,7 @@ def canonical_tx(
         if export:
             _export_colocated_git(session)
         _postcondition(session, intent, trunk_before, op_before, before)
-        write_undo_checkpoint(session.repo_root, op_before, intent)
+        write_undo_checkpoint(session.repo_root, op_before, intent, config_before=config_before)
 
 
 # --- multi-op guard -------------------------------------------------------------------

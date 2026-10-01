@@ -267,3 +267,8 @@ class IntentResult(BaseModel):
     # writes it back unchanged. Splitting it into lines would lose the trailing newline, which
     # changes the tree. `--json` carries it losslessly; the text report prints it as-is.
     content: str | None = None
+    # What became of the old trunk name after `trunk-rename` (design 58). `None` for every other
+    # intent. The verb ships one disposition only — the old bookmark's LOCAL twin is always
+    # deleted; its remote twin, if any, is never touched by gitman (deleting a remote branch is an
+    # outward-facing act that belongs to the operator, not to a local rename).
+    old_trunk_disposition: Literal["retired"] | None = None

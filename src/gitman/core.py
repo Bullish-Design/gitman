@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import fnmatch
 import os
+import re
 import shutil
 import subprocess
 import uuid
@@ -2991,6 +2992,214 @@ def do_remote_add(session: Session, url: str, name: str = "origin"):
     )
 
 
+_TRUNK_LINE_RE = re.compile(r'(?m)^trunk\s*=\s*"([^"]*)"\s*$')
+
+
+def _rewrite_trunk_line(text: str, old_name: str, new_name: str) -> str:
+    """Replace `gitman.toml`'s `trunk = "..."` line only, leaving every other byte untouched.
+
+    Not a parse-and-re-emit: gitman has no TOML-writing dependency (`tomli_w`/`tomlkit`), and a
+    full round-trip could silently drop a hand-authored table's comments or key order. A targeted
+    substitution plus a re-parse check (the caller's job, right after this returns) gets the same
+    safety with no new dependency. Refuses (exit 2) on anything this narrow approach cannot do
+    safely: zero matches (the key is missing even though config says it is set — a hand-edited
+    file this verb should not guess at), more than one match (the file is already malformed), or a
+    matched value that disagrees with the value already loaded (someone edited the file since this
+    process started)."""
+    matches = list(_TRUNK_LINE_RE.finditer(text))
+    if len(matches) != 1:
+        raise GitmanError(
+            f"gitman.toml has {len(matches)} top-level 'trunk = \"...\"' line(s) (expected exactly "
+            "1) — refusing to edit it; fix the file by hand, then retry.",
+            exit_code=2,
+        )
+    match = matches[0]
+    if match.group(1) != old_name:
+        raise GitmanError(
+            f"gitman.toml's trunk value ('{match.group(1)}') does not match the loaded config "
+            f"('{old_name}') — the file changed since this process started. Reload and retry.",
+            exit_code=2,
+        )
+    return text[: match.start()] + f'trunk = "{new_name}"' + text[match.end() :]
+
+
+def do_trunk_rename(session: Session, new_name: str):
+    """Rename the frozen trunk bookmark to `new_name` — same commit, new name, one atomic verb.
+
+    Trunk is frozen at `init` (I1): nothing at runtime re-detects it. This is not re-detection —
+    it is an operator typing an explicit new name, through the one channel gitman offers for a
+    deliberate, auditable change to frozen state (`.scratch/projects/58-trunk-rename/DESIGN.md`
+    §3.1). `trunk-rename` never joins `TRUNK_ADVANCING` (`invariants.py`): the new bookmark is
+    created at trunk's CURRENT commit, so the postcondition's trunk-unchanged check holds on its
+    own, the same way it would for any intent that never touches trunk's content.
+
+    Disposition of the old name is NOT a choice the operator makes here (an earlier design draft
+    offered `--retire`/`--keep-lane`; the owner dropped `--keep-lane` entirely). The old
+    bookmark's range against the new trunk is empty from the instant this transaction commits,
+    and `gitman sync --trunk` retires any published lane in that shape unconditionally, including
+    a one-way remote-branch delete with no opt-out on that path (`do_pull`,
+    `_repair_lane_against_adopted_trunk`). Leaving the old name live as an ordinary lane is one
+    sync away from that exact hazard, so this verb always retires it — deletes the LOCAL bookmark
+    only, every time.
+
+    It never deletes a remote branch. Deleting a remote branch is an outward-facing act — visible
+    to anyone else with the repo cloned, possibly carrying an open PR — and belongs to the
+    operator, never to a local rename. If the old name was published, the report names the
+    surviving remote branch explicitly and says gitman will never remove it."""
+    from pyjutsu.errors import RevsetError
+
+    from gitman.invariants import canonical_tx, precheck_canonical, repo_lock
+    from gitman.lanes import lane_names, validate_lane_name
+    from gitman.models import IntentResult
+    from gitman.state import _lane_index, capture_state
+
+    old_trunk = require_trunk(session.config)
+
+    if new_name == old_trunk:
+        raise GitmanError(f"'{new_name}' is already the trunk name — nothing to do.", exit_code=3)
+    validate_lane_name(new_name)
+    if new_name in lane_names(session, old_trunk):
+        raise GitmanError(
+            f"'{new_name}' already names a lane; pick another name or retire that lane first.",
+            exit_code=3,
+        )
+
+    config_source = session.config.source_path
+    if config_source is None:
+        raise GitmanError(
+            "gitman.toml not found on disk — run `gitman init` (or re-run from a loaded repo).",
+            exit_code=2,
+        )
+    if config_source.name == "pyproject.toml":
+        raise GitmanError(
+            "trunk is configured in pyproject.toml's [tool.gitman] — `gitman trunk rename` only "
+            "writes gitman.toml. Move the [tool.gitman] table into a gitman.toml file by hand, "
+            "then retry.",
+            exit_code=2,
+        )
+
+    # The dirty-file guard (DESIGN.md §3.4): verify the on-disk text BEFORE anything jj-side
+    # happens, so a refusal here never needs an undo at all. The substituted text is computed and
+    # verified now but written to disk only after the jj transaction commits (below) — the
+    # irreversible-feeling file write happens last, mirroring `do_init`'s own ordering.
+    pre_text = config_source.read_text()
+    new_text = _rewrite_trunk_line(pre_text, old_trunk, new_name)
+    import tomllib
+
+    old_table = tomllib.loads(pre_text)
+    new_table = tomllib.loads(new_text)
+    old_table.pop("trunk", None)
+    new_table_trunk = new_table.pop("trunk", None)
+    if new_table_trunk != new_name or old_table != new_table:
+        raise GitmanError(
+            "gitman.toml did not round-trip after the trunk substitution — refusing to write "
+            "(this is a bug in `gitman trunk rename`, not your file).",
+            exit_code=2,
+        )
+
+    # Off-canonical guard, run explicitly here rather than waiting for `canonical_tx` below: a
+    # conflicted or diverged trunk (`_trunk_conflicted`) makes a bare `view.resolve(old_trunk)`
+    # raise a raw pyjutsu `RevsetError`, not a clean `GitmanError` — and every read below (the
+    # trunk commit, the remote-commit comparison) needs `old_trunk` to resolve. `precheck_canonical`
+    # is what every other mutating verb already relies on for this (`subjects_for` always includes
+    # the trunk subject, `invariants.py`); calling it here, first, keeps this verb consistent with
+    # that precedent instead of crashing uncaught on a repo this verb was always going to refuse.
+    precheck_canonical(session, "trunk-rename")
+
+    # Stabilize `@` BEFORE resolving anything (issue found empirically while building this verb,
+    # not anticipated in DESIGN.md): on a repo where no gitman read has ever snapshotted `@` since
+    # `init` (the bootstrap state, `@` still sitting exactly on trunk's commit), the FIRST
+    # `fresh_view()` anyone calls silently amends that commit in place — jj's working-copy commit
+    # and any bookmark sitting on it move together, once, the first time. `canonical_tx`'s own
+    # precheck calls `fresh_view()` internally; if THIS function had already resolved
+    # `trunk_commit` from a plain, pre-snapshot `view()`, the new bookmark would be created at a
+    # commit one step stale, and the postcondition's trunk-unchanged check would wrongly roll the
+    # whole rename back as "trunk moved outside a land/pull". `precheck_canonical`'s own
+    # `capture_state` call (just above) already did this snapshot, so this is a plain read.
+    view = session.view()
+    trunk_commit = view.resolve(old_trunk).commit_id
+
+    if has_remote(session.ws):
+        remote = pick_remote(session.ws)
+        try:
+            new_remote_commit = view.resolve(f"{new_name}@{remote}").commit_id
+        except RevsetError:
+            new_remote_commit = None
+        if (
+            new_remote_commit is not None
+            and new_remote_commit != trunk_commit
+            and not view.is_ancestor(new_remote_commit, trunk_commit)
+        ):
+            raise GitmanError(
+                f"'{new_name}' already exists on {remote} at a different, unrelated commit "
+                f"({new_remote_commit[:12]}) — resolve this by hand before renaming onto it; "
+                "this verb only ever creates a LOCAL bookmark and will not push into a conflict "
+                "it did not cause.",
+                exit_code=2,
+            )
+    else:
+        remote = None
+
+    published_before = _lane_index(session.view())[1]
+    old_was_published = old_trunk in published_before
+
+    with canonical_tx(session, "trunk-rename", config_before=pre_text) as tx:
+        tx.create_bookmark(new_name, trunk_commit)
+        tx.delete_bookmark(old_trunk)
+        # In-process only (no disk write yet) — must happen before canonical_tx's own
+        # postcondition runs (right after this block exits), so its `capture_state` call resolves
+        # trunk by the NEW name. The old bookmark is already gone by this point, so resolving by
+        # the OLD name would raise. See DESIGN.md §2 step 4/step 5.
+        session.config.trunk = new_name
+
+    # Only now — after the postcondition has already confirmed the rename held — write the file.
+    # Re-acquire the lock for this last step (released when `canonical_tx` returned): the write
+    # isn't itself a jj operation, but a repo a second gitman process could touch in between
+    # deserves the same serialization `do_init`'s own file write already gets.
+    with repo_lock(session.repo_root):
+        # If `@` still coincides with the just-created trunk commit (true only on a repo where no
+        # lane has EVER been started — the bootstrap state), repark it onto a fresh empty child
+        # BEFORE writing the file below. Found empirically while building this verb: `@` sitting
+        # on trunk means the NEXT snapshot anywhere (even this function's own closing
+        # `capture_state` call) silently folds the plain file write into trunk's own commit,
+        # breaking the "same commit, new name" promise this verb exists to keep. Mirrors
+        # `do_pull`'s own repark (`gitman:pull-repark`) for the identical `@`-on-trunk shape.
+        if session.view().working_copy().commit_id == trunk_commit:
+            with session.ws.transaction("gitman:trunk-rename-repark", auto_snapshot=False) as tx:
+                tx.new(new_name)
+        config_source.write_text(new_text)
+
+    messages = [f"created trunk bookmark '{new_name}' at {trunk_commit[:12]}."]
+    if old_was_published and remote is not None:
+        messages.append(
+            f"retired old trunk '{old_trunk}' locally (deleted the local bookmark). Its remote "
+            f"branch '{old_trunk}' on {remote} is untouched — no gitman verb removes it; delete "
+            f"it on the forge, or with `git push {remote} --delete {old_trunk}` outside gitman."
+        )
+    else:
+        messages.append(f"retired old trunk '{old_trunk}' (deleted the local bookmark; it was never published).")
+    messages.append(f"wrote {config_source.name} (trunk now '{new_name}').")
+
+    notes = []
+    if remote is not None:
+        notes.append(
+            f"local trunk is now '{new_name}'; {remote}'s default branch is unchanged — if "
+            f"{remote}'s default branch should also become '{new_name}', do that on the forge "
+            "directly (gitman has no verb for a forge's default-branch setting). `gitman push` "
+            f"will fast-forward '{remote}/{new_name}' to match once you're ready."
+        )
+
+    return IntentResult(
+        intent="trunk-rename",
+        outcome="RENAMED",
+        messages=messages,
+        notes=notes,
+        old_trunk_disposition="retired",
+        undo_command="gitman undo",
+        state=capture_state(session),
+    )
+
+
 def _ensure_gitignore(repo_root: Path, paths: list[str]) -> list[str]:
     """Ensure each of `paths` is an exact line in the repo-root `.gitignore` (create it if absent).
     Returns the paths that were newly added. Keeps the next snapshot from re-tracking an untracked
@@ -3275,6 +3484,11 @@ def do_undo(session: Session, op: str | None, list_: bool):
         if op:
             target, undone_desc = _resolve_undo_op(session, op)
             what = f"op {op[:12]} ({undone_desc})"
+            # Read the checkpoint here ONLY to check for a `config_before` sidecar (design 58) —
+            # never to pick `target`/`what`, which `--op` resolves from the op log itself. The
+            # checkpoint file holds just the MOST RECENT intent's record, so it is only trusted
+            # below when its own `op` field matches the op this call is actually restoring to.
+            rec = read_undo_checkpoint(session.repo_root)
         else:
             rec = read_undo_checkpoint(session.repo_root)
             undoing_repair = bool(rec) and rec.get("intent") in ("repair", "reconcile")
@@ -3320,11 +3534,24 @@ def do_undo(session: Session, op: str | None, list_: bool):
         # unreachable from either system — issue 31's loss, relocated into `undo`. Preserve it as a
         # lane there. Every other intent's commit is gitman's own and is meant to go (31-F2).
         ref_notes = sync_colocated_refs(session, preserve_orphans=undoing_repair)
+        # Design 58: `trunk-rename` is the first intent whose undo must also revert a plain file.
+        # `restore_operation` just rewound jj; here we additionally rewrite `gitman.toml` back to
+        # its pre-rename bytes, so one `gitman undo` reverts the whole rename, not just its jj
+        # half. Gated on `rec["op"] == target`: the checkpoint only describes the op it was
+        # written for, so a `--op <id>` call that lands on a DIFFERENT (older) op must not apply a
+        # stale `config_before` meant for a later intent.
+        config_restored = False
+        if rec and rec.get("op") == target and rec.get("config_before") is not None:
+            (session.repo_root / "gitman.toml").write_text(rec["config_before"])
+            config_restored = True
         clear_undo_checkpoint(session.repo_root)
+    messages = [f"reverted {what}."]
+    if config_restored:
+        messages.append("restored gitman.toml to its pre-rename contents.")
     return IntentResult(
         intent="undo",
         outcome="UNDONE",
-        messages=[f"reverted {what}."] + ref_notes,
+        messages=messages + ref_notes,
         notes=["older intents: `gitman undo --list`, then `gitman undo --op <id>` undoes that op."],
     )
 

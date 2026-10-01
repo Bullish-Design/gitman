@@ -62,6 +62,10 @@ class Anomaly(BaseModel, frozen=True):
 # `pull` stays as an internal gate name for `sync --trunk`'s integration path (`do_pull` passes it
 # to `canonical_guard`): the trunk-diverged row must let its own repair through, and `pull` is
 # that repair's internal spelling. The new `workspace` intent also runs through the gate.
+# `trunk-rename` (design 58) is ADDED — without it, a trunk-tier anomaly's `blocks` set would not
+# name it, and the one gate meant to refuse a rename on a broken trunk would silently let it
+# through (membership here is a plain string match, not inferred from `subjects_for`'s trunk
+# subject alone).
 ALL_MUTATING = frozenset(
     {
         "start",
@@ -76,6 +80,7 @@ ALL_MUTATING = frozenset(
         "pull",
         "untrack",
         "workspace",
+        "trunk-rename",
     }
 )
 

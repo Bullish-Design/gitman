@@ -101,7 +101,7 @@ repo-global, and auto-following the change across rewrites.
 
 | # | Invariant | What it dissolves |
 |---|---|---|
-| I1 | **Trunk is resolved once at `init`, written to config, frozen.** Runtime never re-detects. | All runtime trunk-ambiguity states. |
+| I1 | **Trunk is resolved once at `init`, written to config, frozen.** Runtime never re-detects. The one sanctioned exception is `gitman trunk rename <new-name>` (design 58, §7) — an operator-named, auditable re-freeze, never an automatic re-detection. | All runtime trunk-ambiguity states. |
 | I2 | **Every change belongs to exactly one named lane; no anonymous/stray changes.** | Stranded work — every change is *listable*; `status` is a uniform enumeration, not a triage. |
 | I3 | **Branch name = the lane's readable name**, unique-checked at creation, stable via the bookmark. | Branch-name generation / collision / freeze logic. |
 | I4 | **Gitman is the sole writer; mutating ops are serialized by a brief repo lock.** | Concurrent-rewrite divergence (parallel work lives in separate workspaces). |
@@ -232,6 +232,7 @@ They forward every option and exit code and name the replacement in the report's
 | `workspace list` | `gitman workspace list` | List workspace registrations; mark the ones with no live lane. | `ws.workspaces()` |
 | `workspace forget` | `gitman workspace forget <name>` | Drop a jj workspace registration; never removes the directory. | `ws.forget_workspace` |
 | `workspace prune` | `gitman workspace prune` | Retire every registration with no live lane and an empty `@`. | `ws.forget_workspace` |
+| `trunk rename` | `gitman trunk rename <new-name>` | Rename trunk: same commit, new bookmark, `gitman.toml` rewritten, in one atomic verb (design 58, I1). Retires the old name's **local** bookmark unconditionally — ships `--retire`-only behaviour, no `--keep-lane` (an owner decision: an un-retired old name is one `sync --trunk` away from gitman deleting its remote branch with no opt-out). Never deletes a remote branch itself; a published old name's branch survives, named explicitly in the report. | `tx.create_bookmark` + `tx.delete_bookmark` + targeted config rewrite |
 
 **Global flags:** `--json`, `--repo <path>`.
 **Exit codes:** `0` ok · `1` VC decision needed (conflict / push rejected / verify
