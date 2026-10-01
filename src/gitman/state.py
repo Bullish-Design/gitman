@@ -10,6 +10,7 @@ changes outside every lane); the authoritative transactional invariants live in 
 
 from __future__ import annotations
 
+import fnmatch
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -24,6 +25,7 @@ from gitman.models import (
     Conflict,
     ConflictFile,
     ContentRelation,
+    ExcludedBookmark,
     Lane,
     LaneState,
     LaneTwin,
@@ -810,6 +812,14 @@ def capture_state(session: Session, *, snapshot: bool = True) -> RepoState:
     local_names, published = _lane_index(view)
     workspace_names = {w.name for w in session.ws.workspaces()}
 
+    # Design 57: a bookmark matching `[lanes] exclude` is never turned into a `Lane` — no
+    # lane-shaped anomaly (non-linear, divergent, orphaned, legacy-name) is ever computed for
+    # it. Import locally: `gitman.lanes` imports `_lane_index`/`_resolvable_lane_heads` from
+    # this module, so a module-level import here would be circular.
+    from gitman.lanes import excluded_names
+
+    excluded = excluded_names(local_names - {trunk_name}, config.lanes.exclude)
+
     wc = view.working_copy()
     current_lane = next((b for b in wc.bookmarks if b != trunk_name), None)
 
@@ -849,7 +859,7 @@ def capture_state(session: Session, *, snapshot: bool = True) -> RepoState:
             remote_trunk_commit_id = None
 
     lanes: list[Lane] = []
-    for name in sorted(local_names - {trunk_name}):
+    for name in sorted(local_names - {trunk_name} - excluded):
         if name in conflicted:
             lanes.append(
                 Lane(
@@ -918,6 +928,28 @@ def capture_state(session: Session, *, snapshot: bool = True) -> RepoState:
                 files_changed=files,
                 created_at=created_at,
                 updated_at=updated_at,
+            )
+        )
+
+    # Design 57 §3.3: an excluded bookmark is never lane-analyzed, but it is always named — the
+    # same honesty guarantee `TrunkRef` already gives trunk, the other bookmark gitman
+    # structurally declines to analyze as a lane. No diff stats, no ahead/behind: computing those
+    # would require the lane-shaped analysis this feature exists to not run.
+    excluded_bookmarks: list[ExcludedBookmark] = []
+    for name in sorted(excluded):
+        try:
+            head = view.resolve(name)
+            commit_id, change_id = head.commit_id, head.change_id
+        except RevsetError:
+            commit_id = change_id = None  # conflicted excluded bookmark — mirrors Lane.head's None case
+        pattern = next(p for p in config.lanes.exclude if fnmatch.fnmatchcase(name, p))
+        excluded_bookmarks.append(
+            ExcludedBookmark(
+                name=name,
+                commit_id=commit_id,
+                change_id=change_id,
+                published=name in published,
+                pattern=pattern,
             )
         )
 
@@ -1066,6 +1098,15 @@ def capture_state(session: Session, *, snapshot: bool = True) -> RepoState:
     # Encourage the user to start a lane — the happy path never sits directly on trunk.
     elif current_lane is None and trunk_name in (wc.bookmarks or []):
         notes.append("you are on trunk with no active lane — `gitman start <name> --workspace` to begin working.")
+    # Design 57: `current_lane` stays a truthful read of what @ sits on (lanes.current_lane is
+    # never gated) — but if that bookmark is excluded, the fact must still be visible, or an
+    # agent reading `status` would not learn that the verbs guarded by `require_current_lane`
+    # are about to refuse.
+    if current_lane is not None and current_lane in excluded:
+        notes.append(
+            f"@ is on '{current_lane}', which [lanes] exclude marks as not a gitman lane — "
+            f"`gitman switch <a real lane>`."
+        )
     # Fractal-lanes I3′: an orphaned node (its `+`-path name-parent was deleted out-of-band) is still a
     # valid, resolvable lane — surface it as a note pointing at `repair`, never a crash. The tree
     # render marks the node itself; this names the recovery verb.
@@ -1087,7 +1128,7 @@ def capture_state(session: Session, *, snapshot: bool = True) -> RepoState:
     # `/` in a live bookmark is exactly the fingerprint of "predates the flip"), and git forbids
     # `refs/heads/T`/`refs/heads/T/api` from coexisting, so this lane's `publish` silently fails
     # whenever a sibling prefix is also live (the whole reason this stage exists — SCOPING.md §2).
-    legacy_slash_lanes = sorted(name for name in local_names - {trunk_name} if "/" in name)
+    legacy_slash_lanes = sorted(name for name in local_names - {trunk_name} - excluded if "/" in name)
     if legacy_slash_lanes:
         detail = (
             f"lane(s) {', '.join(legacy_slash_lanes)} still use the pre-migration '/' path "
@@ -1097,6 +1138,14 @@ def capture_state(session: Session, *, snapshot: bool = True) -> RepoState:
         notes.append(detail)
         for name in legacy_slash_lanes:
             anomalies.append(make_anomaly("lane-legacy-name", Subject(kind="lane", name=name), detail))
+
+    # Design 57 §3.6 (optional step): a configured `[lanes] exclude` pattern that matches zero
+    # local bookmarks is likely a typo or a stale entry from a renamed/deleted bookmark — note
+    # it so the owner notices, never fatal (this needs a live bookmark read, so it lives here
+    # rather than in doctor.py's toolchain-only checks).
+    stale_patterns = [p for p in config.lanes.exclude if not any(fnmatch.fnmatchcase(n, p) for n in local_names)]
+    if stale_patterns:
+        notes.append(f"[lanes] exclude pattern(s) {', '.join(stale_patterns)} matched no local bookmark — stale entry?")
 
     # Project 46 S6 / issue 43 D3: a workspace registration with no live lane is invisible until
     # it refuses the next `start` of that name. Name it here so `workspace list`/`prune`/
@@ -1132,6 +1181,7 @@ def capture_state(session: Session, *, snapshot: bool = True) -> RepoState:
         trunk=trunk_ref,
         current_lane=current_lane,
         lanes=lanes,
+        excluded_bookmarks=excluded_bookmarks,
         conflicts=conflicts,
         recent_ops=recent_ops,
         notes=notes,

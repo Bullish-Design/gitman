@@ -7,6 +7,7 @@ runtime re-detects it.
 
 from __future__ import annotations
 
+import fnmatch
 import tomllib
 from pathlib import Path
 from typing import get_args
@@ -21,6 +22,10 @@ class LanesConfig(BaseModel):
     # dir. {repo} stays supported for an explicit sibling override (`../{repo}-{lane}`).
     workspace_dir: str = ".worktrees/{lane}"
     always_workspace: bool = False
+    # Bookmark-name glob patterns gitman must never treat as a lane. Matched with
+    # fnmatch.fnmatchcase against the raw bookmark name (no lane-name validation — a pattern may
+    # contain '/' for a legacy-separator name, or any fnmatch wildcard). See design 57.
+    exclude: list[str] = Field(default_factory=list)
 
 
 class PublishConfig(BaseModel):
@@ -193,6 +198,18 @@ def load_config(repo_root: Path) -> GitmanConfig:
         from gitman.core import GitmanError
 
         raise GitmanError(f"invalid gitman config in {source}: {exc}", exit_code=2) from exc
+    # Trunk is already removed from every lane enumeration before exclusion runs (state.py,
+    # lanes.py), so a pattern that matches trunk can never exclude anything — it is a harmless
+    # no-op, not an error. Warn through the same channel as every other config oddity, rather
+    # than fail, matching project 55's "warn, never fail" stance.
+    if cfg.trunk is not None:
+        for pattern in cfg.lanes.exclude:
+            if fnmatch.fnmatchcase(cfg.trunk, pattern):
+                deprecations.append(
+                    f"{source}: [lanes] exclude pattern '{pattern}' matches trunk "
+                    f"'{cfg.trunk}' — trunk is never a lane; this entry has no effect."
+                )
+
     cfg.source_path = path
     cfg.deprecations = deprecations
     return cfg

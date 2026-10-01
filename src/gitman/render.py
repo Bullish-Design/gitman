@@ -156,6 +156,15 @@ def render_status(state: RepoState) -> str:
         lines.append(_lane_line(lane, state.current_lane))
     for note in state.notes:
         lines.append(f"note: {note}")
+    # Design 57: excluded bookmarks are never lane-analyzed, but always named — an agent asking
+    # "what bookmarks exist" must get a true answer, distinct from "absent" (DESIGN.md §3.3).
+    if state.excluded_bookmarks:
+        lines.append("")
+        lines.append("excluded (not lanes, per [lanes] exclude):")
+        for b in state.excluded_bookmarks:
+            pub = "published" if b.published else "local-only"
+            cid = (b.commit_id or "conflicted")[:8]
+            lines.append(f"   {b.name:<22} @ {cid}  {pub}   (matched '{b.pattern}')")
     # Issue 38 / 44 G3 (S4): the field, rendered — never re-derived here. A co-tenant's work is a
     # real condition on a CANONICAL repo, so it is not an anomaly; it is a warning block.
     if state.foreign_paths:

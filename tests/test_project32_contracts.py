@@ -114,7 +114,7 @@ def test_an_unknown_key_without_a_match_warns_without_a_spelling_suggestion(tmp_
 def test_a_valid_config_covering_every_table_has_no_deprecations(tmp_path: Path):
     (tmp_path / "gitman.toml").write_text(
         'trunk = "main"\n'
-        '\n[lanes]\nworkspace_dir = ".worktrees/{lane}"\nalways_workspace = true\n'
+        '\n[lanes]\nworkspace_dir = ".worktrees/{lane}"\nalways_workspace = true\nexclude = []\n'
         '\n[publish]\nverify = ["echo", "verify"]\non_fail = "warn"\n'
         'branch_prefix = "feature/"\nverify_timeout = 20.0\n'
         '\n[release]\ntag_format = "release-{version}"\nverify = ["echo", "release"]\n'
@@ -127,6 +127,39 @@ def test_a_valid_config_covering_every_table_has_no_deprecations(tmp_path: Path)
     )
 
     assert load_config(tmp_path).deprecations == []
+
+
+def test_an_exclude_pattern_matching_trunk_warns_but_keeps_the_entry(tmp_path: Path):
+    """Design 57 §3.5: trunk is already removed from every lane enumeration before exclusion
+    runs, so a pattern matching it is a harmless no-op, not an error — warn, never fail, and
+    never silently drop the entry (the same precedent every other deprecation warning here
+    already sets)."""
+    (tmp_path / "gitman.toml").write_text('trunk = "main"\n\n[lanes]\nexclude = ["main"]\n')
+
+    cfg = load_config(tmp_path)
+
+    assert cfg.lanes.exclude == ["main"]  # the warning never silently drops the entry
+    assert len(cfg.deprecations) == 1
+    assert "[lanes] exclude pattern 'main' matches trunk 'main'" in cfg.deprecations[0]
+    assert "trunk is never a lane" in cfg.deprecations[0]
+
+
+def test_an_exclude_pattern_not_matching_trunk_warns_nothing(tmp_path: Path):
+    (tmp_path / "gitman.toml").write_text('trunk = "main"\n\n[lanes]\nexclude = ["integration"]\n')
+
+    cfg = load_config(tmp_path)
+
+    assert cfg.deprecations == []
+
+
+def test_a_non_string_exclude_entry_is_still_a_hard_failure(tmp_path: Path):
+    """Leniency is for trunk-matching redundancy only — a malformed entry is a live schema
+    error, the same as every other mistyped field (config.py's existing ValidationError path)."""
+    (tmp_path / "gitman.toml").write_text('trunk = "main"\n\n[lanes]\nexclude = [1, 2]\n')
+
+    with pytest.raises(GitmanError) as exc:
+        load_config(tmp_path)
+    assert exc.value.exit_code == 2
 
 
 def test_doctor_warns_when_blocking_publish_has_no_verify_command(tmp_path: Path):

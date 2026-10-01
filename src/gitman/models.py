@@ -176,6 +176,22 @@ class LaneTwin(BaseModel, frozen=True):
     paths: list[str] = Field(default_factory=list)  # paths that differ between the two sides
 
 
+class ExcludedBookmark(BaseModel):
+    """A local bookmark `[lanes] exclude` matches — named, never lane-analyzed (design 57).
+
+    No diff stats, no ahead/behind, no non_linear/divergent/conflict: computing those would
+    require the lane-shaped analysis this feature exists to not run. Mirrors the four facts
+    `TrunkRef` already records for trunk, the other bookmark gitman structurally declines to
+    analyze as a lane.
+    """
+
+    name: str
+    commit_id: str | None = None  # None only when the bookmark itself is conflicted
+    change_id: str | None = None
+    published: bool = False  # has a <name>@<remote> row — mirrors Lane's published/draft, no merged
+    pattern: str  # the exclude pattern that matched, so a report says WHY, not just THAT
+
+
 class Op(BaseModel):
     """An entry from the jj op-log — powers undo affordances (concept §12)."""
 
@@ -194,6 +210,10 @@ class RepoState(BaseModel):
     trunk: TrunkRef
     current_lane: str | None = None  # the lane of this workspace's @
     lanes: list[Lane] = Field(default_factory=list)
+    # Design 57: bookmarks `[lanes] exclude` matches — visible, never lane-analyzed, never a
+    # gate on `canonical` below (it derives solely from `anomalies`, and an excluded bookmark
+    # never produces one).
+    excluded_bookmarks: list[ExcludedBookmark] = Field(default_factory=list)
     conflicts: list[Conflict] = Field(default_factory=list)
     recent_ops: list[Op] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)  # honesty notes ("not done" / staleness)

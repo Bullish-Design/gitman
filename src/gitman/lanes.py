@@ -6,6 +6,7 @@ core.py under a `canonical_tx`/`canonical_guard`. See concept §6, §8.
 
 from __future__ import annotations
 
+import fnmatch
 import re
 from collections.abc import Container
 from pathlib import Path
@@ -19,14 +20,31 @@ if TYPE_CHECKING:
     from gitman.session import Session
 
 
+def is_excluded(name: str, patterns: list[str]) -> bool:
+    """True if `name` matches any `[lanes] exclude` glob (design 57)."""
+    return any(fnmatch.fnmatchcase(name, pattern) for pattern in patterns)
+
+
+def excluded_names(names: set[str], patterns: list[str]) -> set[str]:
+    """The subset of `names` matched by any `[lanes] exclude` glob."""
+    if not patterns:
+        return set()
+    return {name for name in names if is_excluded(name, patterns)}
+
+
 def lane_names(session: Session, trunk: str) -> set[str]:
-    """All lane bookmarks (every local bookmark except the frozen trunk)."""
+    """All lane bookmarks (every local bookmark except trunk and `[lanes] exclude` matches)."""
     local, _ = _lane_index(session.view())
-    return local - {trunk}
+    candidates = local - {trunk}
+    return candidates - excluded_names(candidates, session.config.lanes.exclude)
 
 
 def current_lane(session: Session, trunk: str) -> str | None:
-    """The lane whose bookmark sits on this workspace's @ (None if @ is on trunk only)."""
+    """The lane whose bookmark sits on this workspace's @ (None if @ is on trunk only).
+
+    A plain read of what @ sits on — stays truthful even when the bookmark is excluded
+    (design 57 §3.4). `require_current_lane` below is the gate; this is not.
+    """
     wc = session.view().working_copy()
     return next((b for b in wc.bookmarks if b != trunk), None)
 
@@ -35,6 +53,15 @@ def require_current_lane(session: Session, trunk: str) -> str:
     lane = current_lane(session, trunk)
     if lane is None:
         raise GitmanError("not on a lane — run `gitman start <name>` first.", exit_code=1)
+    if is_excluded(lane, session.config.lanes.exclude):
+        # Without this check, a verb with no explicit <lane> argument resolves its target
+        # through @ and would silently operate on a bookmark the owner declared is not a
+        # lane — the one path lane_names()'s own exclusion does not cover (design 57 §3.4).
+        raise GitmanError(
+            f"'@' is on '{lane}', which [lanes] exclude marks as not a gitman lane — "
+            f"`gitman switch <a real lane>`, or drop the pattern from [lanes] exclude.",
+            exit_code=3,
+        )
     return lane
 
 

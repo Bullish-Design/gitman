@@ -671,6 +671,7 @@ Pydantic-validated.
 | `trunk` | Trunk bookmark/branch. **Written once by `init`, then frozen** (I1). |
 | `[lanes] workspace_dir` | Where `--workspace` lanes live (default `.worktrees/<lane>` — a hidden, self-ignored in-repo dir; `../<repo>-<lane>` for the old sibling layout). |
 | `[lanes] always_workspace` | If true, `start` always isolates (default false). |
+| `[lanes] exclude` | Bookmark-name glob patterns gitman must never treat as a lane. |
 | `[publish] verify` | Command run before publish/release (`[]` → no gate). |
 | `[publish] on_fail` | `block` (default) or `warn`. |
 | `[publish] branch_prefix` | Optional prefix on the lane→branch name (default none). |
