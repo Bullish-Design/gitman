@@ -94,11 +94,16 @@ nix/gitman.nix  reusable devenv module (tasks + enterTest)
   only `subprocess` uses left are the verify hook (`run_verify`) and `uv`.
   pyjutsu hook errors (`HookAbort` vetoes, `PostHookError` post-failures) are mapped to
   clean exit-1 reports at the CLI boundary.
-- **uv owns the version.** `version.py` shells out to `uv version --short` / `uv version
-  --no-sync <new>` / `uv lock --check`, so `pyproject.toml` and `uv.lock` move in one change
-  and `release` refuses to tag a stale lock. `[version]` is no longer configurable (project 32,
-  G2); a leftover table **warns** via `config.RETIRED_TABLES` and never fails. Gitman manages
-  the repo that configures it, so a hard rejection locks the tool out of landing its own
+- **uv owns the version, when the provider is `uv`** — the default for a repo with a
+  `pyproject.toml`. `version.py` shells out to `uv version --short` / `uv version --no-sync
+  <new>` / `uv lock --check`, so `pyproject.toml` and `uv.lock` move in one change and
+  `release` refuses to tag a stale lock. A repo with no `pyproject.toml` (Nix-only, etc.)
+  defaults to the `tag` provider instead — the newest `v<semver>` git tag IS the version, no
+  file involved — or names `file` explicitly in `[versioning]` (project 63;
+  `version.resolve_provider` is the seam, concept §13/§15). `[version]` (singular, no `ing`)
+  is a **different, retired** table — it is no longer configurable (project 32, G2); a
+  leftover table **warns** via `config.RETIRED_TABLES` and never fails. Gitman manages the
+  repo that configures it, so a hard rejection locks the tool out of landing its own
   migration — see concept §15 "Retiring a config table" before tightening any schema.
 - **pyjutsu is pinned to a published GitHub release wheel** in `[tool.uv.sources]`, not to
   vendomat's wheelhouse. uv carries that pin into a consumer's lock, so adopting gitman needs

@@ -17,13 +17,15 @@ if TYPE_CHECKING:
     from gitman.session import Session
 
 
-def _target_version(repo_root: Path, level: str | None, set_version: str | None) -> tuple[str, str]:
-    from gitman.version import bump, parse_semver, read_version
+def _target_version(repo_root: Path, level: str | None) -> tuple[str, str]:
+    """`(current, target)` from the repo's provider, optionally bumped by `level`.
+
+    Only called when there is no explicit `--version` (`do_release` handles that case itself,
+    without reading the current version at all — Option A, project 63).
+    """
+    from gitman.version import bump, read_version
 
     current = read_version(repo_root)
-    if set_version:
-        parse_semver(set_version)
-        return current, set_version
     if level:
         return current, bump(current, level)
     return current, current
@@ -47,17 +49,28 @@ def do_release(session: Session, level: str | None, set_version: str | None):
     from gitman.invariants import canonical_guard
     from gitman.lanes import require_current_lane
     from gitman.models import IntentResult
-    from gitman.version import bump_change_on_lane, check_lock
+    from gitman.version import bump_change_on_lane, check_lock, parse_semver
 
     config, repo_root = session.config, session.repo_root
     trunk = require_trunk(config)
-    current, new = _target_version(repo_root, level, set_version)
 
-    # A stale `uv.lock` must never reach a tag. Project 32 (G2) released v0.4.1 against a tree
-    # whose lock still said 0.4.0, and the correction landed *after* the tag was pushed —
-    # anyone building from that tag got an inconsistent pair. This is a read, so it runs before
-    # verify: the cheap refusal comes first.
-    check_lock(repo_root)
+    # Option A (project 63): an explicit `--version` is self-sufficient. It skips the version
+    # read AND the lock check entirely, so a repo with no version source at all (no
+    # `pyproject.toml`, no tag yet) can still be tagged directly — the flag's own help text
+    # ("Set an explicit X.Y.Z") already promised this; the unconditional read below used to
+    # break that promise by running before `set_version` was even consulted.
+    explicit = set_version is not None
+    if explicit:
+        parse_semver(set_version)
+        current, new = None, set_version
+    else:
+        current, new = _target_version(repo_root, level)
+        # A stale `uv.lock` must never reach a tag. Project 32 (G2) released v0.4.1 against a
+        # tree whose lock still said 0.4.0, and the correction landed *after* the tag was
+        # pushed — anyone building from that tag got an inconsistent pair. This is a read, so
+        # it runs before verify: the cheap refusal comes first. Provider-conditional (§15): a
+        # `tag`/`file` provider has no lockfile, so this is a no-op there.
+        check_lock(repo_root)
 
     # Verify FIRST — before any write or tag (concept §13). [] / inherits [publish].verify.
     verify_cmds = config.release.verify if config.release.verify is not None else config.publish.verify
@@ -72,8 +85,10 @@ def do_release(session: Session, level: str | None, set_version: str | None):
     messages: list[str] = []
     notes: list[str] = []
     undo: str | None = None
+    if explicit:
+        notes.append("explicit --version: skipped the version read and the lock check.")
 
-    if new != current:
+    if not explicit and new != current:
         # H3/Option A: a bump would tag @ (the lane head), which `land` later rewrites,
         # orphaning the tag off trunk. Refuse before bumping so no bump is left behind.
         if not session.view().is_ancestor("@", trunk):
@@ -91,7 +106,8 @@ def do_release(session: Session, level: str | None, set_version: str | None):
         messages.append(f"bumped {current} → {new}")
         release_point = "@"
     else:
-        # No bump: tag the trunk head (the landed release), never the empty working copy @.
+        # No bump (or an explicit --version, which never bumps anything): tag the trunk head
+        # (the landed release), never the empty working copy @.
         release_point = trunk
 
     head = session.view().resolve(release_point)  # frozen read reflects the committed bump

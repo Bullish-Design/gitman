@@ -10,7 +10,7 @@ from __future__ import annotations
 import fnmatch
 import tomllib
 from pathlib import Path
-from typing import get_args
+from typing import Literal, get_args
 
 from pydantic import BaseModel, Field, ValidationError
 
@@ -60,6 +60,25 @@ class PolicyConfig(BaseModel):
     protected: list[str] = Field(default_factory=list)
 
 
+class FileVersionConfig(BaseModel):
+    """Where the version lives when `[versioning] provider = "file"` (project 63)."""
+
+    path: str = "VERSION"
+    pattern: str = "{version}"  # exactly one `{version}` marker; the rest matches literally
+
+
+class VersioningConfig(BaseModel):
+    """Which backend owns the version number (project 63; see concept §15).
+
+    `provider = None` (the default) means "infer": `uv` when `pyproject.toml` exists, else
+    `tag`. This is a NEW table, not a revival of the retired `[version]` table — see
+    `RETIRED_TABLES` below for why that name stays retired.
+    """
+
+    provider: Literal["uv", "tag", "file"] | None = None
+    file: FileVersionConfig = Field(default_factory=FileVersionConfig)
+
+
 class GitmanConfig(BaseModel):
     # Trunk bookmark/branch — written once by `init`, then frozen (I1). None until init.
     trunk: str | None = None
@@ -68,6 +87,7 @@ class GitmanConfig(BaseModel):
     release: ReleaseConfig = Field(default_factory=ReleaseConfig)
     land: LandConfig = Field(default_factory=LandConfig)
     policy: PolicyConfig = Field(default_factory=PolicyConfig)
+    versioning: VersioningConfig = Field(default_factory=VersioningConfig)
 
     # Where this config was loaded from (None if defaults). Not part of the schema input.
     source_path: Path | None = Field(default=None, exclude=True)

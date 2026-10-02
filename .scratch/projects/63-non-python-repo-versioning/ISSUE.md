@@ -2,11 +2,21 @@
 
 **Found:** 2026-10-02, releasing `nix-secrets` so `nix-meta` could pin its new commit as a
 flake input.
-**Status:** open — a design is proposed below, not yet agreed.
+**Status:** LANDED (2026-10-02) — `main @ GITMAN_63_COMMIT`. §6 Option B shipped (a pluggable
+`[versioning] provider`: `uv` / `tag` / `file`, inferred when unset), with §6 Option A folded
+in (`release --version X.Y.Z` now skips the version read and the lock check entirely). The new
+config table is named `[versioning]`, not `[version]` — the latter stays retired
+(`config.RETIRED_TABLES`); reviving it would make a dormant legacy table suddenly interpreted
+under a schema it was never written for. `tag`'s `version bump` refuses (no file exists to
+write; bump at `release` time instead). A repo with no matching tag and no `--version` refuses
+too, naming `release --version X.Y.Z` as the bootstrap — gitman never invents `0.0.0`. See
+`src/gitman/version.py`, `src/gitman/release.py`, `src/gitman/config.py`,
+`src/gitman/doctor.py`, `tests/test_version_providers.py`, and concept §13/§15.
 **Versions:** gitman 0.10.3 · pyjutsu 0.22.0 (jj-lib 0.44.0) · colocated repo.
 **Line numbers below are current as of `main @ e6994c6` (2026-10-02)**, matching this
 repository's own `gitman status` at the time of writing. Every citation was checked
-against that commit.
+against that commit. (They now describe the **pre-fix** state; the fix is summarized above,
+not interleaved below, so the original report stays intact.)
 
 ## 1. What happened
 

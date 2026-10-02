@@ -79,8 +79,8 @@ colocate=True)'` then plain `gitman init` — but `--colocate` is the supported 
 - **Resolves and freezes trunk** (an existing `main`/`master`/`trunk` bookmark, else
   `origin/HEAD`, else creates `main`) — written once to `gitman.toml`, then frozen (it is
   never re-detected).
-- Writes **`gitman.toml`** (trunk). There is no version source to configure — uv owns the
-  version.
+- Writes **`gitman.toml`** (trunk). The version source needs no config either, in the common
+  case: it is inferred — `uv` if `pyproject.toml` exists, else `tag` (see §7).
 Gitman does not create agent files. Install or link the Gitman skill through the central Devman
 configuration. Commit `gitman.toml`. Gitman's own state lives under `.gitman/` (a
 self-ignoring dir); add `.gitman/` to `.gitignore` if you prefer it explicit. A `--workspace`
@@ -176,6 +176,8 @@ generated frontmatter.
 | `[publish].on_fail` | `block` (default) or `warn`. |
 | `[publish].branch_prefix` | Optional prefix on the lane→branch name. |
 | `[release]` | `tag_format` (default `v{version}`), `verify`, `push_tag`. |
+| `[versioning].provider` | Version source: `uv` \| `tag` \| `file`. Omit to infer (§7). |
+| `[versioning.file]` | `path` + `pattern`, read when `provider = "file"`. |
 | `[land.pre_hook]` | Optional command, timeout, and an `allowed_paths` classifier for the pre-land gate. Gitignored paths are skipped automatically; see below. |
 | `[land.post_hook]` | Optional command, timeout, and an `allowed_paths` classifier for the post-land action. Gitignored paths are skipped automatically; see below. |
 | `[policy].protected` | Refs that must never be rewritten/force-pushed. |
@@ -212,13 +214,26 @@ gitman version bump <major|minor|patch>   # bump (on a lane) + describe a "Bump 
 gitman release                         # annotated tag vX.Y.Z on trunk → push tag
 ```
 
-**uv owns the version.** Gitman reads it with `uv version --short` and writes it with
-`uv version --no-sync`, so `pyproject.toml` and `uv.lock` move together inside one lane
-change. There is nothing to configure; a leftover `[version]` table is reported as a
-warning by `doctor`, `status`, and every intent until you delete it.
+**The version lives behind one of three sources** (`[versioning] provider` — omit to infer):
+
+- `uv` (default when `pyproject.toml` exists): reads with `uv version --short`, writes with
+  `uv version --no-sync`, so `pyproject.toml` and `uv.lock` move together inside one lane
+  change.
+- `tag` (default when no `pyproject.toml` exists, e.g. a Nix-only repo): the newest
+  `v<major>.<minor>.<patch>` tag already in the repo IS the version — no file, nothing to
+  commit. `version bump` refuses here (there is no file to write); bump at `release` time
+  instead.
+- `file`: a `[versioning.file] path` + `pattern` for a repo that tracks its version in a
+  plain file.
+
+`gitman version`'s own report and `gitman doctor`'s `version-source` row always name which
+one is active. A leftover `[version]` table (singular — a different, retired table) is
+reported as a warning by `doctor`, `status`, and every intent until you delete it.
 
 `release` runs the verify hook **before any write**, so a blocked release leaves no tag and
-no bump. It also refuses to tag while `uv.lock` disagrees with `pyproject.toml`.
+no bump. It also refuses to tag while the `uv` provider's lock disagrees with its manifest
+(`tag`/`file` have no lock to check). `release --version X.Y.Z` skips the version read and
+the lock check entirely, so it works even with no version source configured at all.
 
 ### The release sequence
 

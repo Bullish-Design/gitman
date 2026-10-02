@@ -229,8 +229,8 @@ They forward every option and exit code and name the replacement in the report's
 | `doctor` | `gitman doctor` | Validate the execution boundary and toolchain (pyjutsu/jj-lib version, git, colocation, remote, frozen trunk, uv, colocated HEAD/refs/index) and report canonicity. | preflight checks |
 | `init` | `gitman init [--trunk <name>] [--colocate]` | Resolve + freeze trunk and write `gitman.toml`. `--colocate` adopts an existing `.git` or creates one first. | colocation + trunk freeze + config write |
 | `repair` | `gitman repair [--abandon] [--keep local\|origin]` | The one recovery path: adopt stray changes into lanes (or `--abandon` discard them) and heal jj↔git ref/HEAD drift, never discarding history unless asked. | anomaly registry + ref repair + `git_import` |
-| `version` | `gitman version [bump <major\|minor\|patch>]` | Show or bump the repo's semver. | uv version read/write |
-| `release` | `gitman release [<level> \| --version X.Y.Z]` | (bump →) tag `vX.Y.Z` → push tag. Verify hook first; refuses a stale `uv.lock`. Normally called with no level, after `land` + `push`. | version write + `git tag` + push |
+| `version` | `gitman version [bump <major\|minor\|patch>]` | Show or bump the repo's semver, through the active version source (`uv`/`tag`/`file`, named in the report). `bump` refuses under `tag` — no file exists to write; use `release` instead. | provider read/write (§15) |
+| `release` | `gitman release [<level> \| --version X.Y.Z]` | (bump →) tag `vX.Y.Z` → push tag. Verify hook first; refuses a stale lock (`uv` provider only). An explicit `--version` skips the version read and lock check entirely, so it works with no version source at all. Normally called with no level, after `land` + `push`. | provider write + `git tag` + push |
 | `workspace list` | `gitman workspace list` | List workspace registrations; mark the ones with no live lane. | `ws.workspaces()` |
 | `workspace forget` | `gitman workspace forget <name>` | Drop a jj workspace registration; never removes the directory. | `ws.forget_workspace` |
 | `workspace prune` | `gitman workspace prune` | Retire every registration with no live lane and an empty `@`. | `ws.forget_workspace` |
@@ -620,47 +620,71 @@ Constraints that are only *documented* drift. The lane model holds by constructi
 
 ## 13. Versioning & release
 
-Gitman owns the **semver math and the tag/release flow** but delegates *reading/writing
-the number* to **uv**. There is nothing to configure.
+Gitman owns the **semver math and the tag/release flow**. *Reading/writing the number*
+itself goes through one of three **version sources** (project 63), named by `[versioning]
+provider` or inferred when that key is absent:
 
-```
-uv version --short          # read
-uv version --no-sync <new>  # write pyproject.toml + uv.lock, leave the venv alone
-uv lock --check             # prove the pair agrees
-```
+- **`uv`** (default when `pyproject.toml` exists — every pre-project-63 repo is unaffected):
+  ```
+  uv version --short          # read
+  uv version --no-sync <new>  # write pyproject.toml + uv.lock, leave the venv alone
+  uv lock --check             # prove the pair agrees
+  ```
+  A bump moves `pyproject.toml` and `uv.lock` inside **one** lane change, and `release`
+  refuses to tag while the lockfile disagrees with the manifest.
+- **`tag`** (default when no `pyproject.toml` exists): the newest `v<major>.<minor>.<patch>`
+  git tag already in the repo IS the version — no file, nothing to commit. `version bump`
+  refuses (there is no file to write; the bump happens at `release` time instead).
+- **`file`**: a `[versioning.file] path` + `pattern` (one `{version}` marker), for a repo
+  that tracks its version in a plain file (a `VERSION` file, a Nix attribute, ...).
 
-A bump therefore moves `pyproject.toml` and `uv.lock` inside **one** lane change, and
-`release` refuses to tag while a lockfile disagrees with the manifest.
+This closed a gap the original uv-only design left: a Nix-only repo (no `pyproject.toml`,
+no `uv.lock`) could not be versioned or tagged through gitman at all, forcing a hand-run
+`git tag` — a standing-rule exception that skipped `[release].verify`. See
+`.scratch/projects/63-non-python-repo-versioning/ISSUE.md`.
 
-This replaced a configurable backend (a `{version}` pattern in a named file, or `read`/`write`
-script hooks). That backend rewrote the manifest and stopped. In a uv project the lock kept
-the old number, `release` tagged the drift, and the correction landed *after* the tag was
-pushed — project 32, G2. A second copy of the version that gitman does not know about is the
-whole defect, so gitman stopped hand-editing metadata uv owns. A legacy `[version]` table is
-**warned about**, not silently ignored and not fatal — see §15 "Retiring a config table".
+`uv` itself replaced an even older configurable backend (a `{version}` pattern in a named
+file, or `read`/`write` script hooks) that rewrote the manifest and stopped — in a uv
+project the lock kept the old number, `release` tagged the drift, and the correction landed
+*after* the tag was pushed (project 32, G2). The `file` provider here does the one write
+`uv` does (never two separate writes to drift apart), so it does not reopen that gap. A
+legacy `[version]` table is **warned about**, not silently ignored and not fatal, and stays
+retired — the new table is named `[versioning]`, never `[version]`; see §15 "Retiring a
+config table".
 
 ```toml
 [release]
 tag_format = "v{version}"     # default
 verify     = []               # inherits [publish].verify if set; [] = no gate
 push_tag   = true
+
+[versioning]
+provider = "tag"              # "uv" | "tag" | "file"; omit to infer (uv if pyproject.toml, else tag)
+
+[versioning.file]              # only read when provider = "file"
+path    = "VERSION"
+pattern = "{version}"
 ```
 
 - **Semver:** `major`→`(X+1).0.0` · `minor`→`X.(Y+1).0` · `patch`→`X.Y.(Z+1)`. v1 is
   `MAJOR.MINOR.PATCH` only (pre-release/build metadata deferred).
 - `version bump` writes the new number into the current lane and `describe`s a "Bump version
-  to X.Y.Z" change — local, undoable.
+  to X.Y.Z" change — local, undoable. Refuses under the `tag` provider (no file to write).
 - `release` is atomic: optionally bump, create an **annotated git tag** on the lane's
   commit (tags live on the git side — colocated; jj tag support is read-only) and push it.
   The **verify hook runs before any write**, so a blocked release leaves no tag and no
   bump. Release normally happens from a landed change on trunk.
+- **`release --version X.Y.Z` is self-sufficient** (Option A, project 63): it skips the
+  version read and the lock check entirely and tags the given version directly, so it works
+  even with no version source configured at all (a fresh Nix repo with no tag yet).
 - **The canonical release is six steps**, because `release <level>` refuses to tag a lane
   commit that `land` will later rewrite: `start` → `version bump` → `describe` → `land` → `push`
   → `release` (no level; tags trunk). The inline `release <level>` bump still works, but only
   from clean trunk. The refusal names the sequence — project 32, G4.
 - **Agent angle:** the central Devman link plane supplies `.agents/skills/gitman/SKILL.md`, documenting
-  the lane loop *and* where this repo's version lives + how to bump it. Versioning is not
-  configurable: a repo with an unusual scheme is a repo uv does not manage.
+  the lane loop *and* where this repo's version lives + how to bump it. `gitman doctor`'s
+  `version-source` row and `gitman version`'s own report always name the active provider and
+  whether it was configured or inferred — an inferred choice is never a silent gate.
 
 ## 14. Safety & policy
 
@@ -694,6 +718,9 @@ Pydantic-validated.
 | `[release] …` | Tag format, verify, push behavior (see §13). |
 | `[land.pre_hook]` / `[land.post_hook]` | Optional invocation-level land commands with timeout and an `allowed_paths` classifier. The changed-path check comes from jj's own before/after snapshot diff, so a path the repo's `.gitignore` already covers is never treated as a hook write (project 64, option b); a rewrite of a tracked, non-ignored path still blocks. `allowed_paths` only selects which refusal message names the path — it never lets a changed path through. |
 | `[policy] protected` | Refs that must never be rewritten/force-pushed. |
+| `[versioning] provider` | Version source: `uv` \| `tag` \| `file`. Omit to infer — `uv` if `pyproject.toml` exists, else `tag` (project 63; see §13). |
+| `[versioning.file] path` | Version-file path, read when `provider = "file"` (default `VERSION`). |
+| `[versioning.file] pattern` | Template with one `{version}` marker locating the number in that file (default `"{version}"`). |
 
 ### Retiring a config table
 
@@ -716,6 +743,12 @@ The rule that prevents it:
 This applies to *retired* tables only. A live table with an invalid value is still a hard
 failure (exit 2) — leniency is about schema changes gitman itself introduces, not about
 accepting broken configuration.
+
+**Project 63 named the new provider table `[versioning]`, not `[version]`.** Reviving
+`[version]` would mean deleting it from `RETIRED_TABLES`, and every repo still carrying a
+dormant, inert `[version]` table (today a permanent no-op warning) would suddenly have it
+*interpreted* — under a schema it was never written for. A new name keeps the retirement
+honest and the new feature unambiguous.
 
 ## 16. Report design
 

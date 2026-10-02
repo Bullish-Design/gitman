@@ -2,8 +2,10 @@
 
 Checks: inside devenv · **pyjutsu importable + its linked jj-lib matches the build target**
 (`JJ_VERSION == JJ_LIB_TARGET`) · git present (for the jj escape hatch) · colocated `.git`+`.jj` · git
-remote · frozen trunk exists · uv present. Hard failures (missing/mismatched
-engine, not colocated) → exit 2; missing-but-expected-later items (no trunk yet) are warnings.
+remote · frozen trunk exists · uv present (only when the version source is `uv`) · the active
+**version source** (`uv`/`tag`/`file`, named + its current reading — project 63, concept §15).
+Hard failures (missing/mismatched engine, not colocated) → exit 2; missing-but-expected-later
+items (no trunk yet) are warnings.
 
 There is no `jj` CLI to probe: jj-lib is embedded in-process via pyjutsu.
 """
@@ -109,13 +111,40 @@ def run_doctor(repo_root: Path, config: GitmanConfig | None = None) -> DoctorRep
     else:
         checks.append(Check(FAIL, "trunk", f"configured trunk '{cfg.trunk}' not found in repo"))
 
-    # uv is the version backend: `version` and `release` shell out to it. Without uv on PATH
-    # both intents fail at the point of use, so name the cause here instead.
-    checks.append(
-        Check(OK, "uv", "uv on PATH")
-        if shutil.which("uv")
-        else Check(FAIL, "uv", "uv not found on PATH (gitman's version backend)")
-    )
+    # The active version source (project 63): named here so an inferred choice is visible,
+    # never a silent gate — `resolve_provider` picks `uv` when `pyproject.toml` exists, else
+    # `tag`, unless `[versioning] provider` names one explicitly.
+    try:
+        from gitman.version import describe_provider, resolve_provider
+
+        provider, provider_info = resolve_provider(repo_root)
+    except Exception as exc:  # noqa: BLE001 — a diagnostic must never crash doctor
+        provider, provider_info = None, None
+        checks.append(Check(WARN, "version-source", f"could not determine the version source: {exc}"))
+
+    # uv is only a hard requirement when it is the active backend. A `tag`/`file` repo (no
+    # `pyproject.toml`) has no need for it, so uv's absence there is informational, not FAIL.
+    uv_present = shutil.which("uv") is not None
+    if provider_info is not None and provider_info.name != "uv":
+        checks.append(
+            Check(OK, "uv", "uv on PATH")
+            if uv_present
+            else Check(OK, "uv", f"uv not found on PATH (not needed — version source is '{provider_info.name}')")
+        )
+    else:
+        checks.append(
+            Check(OK, "uv", "uv on PATH")
+            if uv_present
+            else Check(FAIL, "uv", "uv not found on PATH (gitman's version backend)")
+        )
+
+    if provider is not None and provider_info is not None:
+        label = describe_provider(provider_info)
+        try:
+            current = provider.read(repo_root)
+            checks.append(Check(OK, "version-source", f"{label}, current version {current}"))
+        except Exception as exc:  # noqa: BLE001 — a diagnostic must never crash doctor
+            checks.append(Check(WARN, "version-source", f"{label} — {exc}"))
 
     # A retired config table is a warning, not a failure (see config.RETIRED_TABLES). doctor is
     # where an owner looks for "what should I clean up", so name it once, in full, here.
