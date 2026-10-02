@@ -83,6 +83,27 @@ def test_repairs_order_is_not_anomaly_order():
 # --- do_reconcile dispatches through the table — no per-shape branch left ----------------
 
 
+# --- project 56: `lane-untracked-twin` joins the registry without a repair callable (yet) ----
+
+
+def test_lane_untracked_twin_is_registered_and_blocks_the_right_verbs():
+    """Project 56: an untracked-but-published lane twin blocks `land`/`publish`/`push` (the
+    verbs pyjutsu itself refuses), nothing else. `repair=None` is deliberate for now — the
+    direct fix is `gitman bookmark track <lane>`; flipping this to `repair="repair"` is step 7's
+    job, together with the matching `REPAIRS` entry (the two-way check above would otherwise
+    catch a mismatch immediately)."""
+    from gitman.anomalies import ANOMALY_ORDER, NOTE_ONLY_KINDS
+
+    row = REGISTRY["lane-untracked-twin"]
+    assert row.blocks == frozenset({"land", "publish", "push"})
+    assert row.repair is None
+    assert row.manual is not None
+    assert "lane-untracked-twin" in ANOMALY_ORDER
+    assert ANOMALY_ORDER.index("lane-untracked-twin") == ANOMALY_ORDER.index("lane-divergent") + 1
+    assert "lane-untracked-twin" not in NOTE_ONLY_KINDS
+    assert "lane-untracked-twin" not in REPAIRS
+
+
 def test_do_reconcile_dispatches_through_the_table():
     """Structural pin: `do_reconcile`'s repair phase is one loop over `REPAIRS_ORDER` calling
     `REPAIRS[kind]`, not a hand-maintained branch per kind."""

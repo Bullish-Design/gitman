@@ -40,6 +40,16 @@ _STATUS_BY_KIND: dict[str, tuple[str, str]] = {
         "OFF-CANONICAL",
         "Recover: `gitman repair`  — classifies the lane against its forge twin by content.",
     ),
+    # Project 56: jj doesn't track this lane's own remote bookmark, so pyjutsu's immutability
+    # rule over `untracked_remote_bookmarks()` refuses `land`/`publish`/`push` on it. The direct
+    # verb is `gitman bookmark track <lane>`; `gitman repair` gains the same auto-heal for the
+    # safe, same-commit shape once its own callable lands (REGISTRY["lane-untracked-twin"].repair
+    # stays `None` until then — see the comment in anomalies.py).
+    "lane-untracked-twin": (
+        "OFF-CANONICAL",
+        "Recover: `gitman bookmark track <lane>`  — add `--as <name>` for a legacy twin, or "
+        "`gitman repair --keep local|origin` first if it also diverges.",
+    ),
     # Not "re-sync refs to jj" any more — repair now heals in whichever direction the drift
     # runs, adopting git-only history instead of discarding it (issue 31).
     "ref-mismatched": (

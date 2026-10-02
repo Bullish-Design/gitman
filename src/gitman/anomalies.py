@@ -110,6 +110,27 @@ REGISTRY: dict[str, AnomalyKind] = {
         blocks=frozenset({"land", "publish", "push"}),
         manual="`gitman repair --keep local|origin`",
     ),
+    # Project 56: a published lane's `<lane>@<remote>` row exists but jj does not TRACK it
+    # (`Bookmark.tracked is False`). pyjutsu refuses to rewrite any commit under an untracked
+    # remote bookmark (immutability over `untracked_remote_bookmarks()`), so `land`/`publish`/
+    # `push` fail on this lane even though `status` used to call it clean. The direct fix is
+    # `gitman bookmark track <lane>` (project 56 steps 1-2, shipped). `repair=None` HERE ON
+    # PURPOSE, for now: `repairs.assert_registry_agrees` (repairs.py) raises an import-time
+    # AssertionError for any `repair="repair"` row with no matching callable in `REPAIRS`, and
+    # the Case-2 auto-track callable is a SEPARATE, not-yet-landed step (DESIGN.md §3.7 / project
+    # 56 step 7, scoped to another change). Flip this to `repair="repair"` in the SAME commit that
+    # adds `REPAIRS["lane-untracked-twin"]` — never before, or every test that imports
+    # `gitman.repairs` breaks at collection.
+    "lane-untracked-twin": AnomalyKind(
+        tier="lane",
+        repair=None,
+        blocks=frozenset({"land", "publish", "push"}),
+        manual=(
+            "`gitman bookmark track <lane>` (same-commit twin), `--as <name>` when the twin's "
+            "name differs (legacy '/' separator), or `gitman repair --keep local|origin` first "
+            "when the twin diverges in content"
+        ),
+    ),
     # Issue 44 stage 4c: split by direction (state.classify_ref_desync). `ref-mismatched` is the
     # ADOPT direction — git holds history jj never imported. It stays off-canonical: hiding it
     # behind CANONICAL would bury git-only commits, the exact honesty issue 31 fixed.
@@ -179,6 +200,7 @@ ANOMALY_ORDER: tuple[str, ...] = (
     "stray-change",
     "lane-non-linear",
     "lane-divergent",
+    "lane-untracked-twin",
     "ref-mismatched",
     "ref-lagging",
     "colocated-record-stale",

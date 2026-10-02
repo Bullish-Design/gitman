@@ -13,6 +13,7 @@ from __future__ import annotations
 import fnmatch
 from collections.abc import Iterable
 from pathlib import Path
+from typing import NamedTuple
 
 from pyjutsu import RepoView, Workspace
 from pyjutsu.errors import RevsetError
@@ -391,6 +392,80 @@ def find_divergent_lane_twins(
         twins.append(
             LaneTwin(
                 lane=name, local=local.commit_id, forge=forge.commit_id, remote=remote, relation=relation, paths=paths
+            )
+        )
+    return twins
+
+
+class UntrackedTwin(NamedTuple):
+    """One published lane whose own `<lane>@<remote>` row exists but jj does not TRACK it.
+
+    pyjutsu refuses to rewrite any commit under `untracked_remote_bookmarks()` (AGENTS.md; pyjutsu
+    0.16), so an untracked twin silently blocks `land`/`publish`/`push` on this lane even though
+    `_lane_index` already counts the lane as published — published and tracked are different
+    facts, and only the second one is what pyjutsu's immutability rule actually cares about.
+
+    `same_commit` tells the two shapes project 56 distinguishes apart: True is the safe,
+    content-free Case 2 (`gitman repair` / `gitman bookmark track` auto-heal it — tracking cannot
+    move anything, the two sides already agree). False is Case 3: the twin ALSO diverges in
+    content, a judgment call `gitman repair --keep local|origin` must resolve FIRST — tracking a
+    divergent twin merges both targets into one conflicted, multi-target bookmark (confirmed by
+    probe; `tx.track_bookmark` neither errors nor safely no-ops here, so the caller must refuse
+    before calling it, never after)."""
+
+    lane: str
+    remote: str
+    local_commit: str
+    forge_commit: str
+    same_commit: bool
+
+
+def find_untracked_lane_twins(
+    session: Session, view: RepoView, trunk: str, lanes: Iterable[str] | None = None
+) -> list[UntrackedTwin]:
+    """Every published lane whose `<lane>@<remote>` row is untracked (`Bookmark.tracked is False`).
+
+    Modelled on `find_divergent_lane_twins` just above, but answers a different question:
+    `find_divergent_lane_twins` is about CONTENT (do the two sides hold the same tree under a
+    shared change-id); this is about BOOKKEEPING (does jj watch the remote bookmark at all). A
+    lane can be flagged by both surveys at once — an untracked twin whose commit also differs is
+    reported here too (`same_commit=False`), so `capture_state` can point at `lane-divergent`'s own
+    repair before naming `gitman bookmark track`.
+
+    `lanes`, when given, narrows the candidates the same way `find_divergent_lane_twins` does
+    (nests inside the gate's own flagged subjects instead of re-deriving an independent set in
+    parallel — issue 44 stage 3f, guide §3.13.3)."""
+    if not has_remote(session.ws):
+        return []
+    conflicted = set(_conflicted_lanes(view, trunk))
+    local_names, published = _lane_index(view)
+    candidates = (local_names & published) - {trunk} - conflicted
+    if lanes is not None:
+        candidates &= set(lanes)
+    twins: list[UntrackedTwin] = []
+    for name in sorted(candidates):
+        row = next(
+            (
+                b
+                for b in view.bookmarks()
+                if b.name == name and b.remote not in (None, "git") and len(b.target_ids) == 1
+            ),
+            None,
+        )
+        if row is None or row.tracked:
+            continue
+        try:
+            local_commit = view.resolve(name).commit_id
+        except RevsetError:
+            continue
+        forge_commit = row.target_ids[0]
+        twins.append(
+            UntrackedTwin(
+                lane=name,
+                remote=row.remote,
+                local_commit=local_commit,
+                forge_commit=forge_commit,
+                same_commit=local_commit == forge_commit,
             )
         )
     return twins
@@ -1000,6 +1075,24 @@ def capture_state(session: Session, *, snapshot: bool = True) -> RepoState:
         )
         for name in divergent_lanes:
             anomalies.append(make_anomaly("lane-divergent", Subject(kind="lane", name=name), detail))
+    # Project 56: a published lane jj does not TRACK (`Bookmark.tracked is False`). Distinct from
+    # `lane-divergent` above — this is a bookkeeping fact (is jj watching the remote bookmark),
+    # not a content fact — but the two can co-occur, so a lane whose untracked twin also diverges
+    # names BOTH anomalies and points at `lane-divergent`'s repair first.
+    for twin in find_untracked_lane_twins(session, view, trunk_name):
+        if twin.same_commit:
+            detail = (
+                f"lane '{twin.lane}' is published on '{twin.remote}' but jj does not track its "
+                f"remote bookmark — run `gitman repair` (or `gitman bookmark track {twin.lane}`)."
+            )
+        else:
+            detail = (
+                f"lane '{twin.lane}' is published on '{twin.remote}' but jj does not track its "
+                f"remote bookmark, and the two sides point at different commits "
+                f"({twin.local_commit[:12]} vs {twin.forge_commit[:12]}) — resolve with "
+                f"`gitman repair --keep local|origin` before tracking."
+            )
+        anomalies.append(make_anomaly("lane-untracked-twin", Subject(kind="lane", name=twin.lane), detail))
     # step 13: colocated git-ref desync (round-09 gap B + projects 28/29):
     #   a live bookmark whose refs/heads/<name> exists in git but points elsewhere, or a
     #   leftover ref with no jj bookmark. Must be fed into off_canonical so status never

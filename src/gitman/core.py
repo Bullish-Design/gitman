@@ -3039,6 +3039,199 @@ def do_remote_add(session: Session, url: str, name: str = "origin"):
     )
 
 
+def _resolve_bookmark_remote(session: Session, remote: str | None) -> str:
+    """The remote `bookmark track`/`untrack` act against: the caller's explicit `--remote` if it
+    names a configured remote, else `pick_remote`'s own default (origin, or the sole remote).
+
+    Not a reimplementation of `pick_remote`'s ambiguity logic — it is called unchanged when no
+    `--remote` is given, so the exit-2 "multiple remotes, no origin" refusal stays the one place
+    that message lives. This only adds the one thing `pick_remote` has no param for: validating
+    an operator-given name."""
+    if remote is not None:
+        names = {r.name for r in session.ws.git.remotes()}
+        if remote not in names:
+            raise GitmanError(
+                f"remote '{remote}' is not configured — available: {', '.join(sorted(names)) or 'none'}.",
+                exit_code=2,
+            )
+        return remote
+    return pick_remote(session.ws)
+
+
+def do_bookmark_track(session: Session, lane: str, remote: str | None = None, as_name: str | None = None):
+    """Make jj track a lane's own remote bookmark — the direct fix for pyjutsu's
+    `untracked_remote_bookmarks()` immutability rule (`.scratch/projects/56-bookmark-track-verb/
+    DESIGN.md` §1-2). A lane can be published (a real `<lane>@<remote>` row) and still be
+    UNTRACKED — `_lane_index` only reads `remote`, never `Bookmark.tracked` — in which case
+    pyjutsu refuses to rewrite the lane's own commits, and `land`/`publish`/`push` fail with a
+    generic "immutable commit" refusal that names no fix. This verb is that fix.
+
+    GROUND TRUTH FROM A PROBE (read before changing the divergent-commit branch below):
+    `tx.track_bookmark(name, remote)` on a twin whose commit DIFFERS from the local bookmark does
+    NEITHER of the two things a reasonable reader might expect. It does not raise, and it does
+    not leave the local bookmark untouched. It silently MERGES both targets into one CONFLICTED,
+    multi-target bookmark (`target_ids` goes from length 1 to 2) and still flips `tracked` to
+    True — trading the untracked-twin anomaly for a WORSE one (`lane-conflicted`), with no
+    exception to catch and no safe no-op to lean on. So this function compares commit ids and
+    refuses BEFORE ever calling `track_bookmark`, never after, and ships no `--force` escape for
+    that case — the probe closes the question `DESIGN.md` §3.5/§5 left open, it does not leave a
+    door for later. An ALREADY-TRACKED bookmark, by contrast, is a true no-op under the same
+    probe: no exception, `target_ids` unchanged, `tracked` stays True.
+
+    `--as NAME` tracks a DIFFERENTLY-NAMED untracked bookmark under its own name — the
+    legacy `/`-separator shape (`DESIGN.md` §3.6). Open question 3 (`DESIGN.md` §5) is decided
+    here: `--as` on a bookmark at a different commit than the local lane is refused, exactly like
+    the same-name divergent case above — never a silent pick, never a `--force`.
+    """
+    from pyjutsu import PyjutsuError
+
+    from gitman.invariants import repo_lock, write_undo_checkpoint
+    from gitman.lanes import lane_names, validate_lane_name
+    from gitman.models import IntentResult
+    from gitman.state import capture_state
+
+    trunk = require_trunk(session.config)
+    if not has_remote(session.ws):
+        raise GitmanError("no git remote configured — `gitman remote add <url>` first.", exit_code=2)
+    remote_name = _resolve_bookmark_remote(session, remote)
+
+    if lane == trunk:
+        raise GitmanError(f"'{trunk}' is trunk, not a lane — nothing to track.", exit_code=3)
+    validate_lane_name(lane)
+    if lane not in lane_names(session, trunk):
+        raise GitmanError(f"lane '{lane}' not found — `gitman status` lists live lanes.", exit_code=3)
+
+    view = session.view()
+    local_head = _resolve_commit(view, lane)
+    target = as_name if as_name is not None else lane
+    row = next(
+        (b for b in view.bookmarks() if b.name == target and b.remote == remote_name and len(b.target_ids) == 1),
+        None,
+    )
+
+    if row is None:
+        if as_name is not None:
+            raise GitmanError(
+                f"no bookmark named '{as_name}' on '{remote_name}' — check the name and retry.", exit_code=3
+            )
+        # No exact-name twin. Scan for a same-commit candidate under a DIFFERENT name (the
+        # legacy '/'-separator shape, DESIGN.md §3.6) before reporting plain NOOP.
+        candidates = [
+            b
+            for b in view.bookmarks()
+            if b.remote not in (None, "git")
+            and not b.tracked
+            and len(b.target_ids) == 1
+            and b.target_ids[0] == local_head
+            and b.name != lane
+        ]
+        notes: list[str] = []
+        if len(candidates) == 1:
+            cand = candidates[0]
+            notes = [
+                f"note: an untracked bookmark '{cand.name}' on '{remote_name}' points at the same "
+                f"commit ({local_head[:12]}). If this is the pre-migration name of this lane, run:",
+                f"  gitman bookmark track {lane} --as {cand.name}",
+            ]
+        return IntentResult(
+            intent="bookmark-track",
+            outcome="NOOP",
+            lane=lane,
+            messages=[f"no remote twin named '{lane}' on '{remote_name}' — nothing to track."],
+            notes=notes,
+        )
+
+    if row.tracked:
+        return IntentResult(
+            intent="bookmark-track",
+            outcome="NOOP",
+            lane=lane,
+            messages=[f"'{target}@{remote_name}' is already tracked — nothing to do."],
+        )
+
+    forge_commit = row.target_ids[0]
+    if forge_commit != local_head:
+        raise GitmanError(
+            f"refusing to track '{target}@{remote_name}': it points at {forge_commit[:12]}, local "
+            f"'{lane}' is at {local_head[:12]} — tracking a divergent twin merges both into one "
+            f"conflicted bookmark, which is not a fix. Resolve the divergence first with "
+            f"`gitman repair --keep local|origin`, then retry.",
+            exit_code=1,
+            subject=lane,
+        )
+
+    with repo_lock(session.repo_root):
+        op_before = session.ws.head_operation()
+        try:
+            with session.ws.transaction(f"bookmark track {target}") as tx:
+                tx.track_bookmark(target, remote_name)
+        except PyjutsuError as exc:
+            raise GitmanError(f"could not track '{target}@{remote_name}': {exc}", exit_code=2) from exc
+        write_undo_checkpoint(session.repo_root, op_before, "bookmark-track")
+
+    return IntentResult(
+        intent="bookmark-track",
+        outcome="TRACKED",
+        lane=lane,
+        messages=[f"tracked '{target}@{remote_name}' — jj now watches this twin."],
+        notes=["`land`/`publish`/`push` on this lane are no longer blocked by it."],
+        undo_command="gitman undo",
+        state=capture_state(session),
+    )
+
+
+def do_bookmark_untrack(session: Session, lane: str, remote: str | None = None):
+    """Stop jj tracking a lane's own remote bookmark — the bookmark counterpart to `gitman
+    untrack`'s file untracking. `gitman untrack <path>` stops tracking a PATH; this stops
+    tracking a REMOTE BOOKMARK. Always targets the lane's own exact name — no `--as`, because the
+    use case is "stop watching MY twin," never an alias."""
+    from pyjutsu import PyjutsuError
+
+    from gitman.invariants import repo_lock, write_undo_checkpoint
+    from gitman.lanes import lane_names, validate_lane_name
+    from gitman.models import IntentResult
+    from gitman.state import capture_state
+
+    trunk = require_trunk(session.config)
+    if not has_remote(session.ws):
+        raise GitmanError("no git remote configured — nothing to untrack.", exit_code=2)
+    remote_name = _resolve_bookmark_remote(session, remote)
+
+    if lane == trunk:
+        raise GitmanError(f"'{trunk}' is trunk, not a lane — nothing to untrack.", exit_code=3)
+    validate_lane_name(lane)
+    if lane not in lane_names(session, trunk):
+        raise GitmanError(f"lane '{lane}' not found — `gitman status` lists live lanes.", exit_code=3)
+
+    view = session.view()
+    row = next((b for b in view.bookmarks() if b.name == lane and b.remote == remote_name), None)
+    if row is None or not row.tracked:
+        return IntentResult(
+            intent="bookmark-untrack",
+            outcome="NOOP",
+            lane=lane,
+            messages=[f"'{lane}@{remote_name}' is not tracked — nothing to do."],
+        )
+
+    with repo_lock(session.repo_root):
+        op_before = session.ws.head_operation()
+        try:
+            with session.ws.transaction(f"bookmark untrack {lane}") as tx:
+                tx.untrack_bookmark(lane, remote_name)
+        except PyjutsuError as exc:
+            raise GitmanError(f"could not untrack '{lane}@{remote_name}': {exc}", exit_code=2) from exc
+        write_undo_checkpoint(session.repo_root, op_before, "bookmark-untrack")
+
+    return IntentResult(
+        intent="bookmark-untrack",
+        outcome="UNTRACKED",
+        lane=lane,
+        messages=[f"untracked '{lane}@{remote_name}' — jj no longer watches this twin."],
+        undo_command="gitman undo",
+        state=capture_state(session),
+    )
+
+
 _TRUNK_LINE_RE = re.compile(r'(?m)^trunk\s*=\s*"([^"]*)"\s*$')
 
 

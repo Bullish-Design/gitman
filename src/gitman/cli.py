@@ -464,6 +464,43 @@ def untrack(
     _finish_intent(do_untrack(_session(), paths))
 
 
+# --- bookmark noun (project 56) --------------------------------------------------------
+# Namespaced on purpose, not a top-level `track`/`untrack`: `gitman untrack <path>` (above) stops
+# tracking a machine-local FILE, and a bare `track`/`untrack` would read as its mirror on the
+# same object class. It is not — a bookmark is a different object entirely. `bookmark track`/
+# `bookmark untrack` match pyjutsu's own `track_bookmark`/`untrack_bookmark` 1:1 while keeping the
+# two verbs unambiguous (DESIGN.md §3.1).
+
+bookmark_app = typer.Typer(help="Track or untrack a lane's remote bookmark twin.", no_args_is_help=True)
+app.add_typer(bookmark_app, name="bookmark")
+
+
+@bookmark_app.command("track")
+def bookmark_track(
+    lane: Annotated[str, typer.Argument(help="Local lane name.")],
+    remote: Annotated[str | None, typer.Option("--remote", help="Remote name (defaults as `push` does).")] = None,
+    as_: Annotated[
+        str | None,
+        typer.Option("--as", help="Track an untracked bookmark under a different name (legacy '/' twin)."),
+    ] = None,
+) -> None:
+    """Make jj track this lane's remote bookmark — fixes pyjutsu's untracked-remote-bookmark refusal."""
+    from gitman.core import do_bookmark_track
+
+    _finish_intent(do_bookmark_track(_session(), lane, remote=remote, as_name=as_))
+
+
+@bookmark_app.command("untrack")
+def bookmark_untrack(
+    lane: Annotated[str, typer.Argument(help="Local lane name.")],
+    remote: Annotated[str | None, typer.Option("--remote", help="Remote name (defaults as `push` does).")] = None,
+) -> None:
+    """Stop jj tracking this lane's remote bookmark (the bookmark counterpart to `gitman untrack`)."""
+    from gitman.core import do_bookmark_untrack
+
+    _finish_intent(do_bookmark_untrack(_session(), lane, remote=remote))
+
+
 remote_app = typer.Typer(help="Manage git remotes (in-process; never touches git HEAD).", no_args_is_help=True)
 app.add_typer(remote_app, name="remote")
 
