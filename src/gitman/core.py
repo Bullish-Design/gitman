@@ -430,7 +430,8 @@ def do_start(
     from gitman.invariants import build_plan, run_plan, subjects_for
     from gitman.lanes import current_lane, ensure_unique, lane_has_content
     from gitman.models import IntentResult
-    from gitman.plan import CreateBookmark, New, Plan
+    from gitman.plan import CreateBookmark, New, Plan, Rebase
+    from gitman.state import _merge_tree_conflicts
 
     if adopt_all and adopt_mine:
         raise GitmanError("`--adopt-all` and `--adopt-mine` are mutually exclusive.", exit_code=3)
@@ -503,17 +504,61 @@ def do_start(
                 exit_code=1,
             )
         adopted = _adoptable_work(session, base_ref)
+        rebase_adopted = False
         if not adopted and _unbookmarked_dirty(session):
-            # Issue 43 D4: @ holds uncommitted work that is NOT based on the intended base.
-            # Never create an empty lane beside it (the old bug) and never strand it — refuse
-            # and name the fix, the way the `status` note promises.
-            where = f"lane '{base_name}'" if base_name is not None else f"trunk '{trunk}'"
-            raise GitmanError(
-                f"@ holds uncommitted work that is not based on {where} — describe/land it first, "
-                f"or start a lane on its own base (`gitman start <flat-name>` adopts it onto {trunk}).",
-                exit_code=1,
+            if base_name is not None:
+                # Issue 43 D4, stacked case: @ holds uncommitted work that is NOT based on the
+                # named parent lane. Refuse — never silently fold loose trunk-level work into a
+                # parent lane the operator didn't name (`_adoptable_work`'s docstring: a sibling
+                # of the base must refuse, not adopt; the `T+other`-beside-live-`T` shape).
+                # The old message here suggested `gitman start <flat-name>` as the fix, worded so
+                # it read as the very call that had just failed for a flat name. It wasn't
+                # actually the same call (this one is stacked), and issue 59 makes it a real fix:
+                # a flat `start` now rebases off-trunk work onto trunk itself (below), so point at
+                # that instead of repeating the unfollowable "describe/land it" advice alone.
+                raise GitmanError(
+                    f"@ holds uncommitted work that is not based on lane '{base_name}' — "
+                    f"`gitman start <flat-name>` gives that work its own lane on {trunk} "
+                    f"(it rebases there if needed), or land/sync '{base_name}' first so its head "
+                    "already includes this work.",
+                    exit_code=1,
+                )
+            # Issue 59: @ is dirty, unbookmarked, and off trunk (e.g. a sibling of trunk, or
+            # rooted further back) — the fsdantic shape. A flat `start` names trunk as the base
+            # explicitly, so there is no risk of folding a sibling's work into the wrong lane
+            # (the hazard the stacked case above guards against): rebase @ onto trunk and adopt
+            # it, instead of refusing with advice that named this very command.
+            view = session.view()
+            wc = view.working_copy()
+            wc_id = wc.commit_id
+            old_parent_id = wc.parent_ids[0] if wc.parent_ids else wc_id
+            trunk_id = view.resolve(trunk).commit_id
+            if _merge_tree_conflicts(view, wc_id, trunk_id) is not False:
+                raise GitmanError(
+                    f"@ ({wc_id[:12]}) holds uncommitted work off trunk '{trunk}' "
+                    f"({trunk_id[:12]}), and rebasing it there would conflict — resolve by hand "
+                    f"first (e.g. `gitman switch` to a lane that already covers this base, merge "
+                    f"the work there), then `gitman start {name}`.",
+                    exit_code=1,
+                )
+            steps = [
+                Rebase(
+                    wc_id,
+                    onto=trunk,
+                    mode="branch",
+                    conflict_reason=(
+                        f"rebasing @ onto {trunk} conflicts — resolve by hand, then "
+                        f"`gitman start {name}`."
+                    ),
+                ),
+                CreateBookmark(name, "@"),
+            ]
+            messages.append(
+                f"@ was off trunk (parent {old_parent_id[:12]}) — rebased onto {trunk} "
+                f"({trunk_id[:12]}) and adopted into lane '{name}'."
             )
-        if adopted:
+            rebase_adopted = True
+        elif adopted:
             # Issue 43 D4 fix: @ is already a proper descendant of the intended base, so the
             # work IS the lane's content — bookmark @ itself. The old path always created a
             # fresh child of the base here, which orphaned the work and left an empty lane
@@ -549,7 +594,9 @@ def do_start(
             steps = [New(trunk), CreateBookmark(name, "@")]
             messages.append(f"lane '{name}' created on {trunk}.")
         # Issue 38 W3: never adopt silently. Report the provenance of what the lane took.
-        if adopted:
+        # Issue 59: a rebase-adopt still took @'s dirty paths into the lane, so the same
+        # provenance report applies — orthogonal to whether @ was rooted on the base already.
+        if adopted or rebase_adopted:
             if not session.provenance_available():
                 notes.append(
                     "path provenance unavailable (no fingerprint for this session yet) — "
