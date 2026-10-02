@@ -554,15 +554,25 @@ both flags, because the old name is published — it does not guess.
    `undo_command` is honest about a gap ("`gitman undo` reverts the bookmark change; re-run `gitman
    trunk rename <old-name> --retire` to fully reverse the config" ) rather than extending the undo
    mechanism's scope for the first time.
-3. **Still open, unimplemented.** Should a future `gitman trunk show` (a plain read: name, commit,
-   published state) ship alongside `rename` to justify the new `trunk_app` noun immediately, or is
-   one subcommand under a new noun acceptable on its own? Not load-bearing on `rename`'s own
-   behaviour.
-4. **Still open, unimplemented.** `new_name` exists on origin at the same commit, mid-fetch
-   staleness: the precondition table
-   (§3.5) treats "same commit" as read from the last fetch's tracking ref (no network call this
-   verb makes itself, consistent with every other read-only precheck in the codebase). An operator
-   who has not fetched recently could see a stale "same commit" verdict that a fresh fetch would
-   contradict. This design does not propose an implicit fetch inside `trunk rename` (no other verb
-   does this either), but the owner may want the report to name the last-fetch time explicitly so
-   staleness is visible rather than assumed accurate.
+3. **RESOLVED (shipped).** `gitman trunk show` exists now: `@trunk_app.command("show")`
+   (`src/gitman/cli.py`), a plain read with no lock, no transaction, no undo line. It composes
+   `capture_state`'s own `TrunkRef` and reuses `render.py`'s existing relation phrasing — the new
+   `render_trunk` function shares `_trunk_line`/`_remote_relation` with `render_status` rather
+   than re-deriving the relation a second time (`src/gitman/render.py`). `--json` emits the
+   `TrunkRef` payload (`state.trunk.model_dump(mode="json")`), the same shape `status` and `log`
+   already use for structured output. Tests in `tests/test_trunk_rename.py` (the
+   "Q3: `gitman trunk show`" section) pin the single-derivation requirement (the reported commit
+   is byte-identical to `capture_state(...).trunk.commit_id`), confirm `--json` works, confirm it
+   mutates nothing (op id unchanged), and confirm it reports the new name after a rename.
+4. **RESOLVED (shipped, no timestamp).** `do_trunk_rename` (`src/gitman/core.py`) now adds a note
+   to its report whenever the same-commit/ancestor verdict actually consulted a remote bookmark
+   (i.e. `new_name` exists on the remote): the comparison read `<new_name>@<remote>` from the last
+   fetch's tracking ref, not a fresh network call, and `gitman sync --trunk` refreshes it. No
+   timestamp is included — pyjutsu exposes no last-fetch time, and getting one would need a new
+   dependency or a subprocess, which this verb does not add (confirmed: `dir(pyjutsu)` has no
+   `fetch`/`time`-named attribute). When `new_name` does not exist on the remote, no such note
+   appears (no false positive), and the pre-existing §3.6 forge-default-branch note still appears
+   alongside it. Tests: `test_new_name_on_remote_emits_staleness_note`,
+   `test_new_name_absent_on_remote_emits_no_staleness_note`,
+   `test_forge_default_branch_note_survives_alongside_staleness_note`
+   (`tests/test_trunk_rename.py`).

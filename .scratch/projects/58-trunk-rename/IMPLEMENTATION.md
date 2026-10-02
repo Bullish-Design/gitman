@@ -21,11 +21,17 @@ Built and landed in `682454022`, with two deviations from this plan.
    inferred from `subjects_for`'s trunk subject alone)." Regression test:
    `tests/test_trunk_rename.py::test_trunk_conflicted_refuses_rename`.
 
-Two of the four `DESIGN.md` §7 open questions were resolved by the implementation: **Q1**
-(`--keep-lane` removed — see deviation 1 above) and **Q2** (the `config_before` sidecar was
-accepted and shipped at `src/gitman/invariants.py:56,66-67,910,941` and
-`src/gitman/core.py:3146,3542-3545`). **Q3 (`gitman trunk show`) and Q4 (last-fetch staleness in
-the report) remain open and unimplemented.**
+All four `DESIGN.md` §7 open questions are now resolved. **Q1** (`--keep-lane` removed — see
+deviation 1 above) and **Q2** (the `config_before` sidecar was accepted and shipped at
+`src/gitman/invariants.py:56,66-67,910,941` and `src/gitman/core.py:3146,3542-3545`) landed with
+the original verb. **Q3** (`gitman trunk show`) and **Q4** (fetch-staleness disclosure in the
+rename report) landed in a follow-on change: `trunk show` is `@trunk_app.command("show")`
+(`src/gitman/cli.py`), backed by `render_trunk`/`_trunk_line` (`src/gitman/render.py`), composing
+`capture_state`'s own `TrunkRef` rather than re-deriving the relation; the staleness note is a new
+`notes` entry in `do_trunk_rename` (`src/gitman/core.py`), added only when the same-commit/ancestor
+check actually consulted a remote bookmark, with no timestamp (none was available from pyjutsu
+without a new dependency or a subprocess). See `DESIGN.md` §7 items 3–4 for the full account and
+`tests/test_trunk_rename.py` for the regression tests.
 
 Superseded passages are marked inline below, so a future reader following this plan does not
 re-add the rejected flag set.

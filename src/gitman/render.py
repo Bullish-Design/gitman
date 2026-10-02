@@ -8,7 +8,7 @@ from __future__ import annotations
 from gitman.anomalies import ANOMALY_ORDER, REGISTRY
 from gitman.doctor import FAIL, OK, WARN, DoctorReport
 from gitman.lanes import name_parent
-from gitman.models import IntentResult, Lane, LaneState, RepoState
+from gitman.models import IntentResult, Lane, LaneState, RepoState, TrunkRef
 
 _GLYPH = {OK: "ok ", WARN: "!! ", FAIL: "XX "}
 
@@ -89,6 +89,25 @@ def _remote_relation(trunk) -> str:
     return ""
 
 
+def _trunk_line(trunk: TrunkRef) -> str:
+    """The one line naming trunk's name, commit, and (when known) its forge relation. Shared by
+    `render_status` and `render_trunk` so the two surfaces never drift — the relation itself is
+    computed once, in `state.py`, never re-derived here."""
+    return f"trunk: {trunk.name} @ {trunk.commit_id or '?'}{_remote_relation(trunk)}"
+
+
+def render_trunk(trunk: TrunkRef) -> str:
+    """Report for `gitman trunk show` — a plain read: trunk's name, commit id, and published
+    state. Reuses `_trunk_line`/`_remote_relation`, the exact composition `status` already
+    renders; this never re-derives the relation."""
+    lines = [f"Gitman trunk show — {trunk.name}", _trunk_line(trunk)]
+    if trunk.remote is None:
+        lines.append("published: no remote configured.")
+    elif trunk.relation is None:
+        lines.append(f"published: '{trunk.remote}' is configured but not fetched yet — relation unknown.")
+    return "\n".join(lines)
+
+
 def _lane_line(lane: Lane, current: str | None) -> str:
     here = lane.name == current
     marker = "*" if here else " "
@@ -150,8 +169,7 @@ def render_status(state: RepoState) -> str:
     n = len(state.lanes)
     header = f"Gitman status — CANONICAL · {n} lane{'' if n == 1 else 's'}"
     trunk = state.trunk
-    trunk_line = f"trunk: {trunk.name} @ {trunk.commit_id or '?'}{_remote_relation(trunk)}"
-    lines = [header, trunk_line]
+    lines = [header, _trunk_line(trunk)]
     for lane in state.lanes:
         lines.append(_lane_line(lane, state.current_lane))
     for note in state.notes:

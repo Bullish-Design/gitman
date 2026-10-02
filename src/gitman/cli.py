@@ -610,7 +610,7 @@ def workspace_prune() -> None:
 # --- trunk noun (design 58) ------------------------------------------------------------
 
 trunk_app = typer.Typer(
-    help="Rename the frozen trunk bookmark (invariant I1-respecting, operator-named).",
+    help="Show or rename the frozen trunk bookmark (invariant I1-respecting, operator-named).",
     no_args_is_help=True,
 )
 app.add_typer(trunk_app, name="trunk")
@@ -631,6 +631,17 @@ def trunk_rename(
     from gitman.core import do_trunk_rename
 
     _finish_intent(do_trunk_rename(_session(), new_name))
+
+
+@trunk_app.command("show")
+def trunk_show() -> None:
+    """Show trunk's name, commit id, and published state. Read-only: no lock, no mutation."""
+    from gitman.render import render_trunk
+    from gitman.state import capture_state
+
+    state = capture_state(_session())
+    _emit(render_trunk(state.trunk), state.trunk.model_dump(mode="json"))
+    raise typer.Exit(code=0)
 
 
 # --- deprecated verb aliases (project 46 S6) ------------------------------------------

@@ -3166,6 +3166,7 @@ def do_trunk_rename(session: Session, new_name: str):
     view = session.view()
     trunk_commit = view.resolve(old_trunk).commit_id
 
+    new_remote_commit = None
     if has_remote(session.ws):
         remote = pick_remote(session.ws)
         try:
@@ -3234,6 +3235,17 @@ def do_trunk_rename(session: Session, new_name: str):
             f"{remote}'s default branch should also become '{new_name}', do that on the forge "
             "directly (gitman has no verb for a forge's default-branch setting). `gitman push` "
             f"will fast-forward '{remote}/{new_name}' to match once you're ready."
+        )
+    if remote is not None and new_remote_commit is not None:
+        # DESIGN.md §7 Q4: the same-commit/ancestor verdict above read `new_name@{remote}` from
+        # the last fetch's tracking ref — gitman made no network call to reach it. Name the
+        # staleness so an operator who has not fetched recently does not trust a verdict a fresh
+        # fetch could contradict. No timestamp: pyjutsu exposes no last-fetch time without a new
+        # dependency or a subprocess, and this verb adds neither.
+        notes.append(
+            f"the '{new_name}' vs trunk comparison read '{new_name}@{remote}' from the last "
+            f"fetch, not a fresh network call — `gitman sync --trunk` refreshes it if you have "
+            "not fetched recently."
         )
 
     return IntentResult(

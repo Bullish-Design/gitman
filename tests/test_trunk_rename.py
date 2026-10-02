@@ -8,6 +8,10 @@ remote twin always survives, named explicitly in the report. `_repo_with_remote`
 `tests/test_issue44_stage4f_fractal_publish.py`'s helper of the same name, extended with a
 `trunk`/`push_trunk` parameter because this file needs a `/`-separated trunk name (fsdantic's
 real shape) and an unpublished-trunk variant, neither of which the original helper supports.
+
+Also covers DESIGN.md §7's two follow-on questions, in the same file (same fixtures, same
+verb): Q4, the fetch-staleness note `trunk rename` adds to its report when the comparison
+actually consulted a remote bookmark; and Q3, the read-only `gitman trunk show` verb.
 """
 
 from __future__ import annotations
@@ -294,6 +298,146 @@ def test_new_name_on_origin_as_ancestor_of_trunk_proceeds(tmp_path: Path):
 
     res = do_trunk_rename(_sess(work), "develop")
     assert res.outcome == "RENAMED", res.messages
+
+
+# --- Q4: fetch staleness disclosure (DESIGN.md §7) -----------------------------------------
+
+
+def test_new_name_on_remote_emits_staleness_note(tmp_path: Path):
+    """Q4: when the same-commit verdict actually consulted a remote bookmark (`new_name` exists
+    on the remote), the report names the staleness — the comparison read the last fetch's
+    tracking ref, not a fresh network call."""
+    work, remote, ws = _repo_with_remote(tmp_path)
+    with ws.transaction("mint develop at trunk") as tx:
+        tx.create_bookmark("develop", "main")
+    ws.git_push("origin", "develop", allow_new=True)
+    with ws.transaction("drop local develop") as tx:
+        tx.delete_bookmark("develop")
+
+    res = do_trunk_rename(_sess(work), "develop")
+
+    assert res.outcome == "RENAMED", res.messages
+    assert any("last fetch" in n and "develop" in n for n in res.notes), res.notes
+    assert any("not a fresh network call" in n for n in res.notes), res.notes
+
+
+def test_new_name_absent_on_remote_emits_no_staleness_note(tmp_path: Path):
+    """No false positive: a remote exists, but `new_name` was never pushed there — no staleness
+    note, because the verdict never consulted a remote bookmark to reach it."""
+    work, _remote, _ws = _repo_with_remote(tmp_path)
+
+    res = do_trunk_rename(_sess(work), "develop")
+
+    assert res.outcome == "RENAMED", res.messages
+    assert not any("last fetch" in n for n in res.notes), res.notes
+
+
+def test_forge_default_branch_note_survives_alongside_staleness_note(tmp_path: Path):
+    """The pre-existing §3.6 note (the forge's default branch is unchanged) must still appear
+    when the staleness note also fires — neither note displaces the other."""
+    work, _remote, ws = _repo_with_remote(tmp_path)
+    with ws.transaction("mint develop at trunk") as tx:
+        tx.create_bookmark("develop", "main")
+    ws.git_push("origin", "develop", allow_new=True)
+    with ws.transaction("drop local develop") as tx:
+        tx.delete_bookmark("develop")
+
+    res = do_trunk_rename(_sess(work), "develop")
+
+    assert any("default branch is unchanged" in n for n in res.notes), res.notes
+    assert any("last fetch" in n for n in res.notes), res.notes
+
+
+# --- Q3: `gitman trunk show` (DESIGN.md §7) -------------------------------------------------
+
+
+def test_trunk_show_names_trunk_and_commit(tmp_path: Path):
+    from typer.testing import CliRunner
+
+    from gitman.cli import app
+
+    work, _ws = _repo(tmp_path)
+    expected_commit = capture_state(_sess(work)).trunk.commit_id
+
+    runner = CliRunner()
+    res = runner.invoke(app, ["--repo", str(work), "trunk", "show"])
+
+    assert res.exit_code == 0, res.output
+    assert "main" in res.output
+    assert expected_commit in res.output
+
+
+def test_trunk_show_commit_matches_capture_state_exactly(tmp_path: Path):
+    """Pins the single-derivation requirement (DESIGN.md §7 Q3): `trunk show`'s reported commit
+    is byte-identical to `capture_state(...).trunk.commit_id`, never a second computation."""
+    import json
+
+    from typer.testing import CliRunner
+
+    from gitman.cli import app
+
+    work, _ws = _repo(tmp_path)
+    expected = capture_state(_sess(work)).trunk.commit_id
+
+    runner = CliRunner()
+    res = runner.invoke(app, ["--repo", str(work), "--json", "trunk", "show"])
+
+    assert res.exit_code == 0, res.output
+    payload = json.loads(res.output)
+    assert payload["commit_id"] == expected
+
+
+def test_trunk_show_json(tmp_path: Path):
+    import json
+
+    from typer.testing import CliRunner
+
+    from gitman.cli import app
+
+    work, _ws = _repo(tmp_path)
+    runner = CliRunner()
+    res = runner.invoke(app, ["--repo", str(work), "--json", "trunk", "show"])
+
+    assert res.exit_code == 0, res.output
+    payload = json.loads(res.output)
+    assert payload["name"] == "main"
+    assert payload["commit_id"] == capture_state(_sess(work)).trunk.commit_id
+
+
+def test_trunk_show_mutates_nothing(tmp_path: Path):
+    """Read-only (DESIGN.md §7 Q3): no lock, no transaction — the op id is unchanged, the
+    pattern the dry-run tests already use (e.g. `test_start_workspace_dry_run_creates_nothing`)."""
+    from typer.testing import CliRunner
+
+    from gitman.cli import app
+
+    work, _ws = _repo(tmp_path)
+    capture_state(_sess(work))  # flush do_init's own uncommitted gitman.toml write first, so
+    # the baseline op id below is not itself moved by the bootstrap's first-ever snapshot.
+    op_before = _sess(work).ws.head_operation()
+
+    runner = CliRunner()
+    res = runner.invoke(app, ["--repo", str(work), "trunk", "show"])
+
+    assert res.exit_code == 0, res.output
+    assert _sess(work).ws.head_operation() == op_before
+
+
+def test_trunk_show_reports_new_name_after_rename(tmp_path: Path):
+    from typer.testing import CliRunner
+
+    from gitman.cli import app
+
+    work, _ws = _repo(tmp_path)
+    rename_res = do_trunk_rename(_sess(work), "develop")
+    assert rename_res.outcome == "RENAMED", rename_res.messages
+
+    runner = CliRunner()
+    res = runner.invoke(app, ["--repo", str(work), "trunk", "show"])
+
+    assert res.exit_code == 0, res.output
+    assert "trunk: develop @" in res.output
+    assert "trunk: main @" not in res.output
 
 
 def test_config_source_pyproject_toml_refuses(tmp_path: Path):
