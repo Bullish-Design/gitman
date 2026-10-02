@@ -60,3 +60,39 @@ short paragraph, placed after "## Bootstrapping a repo":
 **Config note:** `[lanes] exclude` in `gitman.toml` lists bookmark-name glob patterns gitman must
 never treat as a lane — for a bookmark that is not a lane, such as a release train or a mirrored
 branch.
+
+## 5. Versioning — replace the whole section body (project 63)
+
+Project 63 made the version source pluggable, so SKILL.md's "uv owns the version" claim is now
+wrong as written: uv owns it only when `uv` is the active provider. Replace the body of
+"## Versioning" (currently starting "uv owns the version. `gitman version bump` calls uv...")
+with this. Keep the six-step release block exactly as it already reads; only the prose around it
+changes.
+
+The version lives behind one of three sources, named by `[versioning] provider` in `gitman.toml`
+(omit it to infer). `uv` — the default when `pyproject.toml` exists — reads and writes through
+`uv version`, so `pyproject.toml` and `uv.lock` move together in one change, and `release`
+refuses to tag while they disagree. `tag` — the default when there is no `pyproject.toml`, such
+as a Nix-only repo — has no file at all: the newest `v<major>.<minor>.<patch>` git tag already in
+the repo IS the version. `version bump` refuses under `tag`, because there is nothing to write;
+bump at `release` time instead. `file` reads and writes a `[versioning.file] path` plus
+`pattern`. `gitman version`'s report and `gitman doctor`'s `version-source` row always name which
+provider is active and whether it was configured or inferred.
+
+`release --version X.Y.Z` is self-sufficient: it skips the version read and the lock check
+entirely, so it works even with no version source configured at all — a fresh Nix repo with no
+tag yet.
+
+Also correct the section's closing line. It currently asserts the version lives in
+`pyproject.toml`; make it say that is true for a uv-backed repo, and that another repo's
+`gitman.toml` may name `tag` or `file` instead.
+
+## 6. The land gate and `.gitignore` (project 64)
+
+SKILL.md does not document `[land] pre_hook` today, so this is optional — add it only if the
+skill grows a hooks note. One sentence covers the behaviour an agent needs:
+
+A configured `[land] pre_hook` runs before a fold, and its generated-path check reads jj's own
+before/after snapshot diff — so a hook write that `.gitignore` already covers never blocks the
+land, while a hook that rewrites a **tracked** file still does. `gitman doctor`'s
+`land-hook-ignore` row names the trust this places in `.gitignore` being accurate.
