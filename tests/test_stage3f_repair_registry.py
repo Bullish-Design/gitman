@@ -68,7 +68,11 @@ def test_repairs_order_heals_colocated_refs_first():
     assert first_three == ref_kinds, REPAIRS_ORDER
     assert REPAIRS_ORDER.index("lane-conflicted") > 2
     assert REPAIRS_ORDER.index("stray-change") > REPAIRS_ORDER.index("lane-conflicted")
-    assert REPAIRS_ORDER.index("lane-divergent") == len(REPAIRS_ORDER) - 1
+    # The two lane-twin repairs run last, divergence before tracking: `_repair_lane_twins` resolves
+    # a content disagreement, and only then can `_repair_untracked_twins` see a same-commit twin it
+    # is allowed to track (project 56 step 7).
+    assert REPAIRS_ORDER.index("lane-untracked-twin") == len(REPAIRS_ORDER) - 1
+    assert REPAIRS_ORDER.index("lane-divergent") < REPAIRS_ORDER.index("lane-untracked-twin")
 
 
 def test_repairs_order_is_not_anomaly_order():
@@ -83,25 +87,28 @@ def test_repairs_order_is_not_anomaly_order():
 # --- do_reconcile dispatches through the table — no per-shape branch left ----------------
 
 
-# --- project 56: `lane-untracked-twin` joins the registry without a repair callable (yet) ----
+# --- project 56: `lane-untracked-twin` joins the registry WITH a repair callable (step 7) ----
 
 
 def test_lane_untracked_twin_is_registered_and_blocks_the_right_verbs():
     """Project 56: an untracked-but-published lane twin blocks `land`/`publish`/`push` (the
-    verbs pyjutsu itself refuses), nothing else. `repair=None` is deliberate for now — the
-    direct fix is `gitman bookmark track <lane>`; flipping this to `repair="repair"` is step 7's
-    job, together with the matching `REPAIRS` entry (the two-way check above would otherwise
-    catch a mismatch immediately)."""
+    verbs pyjutsu itself refuses), nothing else. Step 7 shipped `_repair_untracked_twins`, so the
+    row claims `repair="repair"` and `REPAIRS` carries the callable — `assert_registry_agrees`
+    enforces that the two move together, at this module's import time."""
     from gitman.anomalies import ANOMALY_ORDER, NOTE_ONLY_KINDS
 
     row = REGISTRY["lane-untracked-twin"]
     assert row.blocks == frozenset({"land", "publish", "push"})
-    assert row.repair is None
+    assert row.repair == "repair"
     assert row.manual is not None
     assert "lane-untracked-twin" in ANOMALY_ORDER
     assert ANOMALY_ORDER.index("lane-untracked-twin") == ANOMALY_ORDER.index("lane-divergent") + 1
     assert "lane-untracked-twin" not in NOTE_ONLY_KINDS
-    assert "lane-untracked-twin" not in REPAIRS
+    assert "lane-untracked-twin" in REPAIRS
+    # The row's `manual` text must keep naming both operator escapes, because the callable above
+    # deliberately heals only the same-commit case (project 56 step 7).
+    assert "--as" in row.manual
+    assert "--keep" in row.manual
 
 
 def test_do_reconcile_dispatches_through_the_table():

@@ -41,14 +41,16 @@ _STATUS_BY_KIND: dict[str, tuple[str, str]] = {
         "Recover: `gitman repair`  — classifies the lane against its forge twin by content.",
     ),
     # Project 56: jj doesn't track this lane's own remote bookmark, so pyjutsu's immutability
-    # rule over `untracked_remote_bookmarks()` refuses `land`/`publish`/`push` on it. The direct
-    # verb is `gitman bookmark track <lane>`; `gitman repair` gains the same auto-heal for the
-    # safe, same-commit shape once its own callable lands (REGISTRY["lane-untracked-twin"].repair
-    # stays `None` until then — see the comment in anomalies.py).
+    # rule over `untracked_remote_bookmarks()` refuses `land`/`publish`/`push` on it. `gitman
+    # repair` auto-tracks the safe, same-commit shape (step 7) — that is the first thing to try.
+    # It deliberately leaves the other two shapes alone: a legacy-named twin needs
+    # `gitman bookmark track <lane> --as <name>`, and a twin that also diverges needs
+    # `gitman repair --keep local|origin` first.
     "lane-untracked-twin": (
         "OFF-CANONICAL",
-        "Recover: `gitman bookmark track <lane>`  — add `--as <name>` for a legacy twin, or "
-        "`gitman repair --keep local|origin` first if it also diverges.",
+        "Recover: `gitman repair`  — auto-tracks a same-commit twin. For a legacy-named twin use "
+        "`gitman bookmark track <lane> --as <name>`; for one that also diverges, "
+        "`gitman repair --keep local|origin` first.",
     ),
     # Not "re-sync refs to jj" any more — repair now heals in whichever direction the drift
     # runs, adopting git-only history instead of discarding it (issue 31).

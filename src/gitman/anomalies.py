@@ -114,16 +114,15 @@ REGISTRY: dict[str, AnomalyKind] = {
     # (`Bookmark.tracked is False`). pyjutsu refuses to rewrite any commit under an untracked
     # remote bookmark (immutability over `untracked_remote_bookmarks()`), so `land`/`publish`/
     # `push` fail on this lane even though `status` used to call it clean. The direct fix is
-    # `gitman bookmark track <lane>` (project 56 steps 1-2, shipped). `repair=None` HERE ON
-    # PURPOSE, for now: `repairs.assert_registry_agrees` (repairs.py) raises an import-time
-    # AssertionError for any `repair="repair"` row with no matching callable in `REPAIRS`, and
-    # the Case-2 auto-track callable is a SEPARATE, not-yet-landed step (DESIGN.md §3.7 / project
-    # 56 step 7, scoped to another change). Flip this to `repair="repair"` in the SAME commit that
-    # adds `REPAIRS["lane-untracked-twin"]` — never before, or every test that imports
-    # `gitman.repairs` breaks at collection.
+    # `gitman bookmark track <lane>` (project 56 steps 1-2, shipped). Step 7 added
+    # `REPAIRS["lane-untracked-twin"]` (`_repair_untracked_twins`, repairs.py), so `repair="repair"`
+    # now holds for real — `repairs.assert_registry_agrees` checks this row against that callable
+    # at import time, and the two now agree. The callable only auto-heals the safe, same-commit
+    # case (Case 2): a divergent or legacy-named twin still needs the operator, so `manual` keeps
+    # naming both escapes.
     "lane-untracked-twin": AnomalyKind(
         tier="lane",
-        repair=None,
+        repair="repair",
         blocks=frozenset({"land", "publish", "push"}),
         manual=(
             "`gitman bookmark track <lane>` (same-commit twin), `--as <name>` when the twin's "

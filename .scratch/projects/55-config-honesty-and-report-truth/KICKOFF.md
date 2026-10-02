@@ -328,7 +328,7 @@ the lazy import runs. The one `core.py` site that also offers `gitman start --ad
 that option, passed through the helper's `extra` parameter — the helper never flattens a site's
 own extra remedy away.
 
-Landed on trunk `main` (lane `55-s71-foreign-path-text`).
+Landed on trunk `main` in `12877c241` (lane `55-s71-foreign-path-text`).
 
 **7.2 Project 30 S9e — formalise, document and sign off the existing partial exit-code split.**
 **Correction to this section's original premise:** the split is not entirely unbuilt. Reading

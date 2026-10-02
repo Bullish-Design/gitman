@@ -322,16 +322,29 @@ Gitman's standing contract (AGENTS.md): `0` ok · `1` VC decision needed · `2` 
 
 ## 5. Open questions left for the owner
 
-1. **`track_bookmark` semantics on a divergent twin** (§3.5) — does it move the local bookmark, or
-   only mark the association? Must be answered by a probe test before Case 3 behaviour (refuse vs.
-   `--force`) is finalized.
-2. **Does the existing `lane-legacy-name` repair handle a name collision** when the `+`-named lane
-   already exists at the same commit as the `/`-named one it is renaming (§3.6)? Not traced to a
-   line number in this pass.
-3. **Should `--as` accept a bookmark at a DIFFERENT commit than the local lane**, or always refuse
-   that combination outright (treating it as a Case-3-style divergence under a different name)?
-   This design assumes the latter (refuse) but the owner may want `--as` to report the content
-   relation instead of refusing unconditionally.
+1. **RESOLVED by probe** — `track_bookmark` semantics on a divergent twin (§3.5). The answer is
+   **neither** of the two outcomes this question offered. It does not move the local bookmark and
+   it does not merely mark the association: it **merges both commits into one conflicted,
+   multi-target bookmark** (`len(target_ids)` 1 → 2), raises nothing, and leaves the lane reporting
+   `lane-conflicted`. Measured values are in the probe record; the finding is kept in
+   `core.do_bookmark_track`'s docstring.
+
+   Consequence, now shipped: Case 3 refuses **before** `track_bookmark` is ever called, by a
+   commit-id comparison, and **no `--force` may ever be added** — tracking a divergent twin would
+   trade this anomaly for a worse one. `gitman repair` auto-tracks the same-commit case only.
+   Tests: `tests/test_bookmark_track.py::test_divergent_twin_refuses_before_tracking` (asserts the
+   bookmark stays single-target) and
+   `tests/test_untracked_twin_repair.py::test_repair_does_not_auto_track_a_divergent_twin`.
+2. **ANSWERED, NOT TEST-PINNED** — the `lane-legacy-name` name collision (§3.6). Probed by hand,
+   not committed as a test: `_repair_legacy_lane_names` calls `tx.create_bookmark(new, commit_id)`
+   where `new` already names that exact commit, and that succeeded without error — jj's
+   `create_bookmark` is idempotent when the target already points at the same commit. Treat this as
+   a one-off observation, not a guarantee: no shipped test holds it, so a future pyjutsu change
+   could break it silently. Pinning it needs a `do_repair` test over the Case-4 shape.
+3. **RESOLVED — refuse**, as this design assumed. `--as` naming a bookmark at a different commit is
+   rejected through the same path as Case 3, with no `--force`. Probe finding 1 is the reason the
+   stricter reading won: the permissive alternative would have produced a bookmark conflict.
+   Test: `tests/test_bookmark_track.py::test_as_on_a_divergent_commit_also_refuses`.
 4. **Naming**: `lane-untracked-twin` vs. a shorter alternative (e.g. `lane-untracked`) — picked for
    consistency with `lane-divergent`'s "what relationship is wrong" naming shape, not load-bearing
    on behaviour.

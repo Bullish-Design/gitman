@@ -1,6 +1,15 @@
 # 56 — a `gitman bookmark track` verb
 
-**Filed:** 2026-10-01 · pyjutsu 0.16–0.22 (jj-lib 0.44.0) · **Status: DESIGN — no code changed.**
+**Filed:** 2026-10-01 · pyjutsu 0.16–0.22 (jj-lib 0.44.0) · **Status: LANDED.**
+Steps 1-5, 9 and 10 shipped in `27d8271d8` (the `bookmark track`/`untrack` verbs, the
+`lane-untracked-twin` registry row, `find_untracked_lane_twins`, the `status` row, and
+`tests/test_bookmark_track.py`). Steps 7, 8 and 11 shipped after it: `repairs._repair_untracked_twins`
+auto-tracks the same-commit case, `core.explain_immutable` takes a `lane` and `land`/`publish`/
+`sync`/`push` route through it, plus `tests/test_untracked_twin_repair.py`.
+
+Step 0's probe answered open question 1 with a **third** outcome neither branch of the plan
+anticipated — tracking a divergent twin produces a conflicted, multi-target bookmark. That is why
+Case 3 refuses before calling `track_bookmark`, and why no `--force` exists. See §5.
 
 ## 1. The problem
 

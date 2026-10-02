@@ -214,7 +214,7 @@ _IMMUTABLE_TERMS = (
 )
 
 
-def explain_immutable(session: Session, exc: Exception, action: str) -> GitmanError:
+def explain_immutable(session: Session, exc: Exception, action: str, lane: str | None = None) -> GitmanError:
     """Turn an `ImmutableCommitError` into a report that names WHICH protection fired.
 
     pyjutsu 0.16 refuses to rewrite anything in `::(trunk() | tags() | untracked_remote_bookmarks())`.
@@ -224,7 +224,14 @@ def explain_immutable(session: Session, exc: Exception, action: str) -> GitmanEr
     Policy: gitman REFUSES; it never opens a transaction with `ignore_immutable=True`. A tag is the
     deliberate "this is intentional history" signal `state._stray_revset` already honours, and a
     remote bookmark is history someone else can see. Both outrank a local cleanup. Falls back to the
-    generic text when the commit id cannot be read or no term matches."""
+    generic text when the commit id cannot be read or no term matches.
+
+    `lane` (project 56 step 8): when the protection is an untracked remote bookmark AND the caller
+    names the lane it was acting on, the untracked twin is the actual fix — name
+    `gitman bookmark track` instead of the old "drop it outside gitman" line, which is wrong for
+    this one case (dropping the ref frees nothing; it only comes back untracked on the next
+    fetch). Every other combination — no lane given, or a tag/trunk protection — keeps the prior
+    text byte-for-byte, since the caller there (a stray, a tag, trunk itself) has no lane to name."""
     import re
 
     match = re.search(r"\b([0-9a-f]{8,64})\b", str(exc))
@@ -242,11 +249,20 @@ def explain_immutable(session: Session, exc: Exception, action: str) -> GitmanEr
     except Exception:  # noqa: BLE001 — reporting must never raise over the original failure
         protection = None
     cause = f"{protection} protects it" if protection else "an immutability rule protects it"
+    if protection == "an untracked remote bookmark" and lane is not None:
+        closing = (
+            f"Try `gitman bookmark track '{lane}'` first. If the twin sits at the same commit, "
+            f"that fixes it outright. If it still refuses, the twin differs in content or name — "
+            f"run `gitman repair` for the diagnosis and the fix it names."
+        )
+    else:
+        closing = (
+            "The protection is deliberate: a tag marks intentional history and a remote bookmark is "
+            "history others can see, so both outrank a local cleanup. Gitman ships no verb to remove "
+            "either — drop the tag or the remote branch outside gitman, then retry."
+        )
     return GitmanError(
-        f"cannot {action}: commit {commit_id[:12]} is immutable — {cause}. "
-        f"The protection is deliberate: a tag marks intentional history and a remote bookmark is "
-        f"history others can see, so both outrank a local cleanup. Gitman ships no verb to remove "
-        f"either — drop the tag or the remote branch outside gitman, then retry.",
+        f"cannot {action}: commit {commit_id[:12]} is immutable — {cause}. {closing}",
         exit_code=1,
     )
 
@@ -1333,9 +1349,10 @@ def do_publish(session: Session):
     (both local, both reversible); only `git_push` moved out.
     """
     from pyjutsu import HookAbort, PostHookError, PyjutsuError
+    from pyjutsu.errors import ImmutableCommitError
 
     from gitman.invariants import canonical_guard, repo_lock
-    from gitman.lanes import require_current_lane
+    from gitman.lanes import current_lane, require_current_lane
     from gitman.models import IntentResult
 
     trunk = require_trunk(session.config)
@@ -1344,6 +1361,7 @@ def do_publish(session: Session):
     remote = pick_remote(session.ws)
 
     notes: list[str] = []
+    lane: str | None = None
 
     # One lock across the guard AND the push (`do_land`'s pattern: outer lock, `acquire_lock=False`).
     with repo_lock(session.repo_root):
@@ -1374,6 +1392,15 @@ def do_publish(session: Session):
                     if session.config.publish.on_fail == "block":
                         raise GitmanError(f"verify failed — publish blocked:\n{out}", exit_code=1)
                     notes.append("verify failed (on_fail=warn) — publishing anyway.")
+        except ImmutableCommitError as exc:
+            # Project 56 step 8: name the protection that fired instead of letting the raw
+            # pyjutsu error fall through to the generic mapper. `lane` may still be `None` if the
+            # error struck before `require_current_lane` ran (e.g. the precheck snapshot); best
+            # effort re-read it so the message can still name it.
+            lane = lane or current_lane(session, trunk)
+            raise explain_immutable(
+                session, exc, f"publish lane '{lane}'" if lane else "publish", lane=lane
+            ) from exc
         except GitmanError as exc:
             # Every failure inside the guard now precedes all network I/O, so we can say so.
             raise GitmanError(f"{exc}\nnothing changed on the remote.", exit_code=exc.exit_code) from exc
@@ -1511,6 +1538,8 @@ def do_land(session: Session, lane_args: list[str] | None, all_: bool = False, *
 def _do_land_locked(
     session: Session, lane_args: list[str] | None, all_: bool, pre_config, dry_run: bool = False
 ):
+    from pyjutsu.errors import ImmutableCommitError
+
     from gitman.invariants import run_plan, subjects_for, write_undo_checkpoint
     from gitman.lanes import children, lane_base, lane_depth, lane_names, require_current_lane
     from gitman.models import IntentResult, LandFold
@@ -1755,6 +1784,13 @@ def _do_land_locked(
             notes += canon.notes
             notes += canon.plan.messages if canon.plan is not None else []
             last_state = canon.state
+        except ImmutableCommitError as exc:
+            # Project 56 step 8: pyjutsu's own rewrite check can fire here (a tag, or an
+            # untracked remote twin, on a commit this fold's rebase touches) without the
+            # subject-scoped precheck above having caught it first. Name which protection fired
+            # instead of letting the raw pyjutsu error fall through to the generic mapper.
+            blocked = explain_immutable(session, exc, f"land lane '{lane}'", lane=lane)
+            break
         except GitmanError as exc:
             blocked = exc
             break
@@ -2057,6 +2093,8 @@ def do_sync(
     if trunk_:
         return _do_sync_trunk(session, refresh_all=all_, dry_run=dry_run)
 
+    from pyjutsu.errors import ImmutableCommitError
+
     from gitman.invariants import canonical_guard
     from gitman.lanes import current_lane, lane_base, lane_depth, lane_names
     from gitman.lanes import subtree as lane_subtree
@@ -2209,8 +2247,15 @@ def do_sync(
             if verdict is None:
                 undecidable.append(lane)
                 continue
-            with session.ws.transaction("gitman:sync", auto_snapshot=False) as tx:
-                tx.rebase(lane, onto=target, mode="branch")
+            try:
+                with session.ws.transaction("gitman:sync", auto_snapshot=False) as tx:
+                    tx.rebase(lane, onto=target, mode="branch")
+            except ImmutableCommitError as exc:
+                # Project 56 step 8: a tag (or an untracked remote twin) on a commit this rebase
+                # touches raises here without the earlier precheck having caught it. Name the
+                # protection instead of letting the raw pyjutsu error fall through to the generic
+                # mapper.
+                raise explain_immutable(session, exc, f"sync lane '{lane}'", lane=lane) from exc
             synced.append(lane)
             # S2: never trust `mode="branch"`'s returned has_conflict — it is stale when the rebased
             # change has a descendant `@` (the documented footgun). Read it back fresh.
@@ -2910,6 +2955,7 @@ def do_push(session: Session, *, reset_origin: bool = False):
     same reason.
     """
     from pyjutsu import HookAbort, PostHookError, PyjutsuError
+    from pyjutsu.errors import ImmutableCommitError
 
     from gitman.invariants import canonical_guard, repo_lock
     from gitman.models import IntentResult
@@ -2934,6 +2980,17 @@ def do_push(session: Session, *, reset_origin: bool = False):
         try:
             with canonical_guard(session, "push", acquire_lock=False, export=True) as canon:
                 pass  # no local mutation: precheck → export → postcondition → undo checkpoint
+        except ImmutableCommitError as exc:
+            # Project 56 step 8: `push` ships trunk, not a named lane, so there is no lane to
+            # name here — but naming the exact protection (a tag, trunk itself) still beats the
+            # generic three-way mapper text.
+            return IntentResult(
+                intent="push",
+                outcome="BLOCKED",
+                messages=[str(explain_immutable(session, exc, "push trunk"))],
+                notes=["nothing changed on the remote."],
+                exit_code=1,
+            )
         except GitmanError as exc:
             # Raised before any network I/O, so this note is true by construction now.
             return IntentResult(

@@ -37,6 +37,17 @@ and mirrors its shape. The authority is `docs/GITMAN_CONCEPT.md`.
   - `add_workspace` bases the new `@` on the source `@`'s parents; gitman asks for `root()`
     explicitly, and creates the parent directory itself. A failure after registration raises
     `PartialWorkspaceError`, mapped to exit 2 with its recovery action.
+  - **`tx.track_bookmark` / `tx.untrack_bookmark` are now used** (project 56): `gitman bookmark
+    track <lane>` makes jj track a lane's own remote twin, which is the only safe way out of the
+    `untracked_remote_bookmarks()` immutability trap — dropping the ref frees nothing, it returns
+    untracked on the next fetch. `gitman repair` auto-tracks the **same-commit** case only. A
+    divergent twin is refused before `track_bookmark` runs: tracking one merges both commits into
+    a conflicted, multi-target bookmark, so auto-tracking it would trade this anomaly for a worse
+    one.
+- **Three verbs and one config key landed after project 55** — `gitman trunk rename <new-name>` and
+  `gitman trunk show` (project 58; rename is the one sanctioned exception to I1, retire-only, and
+  never deletes a remote branch), `gitman bookmark track`/`untrack` (project 56), and `[lanes]
+  exclude` (project 57), a glob list of bookmarks gitman must never grade as lanes.
 - **Dogfood:** route version control through `gitman` (never raw `jj`/`git` — that breaks
   canonicity). `gitman doctor` checks the toolchain; `gitman status` reports canonicity.
 - **Dev verification** (lint + tests) is `devenv shell -- bash -c 'ruff check src tests && pytest -q'`

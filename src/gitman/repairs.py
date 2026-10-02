@@ -317,6 +317,40 @@ def _repair_lane_twins(
             raise explain_immutable(session, exc, f"retire a side of divergent lane '{twin.lane}'") from exc
 
 
+def _repair_untracked_twins(
+    session: Session, trunk: str, abandon_: bool, keep: KeepSide | None, actions: list[str], before: Survey
+) -> None:
+    """`lane-untracked-twin`: track the safe, same-commit case only (project 56 step 7).
+
+    Nests inside the lanes `before.state` already flagged, the same pattern `_repair_lane_twins`
+    uses (guide §3.13.3) — this repair can never claim a lane the gate did not flag.
+
+    Tracking a bookmark is a bookmark write, not a rewrite, so it carries none of the ambiguity
+    `repair --keep` exists for — but ONLY when the two sides already agree on the commit. A probe
+    (recorded in `core.do_bookmark_track`'s docstring) found that `tx.track_bookmark` on a
+    DIVERGENT twin does not refuse and does not leave the local bookmark alone: it merges both
+    commits into one CONFLICTED, multi-target bookmark. Auto-tracking that shape would make
+    `repair` manufacture a new anomaly (`lane-conflicted`) while trying to clear this one, so a
+    divergent twin (Case 3) is skipped here and left to its own `manual` text
+    (`gitman repair --keep local|origin`). A legacy-named twin (Case 4) never appears in
+    `find_untracked_lane_twins`'s output at all — that detector only reads the exact-name
+    `<lane>@<remote>` row, so it is already excluded by construction, not by a check here.
+    """
+    from gitman.state import find_untracked_lane_twins
+
+    flagged = sorted({a.subject.name for a in before.state.anomalies if a.kind == "lane-untracked-twin"})
+    if not flagged:
+        return
+    twins = find_untracked_lane_twins(session, session.fresh_view(), trunk, lanes=flagged)
+    same_commit = [t for t in twins if t.same_commit]
+    if not same_commit:
+        return
+    with session.ws.transaction("gitman:repair", auto_snapshot=False) as tx:
+        for twin in same_commit:
+            tx.track_bookmark(twin.lane, twin.remote)
+            actions.append(f"lane '{twin.lane}' now tracks its remote bookmark on '{twin.remote}' (same commit).")
+
+
 REPAIRS: dict[str, Repair] = {
     "trunk-conflicted": _repair_refs,
     "ref-mismatched": _repair_refs,
@@ -326,6 +360,7 @@ REPAIRS: dict[str, Repair] = {
     "lane-conflicted": _repair_lane_conflicts,
     "stray-change": _repair_strays,
     "lane-divergent": _repair_lane_twins,
+    "lane-untracked-twin": _repair_untracked_twins,
 }
 
 # The repair order, declared once — NOT `anomalies.ANOMALY_ORDER` (that is a fixed prose order for
@@ -345,6 +380,7 @@ REPAIRS_ORDER: tuple[str, ...] = (
     "lane-conflicted",
     "stray-change",
     "lane-divergent",
+    "lane-untracked-twin",
 )
 
 
