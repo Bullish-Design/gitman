@@ -38,25 +38,22 @@ on_fail = "block"
 # `-n auto`, but this hook holds the repo lock for its whole run, and a loaded machine can be
 # far slower. 600 s gives real headroom without hiding a truly hung suite.
 #
-# The command writes nothing, rather than being allowed to write (project 64, option (e)).
-# `env PYTEST_ADDOPTS=-p no:cacheprovider PYTHONDONTWRITEBYTECODE=1` stops pytest creating
-# `.pytest_cache/` and `__pycache__/` during the gated run at all. The earlier approach —
-# naming those caches in `allowed_paths` — was weaker in two ways: it had to enumerate one
-# tool's artifacts, and a STALE `.pytest_cache` from an earlier run still got collected and
-# failed the suite inside the hook, which blocked gitman's own `land` twice (project 64,
-# executive result). Writing nothing removes both failure modes.
+# The generated-path check now skips gitignored paths (project 64, option (b)): it derives the
+# hook's changed-path set from jj's own before/after snapshot diff (`hooks.snapshot_commit` +
+# `tracked_changed_paths`), and jj evaluates `.gitignore` before it auto-tracks a new path — so
+# a gitignored write never enters the diff at all. `allowed_paths` is no longer the mechanism;
+# every path this hook used to need listed here (`.pytest_cache/`, `__pycache__/`, `.coverage*`,
+# `.venv/`, `.devenv/`) is already in this repo's `.gitignore`, so `allowed_paths` is omitted
+# below (its default is already `[]`). A
+# hook that rewrites a TRACKED, non-ignored file still blocks `land` — that property did not
+# change; only the ignored-path noise did. `gitman doctor`'s `land-hook-ignore` check names the
+# trust this now places in `.gitignore` being accurate.
 #
-# allowed_paths stays as a belt-and-braces net, not the primary mechanism. The long-term
-# gitman-side fix is to skip gitignored paths in the hook's generated-path check (project 64,
-# option (b)), which generalises to every build tool a consuming repo's verify step may use.
-#
-# `.venv/*` is here for a measured reason, and it is the case that proves option (b) is needed.
-# A `gitman version bump` lane changes the project version, so the gated `pytest` run re-syncs
-# the editable install and rewrites `.venv/**/gitman-<old>.dist-info` and `<new>.dist-info`.
-# That blocked the 0.11.0 release land. Enumerating one more tool's artifacts fixes this
-# instance only: every entry in this list is a path git already ignores, which is precisely
-# why the check should consult gitignore instead of an allowlist.
+# `env PYTEST_ADDOPTS=-p no:cacheprovider PYTHONDONTWRITEBYTECODE=1` stays for a reason
+# unrelated to path gating: a STALE `.pytest_cache` (leftover `lastfailed` entries for tests
+# that no longer exist) can still make pytest itself misbehave inside the hook run, regardless
+# of whether the cache write is seen by the gate. Disabling the cache plugin removes that
+# failure mode at the source, rather than relying on the cache never going stale.
 [land.pre_hook]
 command = ["env", "PYTEST_ADDOPTS=-p no:cacheprovider", "PYTHONDONTWRITEBYTECODE=1", "pytest", "-q"]
 timeout_seconds = 600.0
-allowed_paths = [".pytest_cache/*", "*__pycache__/*", ".coverage*", ".venv/*", ".devenv/*"]

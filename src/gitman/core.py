@@ -1619,7 +1619,13 @@ def do_land(session: Session, lane_args: list[str] | None, all_: bool = False, *
     the whole invocation records ONE batch undo checkpoint, so `gitman undo` rewinds every landed
     lane in one step. `dry_run` renders the folds (one composite `Plan`) and mutates nothing.
     """
-    from gitman.hooks import describe_changes, filesystem_snapshot, run_hook, validate_allowed_paths
+    from gitman.hooks import (
+        describe_changes,
+        run_hook,
+        snapshot_commit,
+        tracked_changed_paths,
+        validate_allowed_paths,
+    )
     from gitman.invariants import repo_lock
 
     pre_config = session.config.land.pre_hook
@@ -1628,21 +1634,25 @@ def do_land(session: Session, lane_args: list[str] | None, all_: bool = False, *
         result, post_event = _do_land_locked(session, lane_args, all_, pre_config, dry_run)
 
     if post_event is not None and session.config.land.post_hook.command:
+        from pyjutsu import PyjutsuError
+
         post_config = session.config.land.post_hook
         validate_allowed_paths(post_config.allowed_paths)
         post_root = Path(post_event.workspace_path)
         try:
-            before = filesystem_snapshot(post_root)
+            before_commit = snapshot_commit(session.ws)
             hook_result = run_hook(post_config, post_event, post_root)
-            after = filesystem_snapshot(post_root)
-        except GitmanError as exc:
+            after_commit = snapshot_commit(session.ws)
+        except (GitmanError, PyjutsuError) as exc:
             hook_result = None
-            result.exit_code = exc.exit_code
+            mapped = exc if isinstance(exc, GitmanError) else map_pyjutsu_error(exc)
+            result.exit_code = mapped.exit_code
             result.operation_succeeded = True
             result.hook_phase = "post_land"
-            result.notes.extend([str(exc), "land succeeded; no rollback was attempted."])
+            result.notes.extend([str(mapped), "land succeeded; no rollback was attempted."])
         else:
-            changes = describe_changes(post_root, before, after, post_config.allowed_paths)
+            paths = tracked_changed_paths(session.ws, before_commit, after_commit)
+            changes = describe_changes(post_root, paths, post_config.allowed_paths)
             if not hook_result.succeeded or changes:
                 result.exit_code = hook_result.exit_code if not hook_result.succeeded else 1
                 result.operation_succeeded = True
@@ -1855,7 +1865,13 @@ def _do_land_locked(
         ), None
 
     if pre_config.command:
-        from gitman.hooks import describe_changes, filesystem_snapshot, run_hook, validate_allowed_paths
+        from gitman.hooks import (
+            describe_changes,
+            run_hook,
+            snapshot_commit,
+            tracked_changed_paths,
+            validate_allowed_paths,
+        )
 
         validate_allowed_paths(pre_config.allowed_paths)
         hook_event = _land_hook_event(
@@ -1867,10 +1883,11 @@ def _do_land_locked(
             invocation_id=invocation_id,
         )
         hook_root = Path(hook_event.workspace_path)
-        before = filesystem_snapshot(hook_root)
+        before_commit = snapshot_commit(session.ws)
         hook_result = run_hook(pre_config, hook_event, hook_root)
-        after = filesystem_snapshot(hook_root)
-        changes = describe_changes(hook_root, before, after, pre_config.allowed_paths)
+        after_commit = snapshot_commit(session.ws)
+        paths = tracked_changed_paths(session.ws, before_commit, after_commit)
+        changes = describe_changes(hook_root, paths, pre_config.allowed_paths)
         if not hook_result.succeeded or changes:
             messages = []
             if not hook_result.succeeded:

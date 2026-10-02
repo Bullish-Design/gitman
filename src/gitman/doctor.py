@@ -139,6 +139,33 @@ def run_doctor(repo_root: Path, config: GitmanConfig | None = None) -> DoctorRep
         )
         checks.append(Check(OK, "publish-verify", detail))
 
+    # Land-hook path gating trusts `.gitignore` (project 64, option b): a hook write that matches
+    # an ignore pattern never blocks a land. Say so every time a hook is configured, so the trust
+    # is visible rather than a silent behaviour change — the thin-or-wrong-`.gitignore` caveat the
+    # audit names. A repo with no `.gitignore` at all gets a sharper WARN: today nothing is
+    # skipped, so the gate is as strict as before, but the moment a `.gitignore` appears, writes it
+    # covers stop blocking without any further action — worth knowing in advance, not after.
+    if cfg.land.pre_hook.command or cfg.land.post_hook.command:
+        if (repo_root / ".gitignore").is_file():
+            checks.append(
+                Check(
+                    OK,
+                    "land-hook-ignore",
+                    "a land hook is configured — a hook write matching this repo's .gitignore will "
+                    "not block the land; keep it accurate for every tool the hook invokes",
+                )
+            )
+        else:
+            checks.append(
+                Check(
+                    WARN,
+                    "land-hook-ignore",
+                    "a land hook is configured but no .gitignore exists — nothing is skipped yet, "
+                    "so the gate is as strict as before; add one to exempt a tool's generated paths "
+                    "instead of growing [land.*_hook] allowed_paths",
+                )
+            )
+
     # An orphaned `.git/HEAD` breaks *every* colocated export while every other check passes.
     # It reported HEALTHY through a whole session in which no export had succeeded, so it gets
     # its own row (project 29).

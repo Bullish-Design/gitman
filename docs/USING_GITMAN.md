@@ -176,8 +176,8 @@ generated frontmatter.
 | `[publish].on_fail` | `block` (default) or `warn`. |
 | `[publish].branch_prefix` | Optional prefix on the lane→branch name. |
 | `[release]` | `tag_format` (default `v{version}`), `verify`, `push_tag`. |
-| `[land.pre_hook]` | Optional command, timeout, and allowed paths for the pre-land gate. |
-| `[land.post_hook]` | Optional command, timeout, and allowed paths for the post-land action. |
+| `[land.pre_hook]` | Optional command, timeout, and an `allowed_paths` classifier for the pre-land gate. Gitignored paths are skipped automatically; see below. |
+| `[land.post_hook]` | Optional command, timeout, and an `allowed_paths` classifier for the post-land action. Gitignored paths are skipped automatically; see below. |
 | `[policy].protected` | Refs that must never be rewritten/force-pushed. |
 
 Land hooks run once around the complete `gitman land` invocation, including
@@ -186,10 +186,23 @@ on standard input. The shared repository lock stays held during planning, the
 pre-hook, and land mutations. Gitman releases it before the post-hook.
 
 A pre-hook may start a synchronous generator, but Gitman does not include its
-file changes in the current land. Gitman refuses when the hook changes files.
-`allowed_paths` classifies permitted generated paths; describe or repair those
-changes, then retry land. A post-hook failure reports that land succeeded and
-returns exit 1. Missing commands and timeouts return exit 2.
+file changes in the current land. Gitman derives the hook's changed-path set
+from jj's own before/after snapshot, not a raw filesystem walk: jj evaluates
+`.gitignore` before it tracks a new path, so a path the repository already
+ignores (a build tool's cache directory, for example) is never treated as a
+hook write. A rewrite of a tracked, non-ignored path still blocks the land
+regardless of `.gitignore` — that check did not weaken. `allowed_paths` does
+not excuse a changed path; it only selects which of the two refusal messages
+names it. Describe or repair the change, then retry land. A post-hook
+failure reports that land succeeded and returns exit 1. Missing commands and
+timeouts return exit 2.
+
+A repository with a thin or wrong `.gitignore` gets correspondingly weaker
+protection: a hook write that matches a pattern it should not match is
+skipped without a prompt at land time. `gitman doctor`'s `land-hook-ignore`
+check names this trust every time a land hook is configured, so it is never
+silent — add or correct the `.gitignore` entry, or add a path to
+`allowed_paths` narrowly, rather than relying on the hook writing nothing.
 
 ## 7. Versioning & release
 

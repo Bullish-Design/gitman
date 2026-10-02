@@ -6,7 +6,6 @@ replace pyjutsu's lower-level operation hooks.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import shlex
@@ -20,10 +19,9 @@ from gitman.config import LandHookConfig
 from gitman.core import GitmanError
 
 if TYPE_CHECKING:
+    from pyjutsu import Workspace
+
     from gitman.models import LandHookEvent
-
-
-_IGNORED_DIRS = {".git", ".jj", ".gitman", ".worktrees"}
 
 
 @dataclass(frozen=True)
@@ -98,45 +96,30 @@ def validate_allowed_paths(patterns: list[str]) -> None:
             )
 
 
-def _file_signature(path: Path) -> str:
-    try:
-        if path.is_symlink():
-            return "link:" + os.readlink(path)
-        if path.is_file():
-            digest = hashlib.sha256()
-            with path.open("rb") as stream:
-                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-                    digest.update(chunk)
-            return f"file:{digest.hexdigest()}"
-        stat = path.stat()
-        return f"other:{stat.st_mode}:{stat.st_size}:{stat.st_mtime_ns}"
-    except OSError as exc:
-        raise GitmanError(f"could not inspect land hook path '{path}': {exc}", exit_code=2) from exc
+def snapshot_commit(ws: Workspace) -> str:
+    """Snapshot `@` and return its commit id.
+
+    jj evaluates `.gitignore` before it auto-tracks a new path (project 64, option b): a
+    gitignored file the hook writes is never added to the tree, so it can never show up in a
+    diff taken between two snapshots. This is the same primitive `gitman version bump` already
+    uses (`version.py`'s own `session.ws.snapshot()` + `ws.diff(...)`), applied here to the
+    land-hook boundary instead of a version bump.
+    """
+    ws.snapshot()
+    return ws.working_copy().commit_id
 
 
-def filesystem_snapshot(root: Path) -> dict[str, str]:
-    """Capture content signatures for the current workspace, excluding control trees."""
-    root = root.resolve()
-    snapshot: dict[str, str] = {}
-    if not root.is_dir():
-        raise GitmanError(f"land hook workspace does not exist: {root}", exit_code=2)
-    for current, dirs, files in os.walk(root, followlinks=False):
-        current_path = Path(current)
-        dirs[:] = sorted(name for name in dirs if name not in _IGNORED_DIRS)
-        for name in sorted(files):
-            path = current_path / name
-            relative = path.relative_to(root).as_posix()
-            snapshot[relative] = _file_signature(path)
-        for name in sorted(dirs):
-            path = current_path / name
-            if path.is_symlink():
-                relative = path.relative_to(root).as_posix()
-                snapshot[relative] = _file_signature(path)
-    return snapshot
+def tracked_changed_paths(ws: Workspace, before_commit: str, after_commit: str) -> list[str]:
+    """Repo-relative paths jj recorded as changed between two commits.
 
-
-def changed_paths(before: dict[str, str], after: dict[str, str]) -> list[str]:
-    return sorted({*before, *after} - {path for path in before if before.get(path) == after.get(path)})
+    A path the working copy's `.gitignore` already covers never reaches this list: jj's own
+    snapshot (taken by `snapshot_commit`) does not auto-track it in the first place. A tracked
+    path stays visible regardless of `.gitignore` — jj already tracks it, so a rewrite of it is
+    a real content change in the diff.
+    """
+    if before_commit == after_commit:
+        return []
+    return sorted({change.path for change in ws.diff(before_commit, after_commit).files})
 
 
 def path_allowed(path: str, patterns: list[str]) -> bool:
@@ -156,9 +139,15 @@ def unsafe_changed_paths(root: Path, paths: list[str]) -> list[str]:
     return unsafe
 
 
-def describe_changes(root: Path, before: dict[str, str], after: dict[str, str], patterns: list[str]) -> str | None:
-    """Return an actionable refusal message for hook-created workspace changes."""
-    paths = changed_paths(before, after)
+def describe_changes(root: Path, paths: list[str], patterns: list[str]) -> str | None:
+    """Return an actionable refusal message for hook-created, non-ignored changes.
+
+    `paths` already excludes gitignored paths (`tracked_changed_paths` derives it from jj's own
+    snapshot diff) — this function classifies what is left against `allowed_paths`, exactly as
+    before. `allowed_paths` still never rescues a land: it only changes which of the two
+    messages below comes back (the known gap documented in `GATE-AUDIT.md`, left alone by this
+    change — see the audit's options (c)/(d) for why making it permissive is rejected).
+    """
     if not paths:
         return None
     validate_allowed_paths(patterns)

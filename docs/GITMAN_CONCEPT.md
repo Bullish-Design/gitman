@@ -692,7 +692,7 @@ Pydantic-validated.
 | `[publish] on_fail` | `block` (default) or `warn`. |
 | `[publish] branch_prefix` | Optional prefix on the lane→branch name (default none). |
 | `[release] …` | Tag format, verify, push behavior (see §13). |
-| `[land.pre_hook]` / `[land.post_hook]` | Optional invocation-level land commands with timeout and generated-path policy. |
+| `[land.pre_hook]` / `[land.post_hook]` | Optional invocation-level land commands with timeout and an `allowed_paths` classifier. The changed-path check comes from jj's own before/after snapshot diff, so a path the repo's `.gitignore` already covers is never treated as a hook write (project 64, option b); a rewrite of a tracked, non-ignored path still blocks. `allowed_paths` only selects which refusal message names the path — it never lets a changed path through. |
 | `[policy] protected` | Refs that must never be rewritten/force-pushed. |
 
 ### Retiring a config table

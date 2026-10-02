@@ -227,6 +227,93 @@ owner who has read and accepted the trade, which (c) is not, because (c)
 changes what the existing name already means for the one repository
 measured to use it today.
 
+## Update (2026-10-02) — option (b) landed
+
+Option (b) shipped: commit `GITMAN_LANDED_COMMIT_PLACEHOLDER` on `main` (lane
+`64-gitignore-aware-hook`). `ruff check src tests && pytest -q` was green at
+654 tests (baseline 644; ten added), and the lane landed through gitman's own
+real `[land.pre_hook]` gate — the exact gate this document is about —
+proving the fix against the live case, not a probe.
+
+**Hypothesis confirmed first, then built.** Before writing any code, this
+update checked whether `hooks.describe_changes` did a raw filesystem walk or
+derived its changed-path set from jj's own snapshot. It was the former:
+`hooks.filesystem_snapshot` walked the tree with `os.walk`, hashing every
+file's content with `hashlib.sha256`, entirely outside pyjutsu. `pyjutsu`
+(`dir()` on `Workspace`) exposes exactly one gitignore-aware primitive,
+`tracked_ignored_paths()` — paths already tracked in `@` that `.gitignore`
+would also ignore — which does not help here, since the hook's writes are
+new, untracked paths, not already-tracked ones. What does help, and is
+already used elsewhere in this exact codebase (`version.py`'s
+`bump_change_on_lane`: `session.ws.snapshot()` then `session.ws.diff(...)`
+for `_changed_paths`), is jj's own snapshot: a probe in `/tmp` (`Workspace.init`
+→ write a `.gitignore` → write a tracked file and two gitignored ones →
+`ws.snapshot()` twice around the writes → `ws.diff(before, after)`) showed
+the gitignored paths never appeared in the diff at all — jj's snapshot never
+auto-tracked them, so there was nothing to filter. A second probe confirmed
+a nested `--workspace` lane directory (`.worktrees/<lane>/`) is excluded the
+same way, structurally, even with no `.gitignore` entry for it — jj already
+treats a registered secondary workspace's own root as outside the parent
+workspace's tree. This is the mechanism recommended as "almost certainly the
+cleanest implementation of (b)" below, confirmed by measurement rather than
+assumed.
+
+**Mechanism:** `hooks.snapshot_commit(ws)` calls `ws.snapshot()` and returns
+`ws.working_copy().commit_id`; `hooks.tracked_changed_paths(ws, before,
+after)` returns the sorted set of `change.path` from `ws.diff(before,
+after).files`. `do_land`'s pre- and post-hook call sites snapshot once
+before the hook runs and once after, then pass the diff's path list into the
+unchanged `describe_changes` classifier (`allowed_paths` logic untouched).
+No raw filesystem walk, no gitignore-parsing code, no new dependency — the
+hard rule against a new ignore-matching surface is satisfied by not needing
+one.
+
+**The safety property.** A hook that rewrites a tracked, non-ignored path
+still blocks: jj's diff reports a tracked path's content change regardless
+of `.gitignore` (ignoring only governs whether a *new* path is auto-tracked
+in the first place). `test_pre_land_still_blocks_tracked_file_rewrite` and
+`test_post_land_still_reports_tracked_file_rewrite`
+(`tests/test_land_hooks.py`) pin this directly — the regression guard for
+the exact property (c)/(d) were rejected above for giving up.
+
+**The thin-`.gitignore` caveat.** Decision: `allowed_paths` stays — it is
+now a narrow, explicit net for a path a repo's `.gitignore` does not cover
+(unchanged in behavior: it still only selects which of the two refusal
+messages names a blocked path, never rescues one; that MISLEADING property
+from Part 1 is untouched, by design — fixing it is option (c)/(d) territory,
+not this one). The weaker-protection risk is made visible, not silent: a new
+`gitman doctor` check, `land-hook-ignore`, fires whenever a land hook is
+configured. With a `.gitignore` present, it reports OK and names the trust
+("a hook write matching this repo's `.gitignore` will not block the land").
+With no `.gitignore` at all, it WARNs that nothing is skipped yet, so the
+owner sees the mechanism's assumption before it can quietly change (the
+moment someone adds a `.gitignore`, protection narrows, with no code change
+to notice). This is the cheapest version of the audit's own Part 3
+precedent ("a configured gate is believed rather than verified") applied to
+this one gap, not the full self-test doctor envisioned in Part 3 below —
+that remains unbuilt and is still open.
+
+**Gitman's own `gitman.toml`.** `[land.pre_hook].allowed_paths` is reduced
+from `[".pytest_cache/*", "*__pycache__/*", ".coverage*", ".venv/*",
+".devenv/*"]` to nothing (the field's default, `[]`) — every one of those
+five entries was already a path this repo's own `.gitignore` covers, so
+option (b) makes the allowlist redundant for the case that motivated it.
+Proven by landing this very change through that gate. The option (e)
+wrapper (`env PYTEST_ADDOPTS=-p no:cacheprovider PYTHONDONTWRITEBYTECODE=1`)
+stays, for the reason the audit names separately from path gating: a stale
+`.pytest_cache` can still make pytest itself misbehave inside the hook run
+(the `lastfailed`-referencing-deleted-tests mechanism traced in Part 2),
+independent of whether the write would have been seen by the gate.
+
+**One correction to the option table above.** Option (b)'s row says it
+"[r]equires gitman to parse `.gitignore` (a new dependency surface, or a
+call into pyjutsu/git for ignore-matching)". That framing turned out to be
+slightly off: no ignore-matching call was needed at all, from pyjutsu or
+anywhere else. The snapshot-diff design sidesteps the question entirely —
+gitman never asks "is this path ignored"; it only ever asks jj what changed
+between two commits, and jj's own auto-track step is where `.gitignore`
+already gets consulted, for a reason gitman does not need to duplicate.
+
 ## Part 3 — the mechanism: a gate that proves itself
 
 The shared cause, stated once: **a configured gate is believed rather than
