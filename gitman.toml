@@ -49,7 +49,14 @@ on_fail = "block"
 # allowed_paths stays as a belt-and-braces net, not the primary mechanism. The long-term
 # gitman-side fix is to skip gitignored paths in the hook's generated-path check (project 64,
 # option (b)), which generalises to every build tool a consuming repo's verify step may use.
+#
+# `.venv/*` is here for a measured reason, and it is the case that proves option (b) is needed.
+# A `gitman version bump` lane changes the project version, so the gated `pytest` run re-syncs
+# the editable install and rewrites `.venv/**/gitman-<old>.dist-info` and `<new>.dist-info`.
+# That blocked the 0.11.0 release land. Enumerating one more tool's artifacts fixes this
+# instance only: every entry in this list is a path git already ignores, which is precisely
+# why the check should consult gitignore instead of an allowlist.
 [land.pre_hook]
 command = ["env", "PYTEST_ADDOPTS=-p no:cacheprovider", "PYTHONDONTWRITEBYTECODE=1", "pytest", "-q"]
 timeout_seconds = 600.0
-allowed_paths = [".pytest_cache/*", "*__pycache__/*", ".coverage*"]
+allowed_paths = [".pytest_cache/*", "*__pycache__/*", ".coverage*", ".venv/*", ".devenv/*"]
