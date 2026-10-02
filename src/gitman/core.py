@@ -90,6 +90,12 @@ def map_pyjutsu_error(exc: PyjutsuError) -> GitmanError:
     if isinstance(exc, ConflictError):
         return GitmanError(f"conflict: {exc}", exit_code=1)
     if isinstance(exc, GitError):
+        # Formalised contract (concept §7, project 55 §7.2): transport/DNS/auth/timeout
+        # failures are infra (exit 2); every other GitError is a genuine VC decision (exit 1).
+        # A release bus relies on this split to decide retry vs stop. KNOWN FRAGILITY: this is a
+        # substring match on the exception message, not on exception type or an error code. It
+        # breaks silently the day pyjutsu or libgit2 rewords one of these four strings. The
+        # follow-up (classify by exception type/code instead) is tracked but not built.
         msg = str(exc).lower()
         if any(kw in msg for kw in ("connection refused", "could not resolve", "authentication", "timed out")):
             return GitmanError(f"git operation failed (network/auth): {exc}", exit_code=2)

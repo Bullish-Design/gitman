@@ -242,6 +242,18 @@ They forward every option and exit code and name the replacement in the report's
 blocked / off-canonical) · `2` infra/config (no remote, auth, jj/git missing, outside
 devenv, no version source) · `3` invalid usage.
 
+**The infra/VC split is a contract, not an accident (project 30 phase 3, formalised in project
+55 §7.2).** `map_pyjutsu_error` (`src/gitman/core.py`) routes a `GitError` by its message: a
+transport, DNS, authentication, or timeout failure is exit `2` (infra — retry or fix access, the
+repo's own state did not cause it); every other `GitError` (a rejected push, a failed ref export)
+is exit `1` (a VC decision for the operator). A release bus can rely on this distinction to choose
+retry-the-transport vs stop-and-ask. Pinned by `tests/test_phase3_hardening.py`
+(`test_transport_git_error_maps_to_exit_2`, `test_non_transport_git_error_maps_to_exit_1`). **Known
+fragility, recorded rather than fixed:** the routing is a substring match on the exception
+message, so it breaks silently the moment pyjutsu or libgit2 rewords one of the four keywords.
+Classifying by exception type or an error code instead would be sturdier; that is the obvious
+follow-up, not yet built.
+
 **Fractal lanes (recursive task-decomposition), Phase 2 shipped:** the whole model *makes the
 2-level (trunk + lanes) tree n-level by replacing the constant "trunk" with "this node's parent".* A
 lane name is a `+`-path (`T`, `T+api`, `T+api+handler`) and its **base is its name-parent** — a pure
@@ -876,3 +888,11 @@ gate, and honest `land`/`sync` reports):**
   base's side, at the lane's own commit id, with the lane's work simply absent). Folded into this
   project rather than filed separately, because materializing more conflicts (D1-a) increases how
   often a conflicted lane exists to publish.
+
+**Resolved during implementation (project 55 §7.2 — the transport/VC exit-code split):** the owner
+signed off on formalising the keyword-based split that already shipped in project 30 phase 3,
+rather than rebuilding it on exception type or an error code. §7 above states the contract; the
+fragility of a substring match on the exception message is recorded there and at the code site
+(`src/gitman/core.py`, `map_pyjutsu_error`) as a named, open follow-up — not fixed in this pass,
+because reclassifying by exception type/code is a larger, riskier change the owner has not asked
+for.

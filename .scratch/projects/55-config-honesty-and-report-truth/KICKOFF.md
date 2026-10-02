@@ -343,7 +343,9 @@ own extra remedy away.
 
 Landed on trunk `main` in `12877c241` (lane `55-s71-foreign-path-text`).
 
-**7.2 Project 30 S9e — formalise, document and sign off the existing partial exit-code split.**
+**7.2 Project 30 S9e — formalise, document and sign off the existing partial exit-code split.
+SETTLED — formalised, documented, and test-pinned; no behavior changed.**
+
 **Correction to this section's original premise:** the split is not entirely unbuilt. Reading
 `src/gitman/core.py:90-96` directly shows a keyword heuristic already maps `GitError` to exit 2
 when the message contains "connection refused", "could not resolve", "authentication", or "timed
@@ -351,11 +353,19 @@ out", and to exit 1 (alongside genuine VC decisions) otherwise. `gitman log -S` 
 commit `6a448c5` (project 30 phase 3, S8-S9), which predates project 55 — this section's claim that
 transport/auth failures "currently map to exit 1 alongside genuine VC decisions" with no split was
 wrong; a partial, keyword-based split has existed since before this project started. The open
-decision is therefore not "build the split" but **formalise, document, and sign off the existing
-partial split**: confirm the keyword list is complete and correctly chosen, document it in the
-concept doc as an intentional contract rather than an implementation detail a reader has to find by
-grepping, and decide whether it needs broadening (e.g. structured error data instead of a
-substring match on the exception message) now that project 54's release-bus work is the friction
-signal this deferred item was waiting for. This still **changes a documented contract**, so it
-still needs owner sign-off rather than a quiet fix — this correction does not authorize
-implementing anything.
+decision was therefore not "build the split" but **formalise, document, and sign off the existing
+partial split**.
+
+**Done.** The contract is now documented in `docs/GITMAN_CONCEPT.md`'s exit-code section (§7) as
+an intentional behavior a release bus can rely on, not an implementation detail a reader has to
+find by grepping. It is test-pinned at `tests/test_phase3_hardening.py`
+(`test_transport_git_error_maps_to_exit_2`, `test_non_transport_git_error_maps_to_exit_1`) — both
+tests already existed and already covered all four keywords plus two ordinary-rejection messages,
+so no new test was needed; the gap was documentation, not coverage. No input's mapping changed.
+
+**Named, not fixed: the substring match is fragile.** Matching on message text breaks silently the
+moment pyjutsu or libgit2 rewords one of the four keywords. The code site
+(`src/gitman/core.py`, `map_pyjutsu_error`) now carries a comment naming this, and concept §7
+records it as the obvious follow-up: classify by exception type or an error code instead of a
+message substring. That reclassification is a larger, riskier change and was not built here — the
+owner has not asked for it.
