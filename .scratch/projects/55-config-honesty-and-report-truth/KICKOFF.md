@@ -2,8 +2,9 @@
 
 **Filed:** 2026-09-30 · **Base:** trunk `b4fd6eb` · gitman 0.10.3 · pyjutsu 0.22.0 (jj-lib 0.44.0)
 **Baseline verified today:** `ruff check src tests` clean · **521 passed in 25.93 s**
-**Status:** READY TO BUILD — four decided stages plus one text fix. No design question is open
-inside the scope below. Everything that needs an owner decision is in §7 and is **out of scope**.
+**Status:** LANDED and pushed. S1 + S5a + S5b = `fcbde211f`; S2 = `6e797c1b6`; S3 = `2158e294a`;
+S4 = `6d7adb8bb`. Verified baseline: `ruff` clean · **586 passed** (up from the 521 recorded in
+§0). The §7 decisions are still open.
 
 **Sources:** `.scratch/projects/54-phase-a-release-bus-findings/issue.md` (A and B) ·
 `.scratch/projects/52-project-51-followups/ISSUE.md` (items 1, 2, 4) ·
@@ -316,10 +317,22 @@ saving" alongside parking covers **every** foreign write, not just `devenv.lock`
 
 That text is duplicated across four sites — `src/gitman/render.py:165-170`,
 `src/gitman/core.py:501`, `:560`, `:1206` — so either route needs one shared helper first.
+**Confirmed:** `grep -rn "parked/other" src/` counts four occurrences — `render.py` x1,
+`core.py` x3 — matching the claim above.
 
-**7.2 Project 30 S9e — split the exit-code contract.** Transport and auth failures (`GitError` from
-push/fetch) currently map to exit `1` alongside genuine VC decisions
-(`src/gitman/core.py:91`). A release bus wants to distinguish "CI infrastructure broke" (exit 2)
-from "gitman needs a decision" (exit 1). Project 54's release-bus work is the friction signal this
-deferred item was waiting for, but it **changes a documented contract**, so it needs sign-off and a
-concept-doc update rather than a quiet fix.
+**7.2 Project 30 S9e — formalise, document and sign off the existing partial exit-code split.**
+**Correction to this section's original premise:** the split is not entirely unbuilt. Reading
+`src/gitman/core.py:90-96` directly shows a keyword heuristic already maps `GitError` to exit 2
+when the message contains "connection refused", "could not resolve", "authentication", or "timed
+out", and to exit 1 (alongside genuine VC decisions) otherwise. `gitman log -S` dates this code to
+commit `6a448c5` (project 30 phase 3, S8-S9), which predates project 55 — this section's claim that
+transport/auth failures "currently map to exit 1 alongside genuine VC decisions" with no split was
+wrong; a partial, keyword-based split has existed since before this project started. The open
+decision is therefore not "build the split" but **formalise, document, and sign off the existing
+partial split**: confirm the keyword list is complete and correctly chosen, document it in the
+concept doc as an intentional contract rather than an implementation detail a reader has to find by
+grepping, and decide whether it needs broadening (e.g. structured error data instead of a
+substring match on the exception message) now that project 54's release-bus work is the friction
+signal this deferred item was waiting for. This still **changes a documented contract**, so it
+still needs owner sign-off rather than a quiet fix — this correction does not authorize
+implementing anything.

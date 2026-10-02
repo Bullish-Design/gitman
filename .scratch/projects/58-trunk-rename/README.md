@@ -1,6 +1,6 @@
 # 58 — a trunk-rename capability for Gitman
 
-**Filed:** 2026-10-01 · gitman 0.10.3 · pyjutsu 0.22.0 (jj-lib 0.44.0) · **Status: DESIGN — no code changed.**
+**Filed:** 2026-10-01 · gitman 0.10.3 · pyjutsu 0.22.0 (jj-lib 0.44.0) · **Status: LANDED in `682454022`.**
 
 ## 1. The problem
 
@@ -65,6 +65,15 @@ scripted around with `git branch -m` plus a config edit. See `DESIGN.md` §1 for
   open PR — with no second confirmation beyond having run an ordinary sync. The rename verb must
   not leave the repo in this shape without an explicit operator choice. See `DESIGN.md` §3
   (question 3).
+  **Superseded at landing:** the design below answers this with an operator-chosen
+  `--retire`/`--keep-lane`/`--keep-remote` flag set. The owner descoped that set before the verb
+  shipped — see the status line above. The shipped verb always retires the old trunk's **local**
+  bookmark and never deletes a **remote** branch. Reason, from the landing commit message: a flag
+  whose selection silently destroys a remote branch on the next `gitman sync --trunk` is not worth
+  shipping. The hazard analysis above is still correct, and is exactly why the flag was dropped
+  rather than kept as a foot-gun — the shipped verb closes the hazard by construction (no path
+  leaves a surviving, trunk-identical old bookmark for `sync --trunk` to retire later) instead of
+  by an operator remembering to pick the right flag.
 - **Trunk is frozen (I1), and this respects it rather than breaking it.** I1 says runtime never
   *re-detects* trunk (`docs/GITMAN_CONCEPT.md:104`); it says nothing about a deliberate, named,
   one-shot act that re-freezes a new value and leaves an audit trail. See `DESIGN.md` §3 (question

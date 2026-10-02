@@ -1,6 +1,11 @@
 # 57 — declarative lane exclusion
 
-**Filed:** 2026-10-01 · gitman 0.10.3 · pyjutsu 0.22.0 (jj-lib 0.44.0) · **Status: DESIGN — no code changed.**
+**Filed:** 2026-10-01 · gitman 0.10.3 · pyjutsu 0.22.0 (jj-lib 0.44.0) · **Status: LANDED in `972284ac3`.**
+Steps 1-5 of `IMPLEMENTATION.md` shipped, plus the step-6 "optional" stale-pattern note. Anchors:
+`src/gitman/config.py:28` and `:202-209`; `src/gitman/lanes.py:23,28,35-39,52-56`;
+`src/gitman/state.py:821,862,938-946,1105,1131,1143-1148,1184`; `src/gitman/models.py:179,216`;
+`src/gitman/render.py:159-164`; `docs/GITMAN_CONCEPT.md:675`; `tests/test_lane_exclusion.py` (25
+tests).
 
 ## 1. The problem
 

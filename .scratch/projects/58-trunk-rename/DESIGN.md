@@ -1,5 +1,10 @@
 # Design — `gitman trunk rename`
 
+**Status: landed at `682454022`.** See `IMPLEMENTATION.md`'s Status block for the two deviations
+from this design (the `--keep-lane`/`--keep-remote` descope, and the `anomalies.py` fix §3.5
+anticipated but §3.5/§7 did not flag as a plan gap). §7 below records which open questions
+resolved and how.
+
 All line anchors below were read at trunk on 2026-10-01 (commit `25c9dc5`, "docs: add project 56
 and 57 design documents"). Re-check each one before editing; an earlier change in another lane
 shifts later line numbers. fsdantic's commit ids were re-verified directly against that repo
@@ -529,22 +534,32 @@ both flags, because the old name is published — it does not guess.
 
 ## 7. Open questions left for the owner
 
-1. **Should `--keep-lane` exist at all**, given §3.3 shows it is one `gitman sync --trunk` away
-   from the exact hazard this design exists to avoid? This design keeps it (as an explicit,
+1. **RESOLVED (owner descope, landed in `682454022`).** The owner removed `--keep-lane` entirely
+   rather than keeping it as a loudly-warned opt-out: the shipped verb always `--retire`s (deletes
+   the old trunk's local bookmark). §3.3's hazard analysis below is unchanged and is exactly why
+   the question resolved this way — the shipped verb closes the hazard by construction instead of
+   leaving an operator-chosen foot-gun in place. ~~Should `--keep-lane` exist at all~~, given §3.3
+   shows it is one `gitman sync --trunk` away from the exact hazard this design exists to avoid?
+   This design keeps it (as an explicit,
    loudly-warned opt-out) rather than forbidding it outright, on the principle "say what to do, not
    only what not to do" — but the owner may prefer to remove the option entirely and force
    `--retire` always, accepting that an operator who truly wants to keep the old name as a lane
    can always re-create it by hand (`gitman start <old-name>` from the same commit) after the fact.
-2. **The undo-checkpoint extension (§2)** is new ground for gitman — no existing intent needs
+2. **RESOLVED (accepted, landed in `682454022`).** The `config_before` sidecar shape was accepted
+   as proposed and shipped at `src/gitman/invariants.py:56,66-67,910,941` and
+   `src/gitman/core.py:3146,3542-3545`. ~~The undo-checkpoint extension (§2)~~ is new ground for
+   gitman — no existing intent needs
    `gitman undo` to restore a plain file. Confirm the `config_before` sidecar field is an acceptable
    shape before implementing, versus the alternative of accepting that `gitman trunk rename`'s
    `undo_command` is honest about a gap ("`gitman undo` reverts the bookmark change; re-run `gitman
    trunk rename <old-name> --retire` to fully reverse the config" ) rather than extending the undo
    mechanism's scope for the first time.
-3. **Should a future `gitman trunk show` (a plain read: name, commit, published state) ship
-   alongside `rename`** to justify the new `trunk_app` noun immediately, or is one subcommand under
-   a new noun acceptable on its own? Not load-bearing on `rename`'s own behaviour.
-4. **`new_name` exists on origin at the same commit, mid-fetch staleness:** the precondition table
+3. **Still open, unimplemented.** Should a future `gitman trunk show` (a plain read: name, commit,
+   published state) ship alongside `rename` to justify the new `trunk_app` noun immediately, or is
+   one subcommand under a new noun acceptable on its own? Not load-bearing on `rename`'s own
+   behaviour.
+4. **Still open, unimplemented.** `new_name` exists on origin at the same commit, mid-fetch
+   staleness: the precondition table
    (§3.5) treats "same commit" as read from the last fetch's tracking ref (no network call this
    verb makes itself, consistent with every other read-only precheck in the codebase). An operator
    who has not fetched recently could see a stale "same commit" verdict that a fresh fetch would

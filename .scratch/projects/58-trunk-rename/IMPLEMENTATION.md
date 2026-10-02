@@ -1,5 +1,37 @@
 # Implementation plan — `gitman trunk rename`
 
+## Status
+
+Built and landed in `682454022`, with two deviations from this plan.
+
+1. **Step 2/3/4 descope.** The owner dropped the `--retire`/`--keep-lane`/`--keep-remote`
+   three-flag design before implementation. `do_trunk_rename(session, new_name)` takes no
+   disposition argument (`src/gitman/core.py:3026`). `IntentResult.old_trunk_disposition` is
+   `Literal["retired"] | None`, not the three-value `Literal` this plan specifies
+   (`src/gitman/models.py:274`). The verb always deletes the old trunk's LOCAL bookmark and never
+   touches a remote branch. Step 2 items 6 and 10, Step 3's three-state CLI signal, and the
+   `--keep-lane`/`--keep-remote`/`retire=None`/`do_pull`-hazard tests in Step 8 are all moot.
+2. **Step 7 was wrong.** This plan said `anomalies.py` needs no change, because `subjects_for`
+   already includes trunk unconditionally. That was incorrect: `ALL_MUTATING` membership is a
+   plain string match, so `"trunk-rename"` had to be added there explicitly, or the trunk-tier
+   gate would silently let a rename through on a broken trunk. The implementation's own comment
+   (`src/gitman/anomalies.py:65-68`) says so: "`trunk-rename` (design 58) is ADDED — without it, a
+   trunk-tier anomaly's `blocks` set would not name it, and the one gate meant to refuse a rename
+   on a broken trunk would silently let it through (membership here is a plain string match, not
+   inferred from `subjects_for`'s trunk subject alone)." Regression test:
+   `tests/test_trunk_rename.py::test_trunk_conflicted_refuses_rename`.
+
+Two of the four `DESIGN.md` §7 open questions were resolved by the implementation: **Q1**
+(`--keep-lane` removed — see deviation 1 above) and **Q2** (the `config_before` sidecar was
+accepted and shipped at `src/gitman/invariants.py:56,66-67,910,941` and
+`src/gitman/core.py:3146,3542-3545`). **Q3 (`gitman trunk show`) and Q4 (last-fetch staleness in
+the report) remain open and unimplemented.**
+
+Superseded passages are marked inline below, so a future reader following this plan does not
+re-add the rejected flag set.
+
+---
+
 Ordered, checkable steps. Each step names the file, the anchor it builds from, and whether it is a
 **behaviour change to an existing verb** (flagged explicitly — most steps are pure additions).
 Re-read every cited line before editing; line numbers drift as earlier steps land.
@@ -54,6 +86,10 @@ currently inspect the checkpoint body) carries a `config_before` key, write
 `trunk-rename` ever populates this key, so this branch is a no-op for every other undo today.
 
 ## Step 2 — `core.py`: the intent function
+
+**[SUPERSEDED — see Status.]** The `retire`/`keep_remote` parameters below, and items 6 and 10,
+describe the three-flag design the owner dropped. The shipped `do_trunk_rename(session,
+new_name)` takes no disposition argument.
 
 **New, not a behaviour change.** Add `do_trunk_rename` near `do_remote_add`
 (`core.py:2967-2991`, project 56's own anchor for a similarly-shaped new intent) and near
@@ -130,6 +166,9 @@ additive, not a behaviour change, to every intent except `trunk-rename`.
 
 ## Step 3 — `cli.py`: the `trunk` noun
 
+**[SUPERSEDED in part — see Status.]** The three-state `--retire`/`--keep-lane` signal below was
+dropped with the rest of the flag design. The shipped CLI command takes only `new_name`.
+
 **New, not a behaviour change.** Add a `trunk_app` Typer sub-app mirroring `remote_app`
 (`cli.py:467-469`) and `workspace_app` (`cli.py:580-581`):
 
@@ -160,6 +199,10 @@ Step 2 item 6's signature note accordingly before implementing: `retire: bool | 
 
 ## Step 4 — `models.py`: the one new field
 
+**[SUPERSEDED in part — see Status.]** The three-value `Literal` below describes the dropped
+flag design. The shipped field is `old_trunk_disposition: Literal["retired"] | None = None`
+(`src/gitman/models.py:274`) — one disposition, because the verb offers no choice.
+
 **New field on `IntentResult`, not a schema change to any other model.** Add
 `old_trunk_disposition: Literal["retired", "retired-remote-kept", "kept-as-lane"] | None = None`
 next to `content` (`models.py:245-249`), following the same "intent-specific, unused by every
@@ -178,6 +221,12 @@ other verb" precedent that field already sets.
 editing the file speculatively.
 
 ## Step 7 — `anomalies.py`/`invariants.py`: no new anomaly kind, confirm existing gating
+
+**[SUPERSEDED — see Status, deviation 2.] This step's premise was wrong.** `ALL_MUTATING`
+membership is a plain string match, not inferred from `subjects_for`'s trunk subject. `"trunk-
+rename"` had to be added to `anomalies.py`'s `ALL_MUTATING` set explicitly
+(`src/gitman/anomalies.py:65-68,83`), or the trunk-tier gate would have silently let a rename
+through on a broken trunk.
 
 **Verification only, zero new registry rows.** `DESIGN.md` §3.5's off-canonical-trunk refusal
 already works through the existing `trunk-conflicted`/`trunk-diverged` rows
@@ -211,6 +260,10 @@ object does not create on disk at all):
     lanes.lane_names(sess, "main")`); `gitman.toml`'s raw text on disk contains `trunk = "main"`
     and nothing else changed (read the file before and after, diff the lines, assert only the
     `trunk` line differs).
+  - **[SUPERSEDED — see Status.] The following bullets through "the §3.3 hazard, proven
+    end-to-end" describe tests for the dropped `--keep-lane`/`--keep-remote`/`retire=None`
+    three-flag design and are moot.** The shipped verb always retires the old trunk's local
+    bookmark and never touches a remote branch, so there is no disposition choice left to test.
   - **Rename, old name published, default `--retire`:** build via `_repo_with_remote`-equivalent
     with the ORIGINAL trunk already pushed (so `<old>@origin` exists); call with `retire=True`
     (the CLI default); assert the remote branch is actually gone
@@ -233,6 +286,7 @@ object does not create on disk at all):
     docstring at line 3, before deciding) and assert the kept lane is retired and its remote branch
     is deleted — this is the regression test for the exact hazard `DESIGN.md` §3.3 traces through
     `core.py:2380-2385`/`:2650-2653`, proving the warning text is not hypothetical.
+  - **[End of superseded test bullets.]**
   - **`new_name` already a lane:** exit 3.
   - **`new_name == old_trunk`:** exit 3.
   - **`new_name` on origin at a different commit:** build a remote with a same-named branch at an
