@@ -197,6 +197,112 @@ def test_save_names_the_paths_it_did_not_write(tmp_path: Path, monkeypatch: pyte
     assert any("theirs.txt" in n and "not written by this session" in n for n in result.notes), result.notes
 
 
+# --- project 55 §7.1: the foreign-path text names the uncertainty, not another session -----
+
+
+def test_foreign_path_remedy_names_uncertainty_and_both_remedies_investigate_first():
+    """The shared helper: names the cause as uncertain (not just another session), offers
+    `investigate` before `split`, and keeps the exact `gitman split` spelling callers copy."""
+    from gitman.render import foreign_path_remedy
+
+    text = foreign_path_remedy()
+    assert "not certain" in text
+    assert "another session" in text  # named as ONE possible cause, not the fact
+    investigate_at = text.index("Investigate")
+    split_at = text.index("`gitman split --paths <theirs> --into parked/other`")
+    assert investigate_at < split_at, "investigate must be offered before parking"
+
+
+def test_foreign_path_remedy_appends_a_caller_specific_extra_remedy_last():
+    """A caller's own extra remedy (e.g. `--adopt-all`) is appended after the shared clause,
+    never dropped."""
+    from gitman.render import foreign_path_remedy
+
+    text = foreign_path_remedy("take them deliberately with `gitman start --adopt-all T`")
+    assert text.endswith("take them deliberately with `gitman start --adopt-all T`.")
+    assert "`gitman split --paths <theirs> --into parked/other`" in text
+
+
+def test_adopt_mine_refusal_still_offers_adopt_all(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Step 1's 'must not flatten' rule: the one `start` site that also offers `--adopt-all`
+    keeps offering it after the shared helper replaces its remedy text."""
+    _init(tmp_path)
+    monkeypatch.setenv("GITMAN_SESSION", "me")
+    do_start(_sess(tmp_path), "T", False)
+    (tmp_path / "mine.txt").write_text("mine\n")
+    capture_state(_sess(tmp_path))
+    (tmp_path / "theirs.txt").write_text("theirs\n")
+
+    with pytest.raises(GitmanError) as excinfo:
+        do_start(_sess(tmp_path), "extra", False, adopt_mine=True)
+    assert excinfo.value.exit_code == 1  # exit code is unchanged by the text fix
+    assert "gitman start --adopt-all extra" in str(excinfo.value)
+    assert "gitman split --paths <theirs> --into parked/other" in str(excinfo.value)
+
+
+def test_start_adopts_foreign_paths_without_raising_and_names_the_cause_as_uncertain(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The default (non-strict) `start` path still just notes a co-tenant's paths — it does not
+    raise, and its exit behaviour is unchanged by the text fix. Same reproducing shape as
+    `test_start_reports_what_it_adopted_and_what_it_left`: a post-land unbookmarked `@` with a
+    foreign path, which is the only way `start` reaches its "adopted" + foreign branch."""
+    _init(tmp_path)
+    monkeypatch.setenv("GITMAN_SESSION", "me")
+    do_start(_sess(tmp_path), "T", False)
+    (tmp_path / "a.txt").write_text("aaa\n")
+    do_save(_sess(tmp_path), "add a")
+    do_start(_sess(tmp_path), "T+api", False)
+    (tmp_path / "b.txt").write_text("bbb\n")
+    do_save(_sess(tmp_path), "add b")
+    do_land(_sess(tmp_path), ["T+api"])
+    (tmp_path / "mine.txt").write_text("mine\n")
+    capture_state(_sess(tmp_path))
+    (tmp_path / "theirs.txt").write_text("theirs\n")
+
+    result = do_start(_sess(tmp_path), "T+other", False)
+    assert result.outcome == "STARTED"  # no exception, no exit-code change
+    assert any("not certain" in n and "theirs.txt" in n for n in result.notes), result.notes
+    assert any("Another session may be working here" not in n for n in result.notes)
+
+
+def test_describe_notes_foreign_paths_without_raising_and_names_the_cause_as_uncertain(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """`describe`'s foreign-path note is informational only — it never raises, before or after
+    this fix."""
+    _init(tmp_path)
+    monkeypatch.setenv("GITMAN_SESSION", "me")
+    do_start(_sess(tmp_path), "T", False)
+    (tmp_path / "mine.txt").write_text("mine\n")
+    capture_state(_sess(tmp_path))
+    (tmp_path / "theirs.txt").write_text("theirs\n")
+
+    result = do_save(_sess(tmp_path), "my work")
+    assert result.outcome == "DESCRIBED"  # no exception, no exit-code change
+    assert any("not certain" in n and "theirs.txt" in n for n in result.notes), result.notes
+    assert any("jj already snapshotted" in n for n in result.notes)
+
+
+def test_render_status_with_no_foreign_paths_is_unaffected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """The no-op guard: a repo that never trips the foreign-path warning renders exactly as it
+    did before this fix — the rewrite touches only the `if state.foreign_paths:` block."""
+    _init(tmp_path)
+    monkeypatch.setenv("GITMAN_SESSION", "me")
+    do_start(_sess(tmp_path), "T", False)
+    (tmp_path / "a.txt").write_text("a\n")
+    do_save(_sess(tmp_path), "add a")
+
+    state = capture_state(_sess(tmp_path))
+    assert state.foreign_paths == []
+    text = render_status(state)
+    assert "!!" not in text
+    assert "not written by this session" not in text
+    assert "not certain" not in text
+    assert text.startswith(f"Gitman status — CANONICAL · {len(state.lanes)} lane")
+    assert f"trunk: {state.trunk.name} @ {state.trunk.commit_id}" in text
+
+
 # --- issue 43 D4: the post-land fractal shape ------------------------------------------
 
 

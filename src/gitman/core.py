@@ -431,6 +431,7 @@ def do_start(
     from gitman.lanes import current_lane, ensure_unique, lane_has_content
     from gitman.models import IntentResult
     from gitman.plan import CreateBookmark, New, Plan, Rebase
+    from gitman.render import foreign_path_remedy
     from gitman.state import _merge_tree_conflicts
 
     if adopt_all and adopt_mine:
@@ -497,10 +498,10 @@ def do_start(
         dirty, foreign = session.path_provenance(session.view())
         if foreign and adopt_mine and not adopt_all:
             shown = ", ".join(foreign[:8]) + (" …" if len(foreign) > 8 else "")
+            extra = f"take them deliberately with `gitman start --adopt-all {name}`"
             raise GitmanError(
                 f"@ holds {len(foreign)} path(s) this session ({session.identity}) did not write: "
-                f"{shown} — carve theirs out first (`gitman split --paths <theirs> --into "
-                f"parked/other`), or take them deliberately with `gitman start --adopt-all {name}`.",
+                f"{shown}. {foreign_path_remedy(extra)}",
                 exit_code=1,
             )
         adopted = _adoptable_work(session, base_ref)
@@ -606,8 +607,7 @@ def do_start(
                 shown = ", ".join(foreign[:8]) + (" …" if len(foreign) > 8 else "")
                 notes.append(
                     f"{len(foreign)} path(s) in @ were not written by this session "
-                    f"({session.identity}): {shown} — another session may be working here; "
-                    f"`gitman split --paths <theirs> --into parked/other` carves them out."
+                    f"({session.identity}): {shown}. {foreign_path_remedy()}"
                 )
                 messages.append(f"{len(dirty) - len(foreign)} path(s) this session, {len(foreign)} not written by it.")
         prepared["messages"] = messages
@@ -1208,6 +1208,7 @@ def do_describe(session: Session, message: str | None, *, dry_run: bool = False)
     from gitman.lanes import require_current_lane
     from gitman.models import IntentResult
     from gitman.plan import Describe, Plan
+    from gitman.render import foreign_path_remedy
 
     trunk = require_trunk(session.config)
     if message is None:
@@ -1252,8 +1253,8 @@ def do_describe(session: Session, message: str | None, *, dry_run: bool = False)
         shown = ", ".join(foreign_paths[:8]) + (" …" if len(foreign_paths) > 8 else "")
         notes.append(
             f"this change also holds {len(foreign_paths)} path(s) not written by this session "
-            f"({session.identity}): {shown} — `gitman split --paths <theirs> --into parked/other` "
-            f"carves them out; `describe` cannot (jj already snapshotted @)."
+            f"({session.identity}): {shown}. {foreign_path_remedy()} `describe` cannot carve "
+            f"them out itself — jj already snapshotted @."
         )
     return IntentResult(
         intent="describe",

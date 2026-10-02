@@ -303,22 +303,32 @@ Do not start these. Each has its own reason.
 Both of these need the owner's call. They are recorded here so the next session does not
 re-derive them.
 
-**7.1 Project 53 §7 — devenv-aware foreign-lock detection.** As filed, the issue asks `status` to
-compare a working-copy `devenv.lock`'s input closure against the repo's own `devenv.yaml` and report
-a foreign-looking lock. **There is a case against building that as specified:** it couples a
-version-control tool to a Nix tool, and gitman's base package is deliberately lean.
+**7.1 Project 53 §7 — devenv-aware foreign-lock detection. SHIPPED — the text route, not the
+devenv route (lane `55-s71-foreign-path-text`).**
 
-The alternative reaches the same goal with no devenv coupling: fix what the existing foreign-path
-warning **asserts**. Today it states "Another session may be working here" as fact, when all gitman
-knows is "this session did not write it," and it offers parking (`gitman split --paths ... --into
-parked/other`) as the only remedy — which, as project 53 §4 shows, preserved a corrupted lock in a
-lane for six days. Generalising the text to name the uncertainty and to offer "investigate before
-saving" alongside parking covers **every** foreign write, not just `devenv.lock`.
+As filed, the issue asks `status` to compare a working-copy `devenv.lock`'s input closure against
+the repo's own `devenv.yaml` and report a foreign-looking lock. **That route was deliberately NOT
+built:** it would couple a version-control tool to a Nix tool, and `AGENTS.md` requires the base
+package to stay lean (pydantic + typer only).
 
-That text is duplicated across four sites — `src/gitman/render.py:165-170`,
-`src/gitman/core.py:501`, `:560`, `:1206` — so either route needs one shared helper first.
-**Confirmed:** `grep -rn "parked/other" src/` counts four occurrences — `render.py` x1,
-`core.py` x3 — matching the claim above.
+**Built instead:** the existing foreign-path warning asserted "Another session may be working
+here" as fact, when all gitman actually knows is "this session did not write it," and it offered
+parking (`gitman split --paths ... --into parked/other`) as the only remedy — which, as project 53
+§4 shows, preserved a corrupted lock in a lane for six days. The fix generalises the text: it
+names the cause as uncertain (another session is one possible cause, not the stated one) and
+offers "investigate before saving" first, parking second. This covers **every** foreign write, not
+just `devenv.lock`, with no new dependency.
+
+The text was duplicated across four sites — `render.py` x1, `core.py` x3 (confirmed by
+`grep -rn "parked/other" src/`) — so the fix extracted one shared helper, `foreign_path_remedy()`
+in `src/gitman/render.py`. `core.py`'s three call sites import it lazily (matching that file's
+existing per-function lazy-import style); no circular import results, since `core.py` carries no
+top-level `gitman` imports and `render.py` does not import `core.py` even indirectly at the point
+the lazy import runs. The one `core.py` site that also offers `gitman start --adopt-all` keeps
+that option, passed through the helper's `extra` parameter — the helper never flattens a site's
+own extra remedy away.
+
+Landed on trunk `main` (lane `55-s71-foreign-path-text`).
 
 **7.2 Project 30 S9e — formalise, document and sign off the existing partial exit-code split.**
 **Correction to this section's original premise:** the split is not entirely unbuilt. Reading

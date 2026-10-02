@@ -160,6 +160,26 @@ def _lane_line(lane: Lane, current: str | None) -> str:
     return f"{marker} {indent}{lane.name:<20} {lane.state.value:<10} {counts}{tail}"
 
 
+def foreign_path_remedy(extra: str | None = None) -> str:
+    """The shared remedy sentence for a path `@` holds that this session did not write.
+
+    Gitman knows only that this session did not write the path. It does not know why: another
+    session is one possible cause, not the only one — a build step, a `nix` evaluation, or the
+    operator's own editor in another terminal leave the same mark. Name that plainly, then offer
+    two remedies, investigate first: looking at the path is cheaper than carving it into a lane
+    (project 53 §4 records six days of a corrupted file sitting parked on that wrong advice).
+
+    `extra` appends one more remedy that is specific to the caller's own site, such as
+    `gitman start --adopt-all`. The shared clause never flattens it away.
+    """
+    text = (
+        "the cause is not certain: it could be another session, a build step, or an edit "
+        "outside gitman. Investigate before saving, or `gitman split --paths <theirs> --into "
+        "parked/other` carves it out"
+    )
+    return f"{text}, or {extra}." if extra else f"{text}."
+
+
 def render_status(state: RepoState) -> str:
     if not state.canonical:
         by_kind = {a.kind for a in state.anomalies}
@@ -203,8 +223,8 @@ def render_status(state: RepoState) -> str:
         lines.extend(f"     {path}" for path in shown)
         if len(state.foreign_paths) > len(shown):
             lines.append(f"     … and {len(state.foreign_paths) - len(shown)} more")
-        lines.append("   Another session may be working here. `gitman describe` describes ALL of it —")
-        lines.append("   carve theirs out first: `gitman split --paths <theirs> --into parked/other`.")
+        lines.append("   `gitman describe` would sweep in all of it.")
+        lines.append(f"   {foreign_path_remedy()}")
     if not state.lanes:
         lines.append("No lanes yet — `gitman start <name>` to begin.")
 
