@@ -287,14 +287,24 @@ def subtask(
 
 @app.command()
 def switch(
-    name: Annotated[str, typer.Argument(help="The existing lane to resume.")],
+    name: Annotated[str | None, typer.Argument(help="The existing lane to resume.")] = None,
+    trunk: Annotated[
+        bool,
+        typer.Option("--trunk", help="Repark a stranded, unnamed @ onto trunk (keeps uncommitted work)."),
+    ] = False,
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Report the plan without mutating.")] = False,
 ) -> None:
-    """Move @ onto an existing lane's change to resume it."""
+    """Move @ onto an existing lane's change to resume it, or `--trunk` to repark a stranded @.
+
+    `--trunk` is for an `@` left on a trunk ancestor with no lane bookmark — the shape a sibling
+    workspace's `land` leaves behind. It rebases, so uncommitted work comes along; it refuses an
+    `@` that carries a lane (that is `gitman sync`).
+    """
     from gitman.core import do_switch
     from gitman.lanes import normalise_lane_name
 
-    _finish_intent(do_switch(_session(), normalise_lane_name(name), dry_run=dry_run))
+    target = normalise_lane_name(name) if name is not None else None
+    _finish_intent(do_switch(_session(), target, trunk_=trunk, dry_run=dry_run))
 
 
 @app.command()

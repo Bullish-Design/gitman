@@ -810,7 +810,7 @@ def do_subtask(session: Session, name: str, workspace: bool = False):
     return result.model_copy(update={"intent": "start"})
 
 
-def do_switch(session: Session, name: str, *, dry_run: bool = False):
+def do_switch(session: Session, name: str | None = None, *, trunk_: bool = False, dry_run: bool = False):
     """Move `@` onto an existing lane's change so a stranded/parked lane can be resumed.
 
     The only lane-*navigation* verb: `start` creates, `land`/`abandon` end, `sync` rebases — but
@@ -818,11 +818,23 @@ def do_switch(session: Session, name: str, *, dry_run: bool = False):
     moves it back. One `tx.edit(<lane>)` does that; the rest is guard rails. Navigation only —
     never touches trunk, so the canonical_tx trunk guard passes unmodified (no exemption).
     Migrated onto the `Plan` executor (project 46 S7); `dry_run` returns the `Plan` unexecuted.
+
+    `--trunk` (project 52 item 3) is the other half of the same navigation gap: `@` left on a trunk
+    ANCESTOR, carrying no lane bookmark. No lane name can name that destination, so `switch <lane>`
+    cannot reach it and `sync` declines (it rebases lanes, and this `@` is not one). See
+    `_switch_to_trunk`.
     """
     from gitman.invariants import build_plan, run_plan, subjects_for
     from gitman.lanes import current_lane, lane_names
     from gitman.models import IntentResult
     from gitman.plan import Edit, Plan
+
+    if trunk_ and name is not None:
+        raise GitmanError("`--trunk` takes no lane name — it reparks `@` onto trunk.", exit_code=3)
+    if not trunk_ and name is None:
+        raise GitmanError("name a lane to switch to, or pass `--trunk` to repark `@` onto trunk.", exit_code=3)
+    if trunk_:
+        return _switch_to_trunk(session, dry_run=dry_run)
 
     trunk = require_trunk(session.config)
     if name == trunk:
@@ -881,6 +893,108 @@ def do_switch(session: Session, name: str, *, dry_run: bool = False):
         outcome="SWITCHED",
         lane=name,
         messages=[f"switched @ onto lane '{name}'."],
+        undo_command="gitman undo",
+        state=canon.state,
+    )
+
+
+def _switch_to_trunk(session: Session, *, dry_run: bool = False):
+    """`gitman switch --trunk`: repark an unnamed `@` from a trunk ancestor onto trunk's tip.
+
+    The gap this closes (project 52 item 3, deferred by project 55 §6). When a sibling workspace
+    folds a lane, or trunk advances while this workspace sits idle, the workspace's own `@` keeps
+    its old parent. Nothing moved it, and nothing reports it: `status` reads BOOKMARKS (all correct),
+    `doctor` reads the toolchain, and `repair` finds no stray and no ref drift — all three say
+    healthy while the on-disk tree is silently behind trunk. Measured in gitman's own repo: a
+    checkout missing two landed features while every check passed.
+
+    No existing verb reaches this state. `switch <lane>` needs a lane name and this `@` has no
+    bookmark. `sync` rebases lanes. `sync --trunk` short-circuits on `local == origin` before its
+    workspace refresh. So this is a new destination, not a new mechanism.
+
+    REBASE, never `tx.new`: `@` may hold uncommitted work (in the measured case, another session's
+    in-progress file). `tx.new(trunk)` would leave that content behind on the old commit and reset
+    the tree, deleting it from disk. A rebase carries it forward, which is the whole point — this
+    verb moves the operator's position, never their content. Conflicts are pre-checked textually
+    (the `_merge_tree_conflicts` guard `do_start`'s adopt path already uses) so the refusal arrives
+    before any rewrite, not as a conflicted `@` afterwards.
+
+    Scope is deliberately narrow: an `@` that carries a lane bookmark is NOT this shape, and is
+    refused. Rebasing it would silently move the lane too — that is `gitman sync`'s job, with
+    `sync`'s own base resolution and conflict reporting.
+    """
+    from gitman.invariants import build_plan, run_plan, subjects_for
+    from gitman.lanes import current_lane
+    from gitman.models import IntentResult
+    from gitman.plan import Plan, Rebase
+    from gitman.state import _merge_tree_conflicts, capture_state
+
+    trunk = require_trunk(session.config)
+    cur = current_lane(session, trunk)
+    if cur is not None:
+        raise GitmanError(
+            f"@ is on lane '{cur}', not stranded — `gitman sync` rebases a lane onto its base. "
+            "`switch --trunk` only reparks an `@` that carries no lane bookmark.",
+            exit_code=3,
+        )
+
+    # A dry run must not publish an op, so it reads the recorded head; a real run snapshots first so
+    # loose on-disk edits ride along with the rebase instead of being missed by it.
+    view = session.view() if dry_run else session.fresh_view()
+    wc = view.working_copy()
+    trunk_id = view.resolve(trunk).commit_id
+    if wc.parent_ids == [trunk_id]:
+        return IntentResult(
+            intent="switch",
+            outcome="NOOP",
+            messages=[f"@ is already parked on trunk '{trunk}' ({trunk_id[:12]}) — nothing to do."],
+            state=capture_state(session),
+        )
+    if not view.is_ancestor(wc.parent_ids[0] if wc.parent_ids else wc.commit_id, trunk_id):
+        raise GitmanError(
+            f"@'s parent is not an ancestor of trunk '{trunk}' — this is not a stranded working "
+            "copy, and reparking it would move work off its own base. Inspect it with "
+            "`gitman status` and name what it belongs to (`gitman start <name>`) first.",
+            exit_code=1,
+        )
+    if _merge_tree_conflicts(view, wc.commit_id, trunk_id) is not False:
+        raise GitmanError(
+            f"@ ({wc.commit_id[:12]}) holds uncommitted work that conflicts with trunk '{trunk}' "
+            f"({trunk_id[:12]}) — name it first (`gitman start <name>`) and resolve it as a lane, "
+            "so the conflict is recorded somewhere it can be worked on.",
+            exit_code=1,
+        )
+
+    old_parent = wc.parent_ids[0][:12] if wc.parent_ids else "(root)"
+
+    def build(state) -> Plan:
+        return Plan(
+            intent="switch",
+            subjects=sorted(subjects_for("switch", state), key=lambda s: (s.kind, s.name)),
+            steps=[
+                Rebase(
+                    wc.commit_id,
+                    onto=trunk,
+                    mode="branch",
+                    conflict_reason=(
+                        f"reparking @ onto {trunk} conflicts — name the work first "
+                        "(`gitman start <name>`), then resolve it as a lane."
+                    ),
+                )
+            ],
+        )
+
+    if dry_run:
+        return build_plan(session, build)
+
+    canon = run_plan(session, "switch", build)
+    return IntentResult(
+        intent="switch",
+        outcome="SWITCHED",
+        messages=[
+            f"reparked @ from {old_parent} onto trunk '{trunk}' ({trunk_id[:12]}); "
+            "uncommitted work came with it."
+        ],
         undo_command="gitman undo",
         state=canon.state,
     )

@@ -284,12 +284,25 @@ merge conflict appears, or the change reaches beyond the stage's scope.
 
 Do not start these. Each has its own reason.
 
-- **52 items 3 and 5** — the stranded working copy (`@` parked on a trunk ancestor) and the
-  refusal-classification helper. These are **one project**, not two: item 5's sharpest instance is
-  item 3's refusal, so building them apart builds the helper twice. Item 3 needs a `working_copy`
-  block on `RepoState`, a note-only `wc-stranded` anomaly kind, and `gitman switch --trunk`. It
-  wants owner design review first, and project 52 itself defers it pending real use of project 51's
-  fixes.
+- **52 item 3 — NO LONGER DEFERRED, the actuator shipped.** The friction signal arrived: gitman's
+  own repo entered this shape on 2026-10-01. Four lanes landed from sibling workspaces, and the
+  `default` workspace's `@` kept its old parent — a checkout missing two landed features while
+  `status` said CANONICAL, `doctor` said HEALTHY and `repair` said CLEAN. The condition was fully
+  silent, and `sync --trunk --all` could not cure it either: it short-circuits on
+  `local main == origin/main` before reaching its stale-workspace refresh.
+
+  Shipped: **`gitman switch --trunk`** (`core._switch_to_trunk`) reparks an unnamed `@` from a trunk
+  ancestor onto trunk's tip, by REBASE — never `tx.new`, which would leave uncommitted work on the
+  old commit and delete it from disk. Plus a `status` **note** naming the condition and the verb
+  (`state.py`, beside the excluded-bookmark note). Tests: `tests/test_switch_trunk.py` (13).
+
+  Deliberately NOT built: the `working_copy` block on `RepoState` and the `wc-stranded` anomaly
+  KIND. A note is the honest shape — every bookmark is correct and nothing is at risk, so the repo
+  really is canonical; the operator is just standing somewhere old. Promoting it to an anomaly would
+  flip healthy repos to OFF-CANONICAL for a condition one verb clears. A structured `working_copy`
+  block is still worth having for `--json` consumers, and remains open.
+- **52 item 5** — the refusal-classification helper. Still deferred, and now independent of item 3
+  rather than bundled with it.
 - **Project 30's S9c / S9d / S9f / S9g and backlog D3** — opportunistic hardening, one separate
   lane, no urgency.
 - **Project 53 (b) and (c)** — shipping `gitman` on PATH through the developer profile is

@@ -1200,6 +1200,21 @@ def capture_state(session: Session, *, snapshot: bool = True) -> RepoState:
             f"@ is on '{current_lane}', which [lanes] exclude marks as not a gitman lane — "
             f"`gitman switch <a real lane>`."
         )
+    # Project 52 item 3: `@` left on a trunk ANCESTOR with no lane bookmark — the shape a sibling
+    # workspace's `land` leaves behind. Until this note existed the condition was fully silent:
+    # every bookmark is correct, so `status` said CANONICAL, `doctor` HEALTHY and `repair` CLEAN
+    # while this workspace's on-disk tree was behind trunk. A note, not an anomaly: nothing is
+    # broken or at risk, and the repo is genuinely canonical — the operator is just standing in an
+    # old place and cannot see it. `trunk_commit` is this capture's own resolved trunk.
+    if current_lane is None and trunk_name not in (wc.bookmarks or []):
+        wc_parent = wc.parent_ids[0] if wc.parent_ids else None
+        trunk_head = trunk_commit.commit_id
+        if wc_parent is not None and wc_parent != trunk_head and view.is_ancestor(wc_parent, trunk_head):
+            notes.append(
+                f"@ is parked on {wc_parent[:12]}, an ancestor of trunk '{trunk_name}' "
+                f"({trunk_head[:12]}) — this workspace's files are behind trunk. "
+                f"`gitman switch --trunk` reparks it and keeps any uncommitted work."
+            )
     # Fractal-lanes I3′: an orphaned node (its `+`-path name-parent was deleted out-of-band) is still a
     # valid, resolvable lane — surface it as a note pointing at `repair`, never a crash. The tree
     # render marks the node itself; this names the recovery verb.
