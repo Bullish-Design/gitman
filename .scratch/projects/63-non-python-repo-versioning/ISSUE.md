@@ -2,7 +2,7 @@
 
 **Found:** 2026-10-02, releasing `nix-secrets` so `nix-meta` could pin its new commit as a
 flake input.
-**Status:** LANDED (2026-10-02) — `main @ GITMAN_63_COMMIT`. §6 Option B shipped (a pluggable
+**Status:** LANDED (2026-10-02) — `main @ aee209453012`. §6 Option B shipped (a pluggable
 `[versioning] provider`: `uv` / `tag` / `file`, inferred when unset), with §6 Option A folded
 in (`release --version X.Y.Z` now skips the version read and the lock check entirely). The new
 config table is named `[versioning]`, not `[version]` — the latter stays retired
