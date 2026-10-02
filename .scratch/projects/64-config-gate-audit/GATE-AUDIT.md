@@ -229,7 +229,7 @@ measured to use it today.
 
 ## Update (2026-10-02) — option (b) landed
 
-Option (b) shipped: commit `GITMAN_LANDED_COMMIT_PLACEHOLDER` on `main` (lane
+Option (b) shipped: commit `919220094ac5` on `main` (lane
 `64-gitignore-aware-hook`). `ruff check src tests && pytest -q` was green at
 654 tests (baseline 644; ten added), and the lane landed through gitman's own
 real `[land.pre_hook]` gate — the exact gate this document is about —
