@@ -31,7 +31,6 @@ class LanesConfig(BaseModel):
 class PublishConfig(BaseModel):
     verify: list[str] = Field(default_factory=list)  # [] → no gate
     on_fail: str = "block"  # "block" | "warn"
-    branch_prefix: str = ""
     verify_timeout: float | None = None  # seconds; None → no limit (bounds a hung verify hook)
 
 
@@ -54,10 +53,6 @@ class LandConfig(BaseModel):
 
     pre_hook: LandHookConfig = Field(default_factory=LandHookConfig)
     post_hook: LandHookConfig = Field(default_factory=LandHookConfig)
-
-
-class PolicyConfig(BaseModel):
-    protected: list[str] = Field(default_factory=list)
 
 
 class FileVersionConfig(BaseModel):
@@ -86,7 +81,6 @@ class GitmanConfig(BaseModel):
     publish: PublishConfig = Field(default_factory=PublishConfig)
     release: ReleaseConfig = Field(default_factory=ReleaseConfig)
     land: LandConfig = Field(default_factory=LandConfig)
-    policy: PolicyConfig = Field(default_factory=PolicyConfig)
     versioning: VersioningConfig = Field(default_factory=VersioningConfig)
 
     # Where this config was loaded from (None if defaults). Not part of the schema input.
@@ -95,7 +89,7 @@ class GitmanConfig(BaseModel):
     deprecations: list[str] = Field(default_factory=list, exclude=True)
 
 
-# Tables gitman used to honour, mapped to the migration the repo owner must make.
+# Tables gitman no longer interprets, mapped to the owner's migration.
 #
 # A retired table is a **permanent warning**, never a hard failure. Gitman manages the repo
 # that configures gitman, so a rejection is live the moment the new code is on disk — before
@@ -108,6 +102,19 @@ RETIRED_TABLES: dict[str, str] = {
     "version": (
         "[version] is ignored — gitman reads and writes the version through uv "
         "(`uv version`). Delete the table; this warning is permanent, not a deadline."
+    ),
+    "policy": (
+        "[policy] is ignored — `protected` never protected a ref. Gitman uses "
+        "pyjutsu's trunk, tag, and remote-bookmark protections. Delete the table."
+    ),
+}
+
+# A retired key inside a live table needs the same permanent warning. Keep the
+# table's other keys active while the owner removes this one.
+RETIRED_KEYS: dict[tuple[str, str], str] = {
+    ("publish", "branch_prefix"): (
+        "[publish] branch_prefix is ignored — the remote branch name equals the "
+        "lane name (invariant I3). Delete the key."
     ),
 }
 
@@ -203,6 +210,12 @@ def load_config(repo_root: Path) -> GitmanConfig:
     deprecations = [f"{source}: {note}" for key, note in RETIRED_TABLES.items() if key in table]
     for key in RETIRED_TABLES:
         table.pop(key, None)
+
+    for (table_name, key), note in RETIRED_KEYS.items():
+        nested = table.get(table_name)
+        if isinstance(nested, dict) and key in nested:
+            deprecations.append(f"{source}: {note}")
+            table[table_name] = {name: value for name, value in nested.items() if name != key}
 
     deprecations.extend(_unknown_config_warnings(table, source))
 

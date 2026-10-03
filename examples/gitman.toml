@@ -7,9 +7,10 @@
 trunk = "main"
 
 [lanes]
-# Where `--workspace` lanes live. {repo} and {lane} expand. Default: a sibling directory.
+# Where workspace lanes live. {repo} and {lane} expand. Default: .worktrees/{lane}.
 workspace_dir = "../{repo}-{lane}"
-# If true, every `gitman start` isolates the lane in its own workspace. Default: false.
+# If true, every `gitman start` creates a separate workspace. A workspace start
+# cannot adopt paths from the current working copy. Default: false.
 always_workspace = false
 
 [publish]
@@ -20,8 +21,6 @@ always_workspace = false
 verify = []
 # What to do if verify fails: "block" (default, refuses publish) or "warn" (publish anyway).
 on_fail = "block"
-# Optional prefix applied to the lane name when it becomes a git branch.
-branch_prefix = ""
 
 # There is no [version] table. uv owns the version: gitman reads it with `uv version --short`
 # and writes it with `uv version --no-sync`, so pyproject.toml and uv.lock always move
@@ -48,7 +47,3 @@ push_tag = true
 # command = ["artifact-tool", "publish"]
 # timeout_seconds = 120
 # allowed_paths = []
-
-[policy]
-# Refs that must never be rewritten or force-pushed (trunk is always protected).
-protected = ["main"]

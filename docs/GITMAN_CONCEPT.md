@@ -698,7 +698,7 @@ pattern = "{version}"
   force-push). Lane branches force-push via `publish`; trunk reaches origin only through the
   two-gated `push`.
 - **Everything undoable**, always surfaced inline; every command transactional (§11).
-- **Policy is Pydantic-validated config** — trunk, protected refs, verify hook
+- **Policy is Pydantic-validated config** — trunk and verify hook
   (same discipline as `[tool.testee]`).
 
 ## 15. Configuration
@@ -710,14 +710,12 @@ Pydantic-validated.
 |---|---|
 | `trunk` | Trunk bookmark/branch. **Written once by `init`, then frozen** (I1). |
 | `[lanes] workspace_dir` | Where `--workspace` lanes live (default `.worktrees/<lane>` — a hidden, self-ignored in-repo dir; `../<repo>-<lane>` for the old sibling layout). |
-| `[lanes] always_workspace` | If true, `start` always isolates (default false). |
+| `[lanes] always_workspace` | If true, `start` creates a separate workspace even without `--workspace` (default false). An isolated start cannot adopt paths from the current working copy. |
 | `[lanes] exclude` | Bookmark-name glob patterns gitman must never treat as a lane. |
 | `[publish] verify` | Command run before publish/release (`[]` → no gate). |
 | `[publish] on_fail` | `block` (default) or `warn`. |
-| `[publish] branch_prefix` | Optional prefix on the lane→branch name (default none). |
 | `[release] …` | Tag format, verify, push behavior (see §13). |
 | `[land.pre_hook]` / `[land.post_hook]` | Optional invocation-level land commands with timeout and an `allowed_paths` classifier. The changed-path check comes from jj's own before/after snapshot diff, so a path the repo's `.gitignore` already covers is never treated as a hook write (project 64, option b); a rewrite of a tracked, non-ignored path still blocks. `allowed_paths` only selects which refusal message names the path — it never lets a changed path through. |
-| `[policy] protected` | Refs that must never be rewritten/force-pushed. |
 | `[versioning] provider` | Version source: `uv` \| `tag` \| `file`. Omit to infer — `uv` if `pyproject.toml` exists, else `tag` (project 63; see §13). |
 | `[versioning.file] path` | Version-file path, read when `provider = "file"` (default `VERSION`). |
 | `[versioning.file] pattern` | Template with one `{version}` marker locating the number in that file (default `"{version}"`). |

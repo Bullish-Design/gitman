@@ -171,16 +171,14 @@ generated frontmatter.
 |---|---|
 | `trunk` | Trunk bookmark/branch. Written once by `init`, then **frozen**. |
 | `[lanes].workspace_dir` | Where `--workspace` lanes live (default `.worktrees/{lane}` — a hidden, self-ignored in-repo dir; set `../{repo}-{lane}` for the old sibling layout). |
-| `[lanes].always_workspace` | If true, `start` always isolates (default false). |
+| `[lanes].always_workspace` | If true, `start` creates a separate workspace even without `--workspace` (default false). An isolated start cannot adopt paths from the current working copy. |
 | `[publish].verify` | Command run before publish (`[]` → no gate). Any verifier. |
 | `[publish].on_fail` | `block` (default) or `warn`. |
-| `[publish].branch_prefix` | Optional prefix on the lane→branch name. |
 | `[release]` | `tag_format` (default `v{version}`), `verify`, `push_tag`. |
 | `[versioning].provider` | Version source: `uv` \| `tag` \| `file`. Omit to infer (§7). |
 | `[versioning.file]` | `path` + `pattern`, read when `provider = "file"`. |
 | `[land.pre_hook]` | Optional command, timeout, and an `allowed_paths` classifier for the pre-land gate. Gitignored paths are skipped automatically; see below. |
 | `[land.post_hook]` | Optional command, timeout, and an `allowed_paths` classifier for the post-land action. Gitignored paths are skipped automatically; see below. |
-| `[policy].protected` | Refs that must never be rewritten/force-pushed. |
 
 Land hooks run once around the complete `gitman land` invocation, including
 `land --all`. Commands use an argument array and receive a versioned JSON event

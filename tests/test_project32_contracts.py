@@ -116,17 +116,35 @@ def test_a_valid_config_covering_every_table_has_no_deprecations(tmp_path: Path)
         'trunk = "main"\n'
         '\n[lanes]\nworkspace_dir = ".worktrees/{lane}"\nalways_workspace = true\nexclude = []\n'
         '\n[publish]\nverify = ["echo", "verify"]\non_fail = "warn"\n'
-        'branch_prefix = "feature/"\nverify_timeout = 20.0\n'
+        'verify_timeout = 20.0\n'
         '\n[release]\ntag_format = "release-{version}"\nverify = ["echo", "release"]\n'
         'push_tag = false\n'
         '\n[land.pre_hook]\ncommand = ["echo", "before"]\ntimeout_seconds = 30.0\n'
         'allowed_paths = ["src"]\n'
         '\n[land.post_hook]\ncommand = ["echo", "after"]\ntimeout_seconds = 40.0\n'
         'allowed_paths = ["docs"]\n'
-        '\n[policy]\nprotected = ["main"]\n'
     )
 
     assert load_config(tmp_path).deprecations == []
+
+
+@pytest.mark.parametrize(
+    ("legacy", "key"),
+    [
+        ('[policy]\nprotected = ["main"]\n', "protected"),
+        ('[publish]\nbranch_prefix = "feature/"\n', "branch_prefix"),
+    ],
+)
+def test_removed_config_keys_warn_without_blocking_intents(tmp_path: Path, legacy: str, key: str):
+    (tmp_path / "gitman.toml").write_text('trunk = "main"\n\n' + legacy)
+
+    cfg = load_config(tmp_path)
+
+    assert cfg.trunk == "main"
+    assert len(cfg.deprecations) == 1
+    assert key in cfg.deprecations[0]
+    assert "is ignored" in cfg.deprecations[0]
+    assert not hasattr(cfg if key == "protected" else cfg.publish, key)
 
 
 def test_an_exclude_pattern_matching_trunk_warns_but_keeps_the_entry(tmp_path: Path):

@@ -53,6 +53,33 @@ def test_workspace_lands_in_repo_dot_worktrees(tmp_path: Path):
     assert state.lanes[0].workspace == "wlane"
 
 
+def test_always_workspace_config_isolates_start_without_a_flag(tmp_path: Path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _repo(repo)
+    cfg = GitmanConfig(trunk="main", lanes=LanesConfig(always_workspace=True))
+
+    result = do_start(_sess(repo, cfg), "auto", workspace=False)
+
+    assert result.outcome == "STARTED"
+    assert (repo / ".worktrees" / "auto").is_dir()
+    assert {w.name for w in Workspace.load(repo).workspaces()} == {"default", "auto"}
+    assert capture_state(_sess(repo, cfg)).lanes[0].workspace == "auto"
+
+
+def test_always_workspace_refuses_an_adopt_request(tmp_path: Path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _repo(repo)
+    cfg = GitmanConfig(trunk="main", lanes=LanesConfig(always_workspace=True))
+
+    with pytest.raises(GitmanError, match="cannot adopt paths") as exc:
+        do_start(_sess(repo, cfg), "auto", workspace=False, adopt_all=True)
+
+    assert exc.value.exit_code == 3
+    assert not (repo / ".worktrees" / "auto").exists()
+
+
 def test_worktrees_dir_is_self_ignored(tmp_path: Path):
     repo = tmp_path / "repo"
     repo.mkdir()

@@ -459,6 +459,14 @@ def do_start(
     if adopt_all and adopt_mine:
         raise GitmanError("`--adopt-all` and `--adopt-mine` are mutually exclusive.", exit_code=3)
     trunk = require_trunk(session.config)
+    workspace = workspace or session.config.lanes.always_workspace
+    if workspace and (adopt_all or adopt_mine):
+        raise GitmanError(
+            "a workspace start cannot adopt paths from the current working copy — "
+            "set [lanes] always_workspace = false and start without --workspace "
+            "to adopt them.",
+            exit_code=3,
+        )
     if workspace:
         from gitman.lanes import resolve_workspace_path
         from gitman.state import capture_state
