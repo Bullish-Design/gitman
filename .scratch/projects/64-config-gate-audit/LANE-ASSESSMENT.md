@@ -202,14 +202,11 @@ refusal that is itself tested).
 ## 5. Conflict risk and confidence: low risk, high confidence
 
 `gitman status` / `gitman workspace list` (read-only) show the lane 1 behind
-trunk. `git merge-base main 65-inert-config-keys` → `36b99ec`. Since that
-point: `main` gained exactly one commit, `e77b3af` — *"chore: remove my-ai
-Copier enrollment"* — which deletes `.copier-answers.my-ai.yml` (6 lines,
-confirmed via `git show e77b3af --stat`). The lane's one commit, `32ab5df`,
-touches a disjoint set of 9 files (`git show --stat 32ab5df`) and does not
-mention `.copier-answers.my-ai.yml` at all. The file only shows up as "new"
-in a flat `git diff main..65-inert-config-keys` because that diff is a
-two-tree comparison against current `main`, not a three-way view from the
+trunk. The fork point is `36b99ec`. Since then, `main` gained one commit,
+`e77b3af`, which removes the retired Copier enrollment and its six-line answers
+file. The lane's commit, `32ab5df`, touches nine disjoint files and does not
+touch that answers file. A flat two-tree comparison against current `main` shows
+the file as "new" because it does not use the three-way view from the
 fork point — the lane's commit inherited the file unchanged from the fork
 point and never edited it. A rebase onto current `main` (which is what
 `gitman land`'s dry-run plan shows it will do — see §6) has no actual

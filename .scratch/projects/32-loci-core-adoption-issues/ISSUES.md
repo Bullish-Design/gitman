@@ -37,7 +37,7 @@ never grew.
 
 **Consequence.** An agent driving gitman has to scrape human-formatted output
 with box-drawing characters. In this session I parsed `status` with `grep` and
-`tail`, which is exactly what the my-ai law's "structured plain-text reports"
+`tail`, which is exactly what the shared "structured plain-text reports"
 rule exists to prevent. It also violates law §3 directly: rich coloring is
 emitted unconditionally, with no `--json` escape.
 
@@ -91,7 +91,7 @@ building from the tag gets an inconsistent pair.
 
 **Severity:** Serious — this is the one that blocks the standing law
 
-**Symptom.** loci-core's `AGENTS.md` and the my-ai law both say "route version
+**Symptom.** loci-core's `AGENTS.md` and the shared workflow rules both say "route version
 control through gitman." Adding gitman to the repo's dev extra fails outright:
 
 ```
