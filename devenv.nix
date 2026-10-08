@@ -11,13 +11,11 @@
   dotenv.disableHint = true;
 
   # https://devenv.sh/packages/
-  # No `jj` CLI: gitman talks to jj-lib in-process via pyjutsu. `git` stays for `doctor`'s
-  # escape-hatch check and for the test suite; gitman itself runs no git subprocess (annotated
-  # tags go through `ws.git.create_tag`). No Rust/maturin: pyjutsu arrives as a prebuilt wheel
-  # pinned in [tool.uv.sources], so this repo never compiles the native extension.
-  #
-  # `gh` publishes release assets (nix/gitman.nix, gitman:publish).
+  # The pinned jj 0.46.0 (nix/jj.nix) is the native `jj` command that gitman calls. `git` is
+  # the read-only ignored-file probe for `gitman close`. `gh` publishes release assets
+  # (nix/gitman.nix, gitman:publish).
   packages = [
+    (import ./nix/jj.nix { inherit pkgs; })
     pkgs.git
     pkgs.uv
     pkgs.gh
@@ -30,9 +28,8 @@
     venv.enable = true;
     uv = {
       enable = true;
-      # Install gitman (editable) + deps into the venv on shell entry. pyjutsu resolves to the
-      # published cp313-abi3 wheel named in [tool.uv.sources] — no maturin/cargo build. The
-      # console script and ruff/pytest resolve to the venv.
+      # Install gitman (editable) into the venv on shell entry. The console script and
+      # ruff/pytest resolve to the venv.
       sync.enable = true;
     };
   };
@@ -42,9 +39,7 @@
     # stdout (e.g. an agent running `devenv shell -- gitman status`).
     if [ -t 1 ]; then
       echo "gitman devenv"
-      git --version
-      python -c "import pyjutsu; print('pyjutsu', pyjutsu.__version__, '(jj-lib', pyjutsu.JJ_VERSION + ')')" 2>/dev/null \
-        || echo "pyjutsu not yet built — run \`uv sync\`"
+      jj version
     fi
   '';
 

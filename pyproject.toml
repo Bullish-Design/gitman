@@ -1,7 +1,7 @@
 [project]
 name = "gitman"
-version = "0.11.0"
-description = "Agent-first version-control interface: a safe lane workflow over jujutsu + colocated git."
+version = "2.0.0"
+description = "Small jj workspace helper: open and close isolated workspaces at a stable path."
 readme = "README.md"
 requires-python = ">=3.13"
 license = { text = "MIT" }
@@ -10,27 +10,12 @@ authors = [
   { name = "Bullish Design", email = "BullishDesignEngineering@gmail.com" },
 ]
 
-# Lean base: pydantic + typer + pyjutsu (the in-process jj-lib engine). git comes from
-# devenv (doctor's escape-hatch check); there is no `jj` CLI dependency. pyjutsu >= 0.21.1
-# binds the complete in-process surface (project 14 + hooks); gitman maps its hook errors.
-dependencies = [
-  "pydantic>=2.12",
-  "typer>=0.12",
-  "pyjutsu>=0.22.0",
-]
-
-[project.optional-dependencies]
-# Optional forge bridge (PR publish/land via GitHub). DEFERRED — the base never imports it.
-github = [
-  "PyGithub>=2.3",
-]
+# No runtime dependencies: gitman calls the native `jj` and `git` commands from devenv.
+dependencies = []
 
 [dependency-groups]
 dev = [
   "pytest>=7.0",
-  # Runs the suite across all cores. The suite is process-parallel-safe: every test builds
-  # its own repo under `tmp_path`, and gitman's repo lock is keyed per repo root.
-  "pytest-xdist>=3.6",
   "ruff>=0.5.0",
 ]
 
@@ -54,30 +39,8 @@ include = [
   "pyproject.toml",
 ]
 
-# pyjutsu is not on PyPI, so it is pinned to a published GitHub release asset. This is the
-# authoritative source. It replaced vendomat's prebuilt wheelhouse (resolved via UV_FIND_LINKS
-# from the imported devenv module), which worked only in a repo wired to the *same* vendomat
-# revision gitman was built against; anywhere else uv failed to resolve pyjutsu at all, or
-# started a Rust build — project 32, G3.
-#
-# The wheel is abi3 + manylinux_2_39: one build serves CPython 3.13 and later on x86-64 Linux
-# with glibc >= 2.39. Other platforms build from the release sdist and need a Rust toolchain.
-#
-# uv carries this entry into a consumer's own lock (verified against both a `path` and a `git`
-# dependency on gitman), so a consumer declares gitman and nothing else. See README
-# "Installing gitman in another repo".
-[tool.uv.sources]
-pyjutsu = { url = "https://github.com/Bullish-Design/Pyjutsu/releases/download/v0.22.0/pyjutsu-0.22.0-cp313-abi3-manylinux_2_39_x86_64.whl" }
-
-# Seed policy; `gitman init` writes the frozen trunk here (or to gitman.toml). See concept §15.
-[tool.gitman]
-# trunk is written once by `gitman init`, then frozen (invariant I1).
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# Run the suite across all cores by default — it is process-parallel-safe (see
-# tests/conftest.py, which also sizes `auto`). Pass `-n0` to run serially.
-addopts = ["-n", "auto"]
 
 [tool.ruff]
 line-length = 120
@@ -87,10 +50,6 @@ src = ["src"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 ignore = []
-
-[tool.ruff.lint.per-file-ignores]
-# init.py embeds configuration text with intentionally long lines.
-"src/gitman/init.py" = ["E501"]
 
 [tool.ruff.format]
 quote-style = "double"

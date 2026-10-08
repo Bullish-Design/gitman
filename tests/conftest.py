@@ -1,27 +1,73 @@
-"""Suite-wide pytest configuration.
-
-The suite runs in parallel. Every test builds its own repo under `tmp_path`, and gitman's
-repo lock is keyed per repo root, so workers never contend. `-n auto` is in `addopts`
-(pyproject.toml), which makes the parallel path the default for a bare `pytest` and for the
-`gitman:test` task alike. Pass `-n0` to run serially — use it to debug one test, or with
-`--pdb`.
-"""
-
-from __future__ import annotations
+"""Disposable real jj repositories. Each test isolates jj and Git configuration."""
 
 import os
+import subprocess
+from dataclasses import dataclass
+from pathlib import Path
 
-# Measured on an 8-core machine at 475 tests: 8 workers ran the suite in 32 s, 12 in 22 s,
-# 24 in 22 s, 32 in 25 s. The work is partly I/O bound (jj writes a repo per test), so
-# oversubscribing cores pays until worker start-up dominates.
-_WORKERS_PER_CORE = 1.5
-_MAX_WORKERS = 24
+import pytest
+
+from gitman import cli
 
 
-def pytest_xdist_auto_num_workers(config) -> int:
-    """Give `-n auto` a worker count tuned for this suite instead of one per core."""
+def run(args: list[str], cwd: Path) -> str:
+    done = subprocess.run(args, cwd=cwd, capture_output=True, text=True, check=True)
+    return done.stdout
+
+
+@dataclass
+class Repo:
+    main: Path
+    root: Path  # the GITMAN_WORKSPACE_ROOT of this test
+
+    def jj(self, *args: str, cwd: Path | None = None) -> str:
+        return run(["jj", *args], cwd or self.main)
+
+    def commit_id(self, revset: str, cwd: Path | None = None) -> str:
+        return self.jj("log", "--no-graph", f"--revision={revset}", "-T", "commit_id", cwd=cwd).strip()
+
+    def workspaces(self) -> list[str]:
+        return self.jj("workspace", "list", "-T", 'name ++ "\\n"').splitlines()
+
+
+@pytest.fixture
+def env(tmp_path, monkeypatch):
+    config = tmp_path / "jj-config.toml"
+    config.write_text('[user]\nname = "Test"\nemail = "test@example.com"\n')
+    monkeypatch.setenv("JJ_CONFIG", str(config))
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
+    monkeypatch.setenv("GIT_CONFIG_SYSTEM", os.devnull)
+    monkeypatch.setenv("GITMAN_WORKSPACE_ROOT", str(tmp_path / "workspaces"))
+
+
+@pytest.fixture
+def fresh(tmp_path, env) -> Repo:
+    """A colocated repo with no commits: `trunk()` is `root()`."""
+    main = tmp_path / "main"
+    main.mkdir()
+    run(["jj", "git", "init", "--colocate"], main)
+    return Repo(main, tmp_path / "workspaces")
+
+
+@pytest.fixture
+def repo(fresh) -> Repo:
+    """A colocated repo whose `main` bookmark marks a base commit with an ignore file."""
+    config = Path(os.environ["JJ_CONFIG"])
+    config.write_text(config.read_text() + '[revset-aliases]\n"trunk()" = "main"\n')
+    (fresh.main / ".gitignore").write_text(".devenv/\n*.log\n")
+    (fresh.main / "a.txt").write_text("a\n")
+    fresh.jj("describe", "-m", "base")
+    fresh.jj("bookmark", "create", "main", "-r", "@")
+    fresh.jj("new")
+    return fresh
+
+
+def gitman(monkeypatch, capsys, cwd: Path, *argv: str) -> tuple[int, str, str]:
+    """Run `gitman` in `cwd` and return (exit code, stdout, stderr)."""
+    monkeypatch.chdir(cwd)
     try:
-        cores = len(os.sched_getaffinity(0))
-    except AttributeError:  # not Linux
-        cores = os.cpu_count() or 1
-    return max(1, min(_MAX_WORKERS, int(cores * _WORKERS_PER_CORE)))
+        code = cli.main(list(argv))
+    except SystemExit as exit_:
+        code = exit_.code
+    out = capsys.readouterr()
+    return code, out.out, out.err
