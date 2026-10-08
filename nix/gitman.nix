@@ -1,7 +1,7 @@
 # Reusable devenv module: Gitman dev-verification entrypoints.
 #
 # Gitman's *own* CI (lint + tests) — distinct from the generic, off-by-default publish
-# verify hook in gitman.toml. Import it from devenv.nix:
+# publish hook of the retired v1 tool. Import it from devenv.nix:
 #
 #   imports = [ ./nix/gitman.nix ];
 #
@@ -26,7 +26,7 @@ in
     "devenv:enterTest".after = [ "gitman:lint" "gitman:test" ];
 
     # Build the distributable wheel + sdist into dist/. Gitman is pure Python, so this is an
-    # ordinary uv build — no relocation step, unlike pyjutsu's native extension.
+    # ordinary uv build.
     "gitman:wheel".exec = ''
       set -euo pipefail
       cd "$DEVENV_ROOT"
@@ -37,9 +37,9 @@ in
 
     # Attach the built artifacts to the GitHub release for the current version.
     #
-    # `gitman release` creates and pushes the tag; this task only uploads to it. Run it after
-    # a release, never instead of one. Gitman is not on PyPI, so a consumer installs it from
-    # git (see the README) or from these assets.
+    # Create and push the `v<version>` tag first (for example with `jj tag set` and
+    # `jj git push --tag`); this task only uploads to it. Gitman is not on PyPI, so a consumer
+    # installs it from git (see docs/USING_GITMAN.md) or from these assets.
     "gitman:publish".exec = ''
       set -euo pipefail
       cd "$DEVENV_ROOT"
@@ -48,7 +48,7 @@ in
       tag="v$version"
 
       if ! git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
-        echo "no tag $tag — run 'gitman release' first (it tags trunk and pushes)." >&2
+        echo "no tag $tag — create and push it first." >&2
         exit 1
       fi
       ls dist/*.whl >/dev/null 2>&1 || {
@@ -65,13 +65,10 @@ in
       else
         gh release create "$tag" dist/* \
           --title "gitman $version" \
-          --notes "gitman $version — the single version-control interface for coding agents.
+          --notes "gitman $version: open and close isolated jj workspaces.
 
     [tool.uv.sources]
-    gitman = { git = \"https://github.com/Bullish-Design/gitman\", tag = \"$tag\" }
-
-uv resolves the pyjutsu engine from its own published wheel; no nix and no Rust toolchain are
-needed on x86-64 Linux. See the README."
+    gitman = { git = \"https://github.com/Bullish-Design/gitman\", tag = \"$tag\" }"
       fi
       echo "published $tag"
     '';

@@ -1,929 +1,204 @@
-# Gitman — Concept (Consolidated)
+# Gitman v2 — a small jj workspace helper
 
-**Status:** Concept / pre-implementation (consolidated from
-`05-vcs-brainstorming/CONCEPT_BRAINSTORM.md`; lane model added 2026-06-15).
-**Name:** Gitman (Git Manager) · **CLI:** `gitman`
-**Language:** Python · **CLI:** Typer · **Models:** Pydantic v2
-**Substrate:** jujutsu (`jj`) for local operations, git as the interop layer (colocated)
-**Runtime:** runs only inside a `devenv.sh` shell · **Primary consumer:** coding agents
-**Sibling project:** Testee (verification policy layer) — same shape, different domain.
+**Date:** 2026-10-08  
+**Status:** Implemented in Gitman 2.0.0  
+**Scope:** Clean rewrite for the personal devenv workflow
 
----
+This document defines Gitman v2. It replaces the v1 concept, which remains in
+the Git history. The working notes for the rewrite are in
+`.scratch/projects/66-gitman-v2-rewrite/`. Two facts from the build refine the
+text below: jj 0.46.0 is the minimum version, because it added
+`jj workspace remove` and `jj workspace add --colocate`; and `work` takes a
+short advisory lock in the Git directory so that two Gitman callers cannot
+create one name twice.
 
-## 1. What Gitman is
+## 1. Purpose
 
-Gitman is the **single version-control interface** for a repository. Instead of an agent
-running `git add` / `commit` / `rebase` / `push` / `tag` (or `jj` plumbing) ad hoc, it
-asks Gitman:
+Gitman v2 helps a developer open and close isolated jj workspaces. It provides
+a stable place for each workspace and a clear warning before deletion removes
+ignored files. Native jj remains the normal interface for revisions, bookmarks,
+history, conflicts, remotes, and recovery.
 
-```bash
-devenv shell gitman status
-devenv shell gitman sync
-devenv shell gitman publish
-```
+Gitman v2 succeeds when a developer can use several task directories without
+learning a second revision model. The helper must stay small enough to replace
+with direct jj commands if its value disappears.
 
-and gets back a compact, structured, actionable report. Gitman decides *what* to run
-(`jj` or `git`), runs it safely, captures the repo state into one Pydantic model, and
-reports back the next action.
+**Feature test:** Add a Gitman operation only when it provides a useful workflow
+that native jj, a jj alias, or a short devenv script cannot provide clearly.
 
-Gitman is **not** a new VCS and **not** a git wrapper for power users. It exposes a tiny
-set of **intents** (not git/jj verbs) over a **canonical workflow** (the lane model, §5),
-engineered so an agent cannot get wedged, lose work, or leave the repo in a shape no one
-can reason about.
+## 2. Boundaries
 
-## 2. Why
-
-Agents do version control badly: destructive commands (`git reset --hard`, blind
-`push --force`), the staging dance (`git add` the wrong subset), getting wedged
-mid-merge/rebase in a modal repo state they can't reason about, losing uncommitted work,
-producing messy history, pasting enormous `git status`/`log`/diff output into context,
-and being unable to recover from mistakes (reflog spelunking).
-
-The gap isn't tooling — it's the lack of a **version-control policy layer** for agents.
-Gitman is that layer, and **jujutsu is what makes the layer safe** rather than a thin set
-of guard rails over a sharp tool.
-
-## 3. Why jujutsu (the thesis)
-
-jj fixes the agent failure modes at the *data-model* level:
-
-- **No staging area; the working copy is an auto-snapshotted commit.** Work is *always*
-  saved — no `git add` mistakes, no clobbered changes.
-- **First-class conflicts.** Conflicts are recorded *in commits*, not a blocking modal
-  state. An agent is **never stuck** in a half-merged repo; it resolves later and keeps
-  working meanwhile.
-- **Operation log + total undo.** `jj op log` records *every* operation; `jj undo` /
-  `jj op restore` revert *any* of them. Cheap, total, reliable undo is the headline — the
-  thing raw git cannot safely offer. Gitman also uses it as a **transactional rollback**
-  (§11).
-- **Stable change IDs.** A change keeps its identity across rewrites, so "the thing I'm
-  working on" is a stable referent even as its git hash churns.
-- **Workspaces.** Multiple working copies share one repo (`jj workspace add`), each with
-  its own `@` — the native substrate for **parallel agents** (§8).
-- **`jj git --colocate`.** A real `.git` stays in sync, so git tooling, CI, `gh`, tags,
-  bookmarks→branches, and external collaborators all keep working. **jj is local
-  ergonomics; git is the wire format.**
-
-The division of labor: the **agent lives in jj locally** (safe, undoable,
-conflict-tolerant); **git/GitHub is the boundary** to the outside world, which never
-needs to know jj is in use.
-
-## 4. Locked decisions
-
-- **Agent-first** positioning (humans/CI secondary).
-- **jj required + colocated** (pyjutsu `Workspace.init(colocate=True)`, in-process — adopts an
-  existing `.git` or creates a fresh one; no `jj` CLI). No plain-git fallback.
-- **GitHub is an optional extra** (`gitman.advanced.github`); the base never imports it.
-- **Verification is an optional pre-publish hook, off by default** — a generic command
-  (any verifier, incl. Testee). Zero Testee dependency.
-- **Bare-minimum scope.** Ship the smallest useful daily loop, dogfood hard, let real
-  friction decide additions.
-- **Versioning + release tagging in v1** (semver major/minor/patch).
-- **The lane model is *the* workflow** (§5): structured multiplicity — parallel work is
-  supported, but only as well-formed, named lanes. Stacked forge PRs are still deferred.
-
-## 5. The lane model (the canonical workflow)
-
-The core design stance. The mess we want to eliminate is not *multiple changes* — it's
-*unstructured* changes (anonymous, non-linear, divergent, stray). So:
-
-> **Every change belongs to exactly one named lane.** A **lane** is a unit of work —
-> a readable name, anchored on trunk, kept linear, with a stable identity Gitman tracks.
-> The repo is always a *set of canonical lanes*. Multiplicity is fine; anarchy is not.
-
-This keeps jj's cheap parallel changes (spin up N agents on N problems, merge back) while
-collapsing the runtime variability, because variability came from structurelessness, not
-count. A lane is just a **named jj bookmark on a trunk descendant** (+ optionally its own
-workspace) — so the bookmark name *is* the lane name *is* the git branch name: readable,
-repo-global, and auto-following the change across rewrites.
-
-### Invariants
-
-| # | Invariant | What it dissolves |
-|---|---|---|
-| I1 | **Trunk is resolved once at `init`, written to config, frozen.** Runtime never re-detects. The one sanctioned exception is `gitman trunk rename <new-name>` (design 58, §7) — an operator-named, auditable re-freeze, never an automatic re-detection. | All runtime trunk-ambiguity states. |
-| I2 | **Every change belongs to exactly one named lane; no anonymous/stray changes.** | Stranded work — every change is *listable*; `status` is a uniform enumeration, not a triage. |
-| I3 | **Branch name = the lane's readable name**, unique-checked at creation, stable via the bookmark. | Branch-name generation / collision / freeze logic. |
-| I4 | **Gitman is the sole writer; mutating ops are serialized by a brief repo lock.** | Concurrent-rewrite divergence (parallel work lives in separate workspaces). |
-| I5 | **Each lane is linear on trunk (rebase-always); trunk advances only via `land` (local) or `sync --trunk` (integrating a moved origin).** | Merge-commit states; "which base?" ambiguity. |
-| I3′ | **A lane name is a task-tree `+`-path; its base is its name-parent (`T+api` → `T`), which must be a live lane or trunk** (fractal lanes, Phase 2A). Enforced *by construction* at `start` (parent-must-be-live) + refuse-with-child at `land`/`abandon`. | DAG base-ambiguity; a stacked lane's base is a namespace lookup, not a graph search. |
-
-The principle: **resolve variability once, at a well-defined moment (init, lane
-creation), not repeatedly at runtime.** An out-of-band parent delete (a raw `jj`/`git`
-edit) is the sole way to violate I3′ → an **orphaned** node, which `status` reports (with a
-`gitman repair` pointer), never a crash — the same "external edits handled in one place"
-discipline as every other off-canonical state.
-
-### Lane lifecycle
-
-```
-start ──▶ draft ──(edit · describe · sync · resolve)──▶ published ──▶ merged
-              │                                                          ▲
-              └──────────────── abandon ◀────────────────────────── (fold in)┘
-```
-
-A lane is always in exactly one of three states — **draft** (being edited), **published**
-(pushed / PR open), **merged** (the forge merged the PR; `sync --trunk` or `repair` retires
-it locally). The terminal states *landed* and *abandoned* are **not** lane states: `land` and
-`abandon` delete the lane bookmark, so a finished lane has no row to render. That bounds
-everything `status` must render. When `@` leaves a lane without ending it (a sibling `start` in
-the same workspace, a landed neighbour), **`switch <lane>`** moves `@` back onto an existing
-lane to resume it — navigation *between* lanes, never a trunk mutation. And when two concerns
-entangle in one draft, **`split --paths <sel> --into <lane>`** divides that change into two
-sibling lanes on trunk (the carved paths onto a new lane, the remainder on the original) — a
-partition *within* the lane set, also never a trunk mutation. `split --hunks` carves at hunk
-level instead of whole-file.
-
-## 6. Architecture
-
-```
-Agent → devenv shell → gitman CLI → Intent planner → Executor (jj / git)  [under repo lock]
-      → RepoState (Pydantic) → Renderer (compact report)
-                            → op-log (undo + transactional rollback)   → --json
-```
-
-- **Intent planner** — deterministic; turns intent + flags + config + current `RepoState`
-  into a *plan*: a sequence of pyjutsu operations.
-- **`Plan` value** (`plan.py`) — the declared step list plus its postcondition, built from a
-  captured `RepoState` and executed by `invariants.run_plan`. `describe`, `switch`, `start`
-  (the non-`--workspace` path), `split` and `land` are migrated onto it (project 46 S7); each
-  accepts `--dry-run`, which builds the plan from the recorded head view and mutates nothing.
-- **Executor** — runs pyjutsu transactions, records facts (op id before/after, change IDs).
-  Never interprets results. Wraps each mutating intent transactionally (§11). Two executors
-  coexist: `run_plan` for the migrated verbs, and `canonical_tx`/`canonical_guard` for the
-  callback-style verbs (`publish`, `sync`, `shape`, `seed`, `abandon`, `push`, `release`,
-  `start --workspace`, ...). **`sync --trunk` is deliberately not migrated**: it runs a trial
-  merge as planning input, the one shape that does not fit "plan, then execute", and every
-  recovery path leans on it. A doc must not claim a uniformity the code does not have.
-- **Lane registry** — the set of Gitman-managed bookmarks; near-zero extra state since jj
-  already tracks bookmarks. Workspace ↔ lane mapping via `ws.workspaces()`.
-- **State adapter** (`session.py` + `state.py`) — `Session` is the boundary onto pyjutsu
-  (jj-lib in-process via PyO3): `view()` for frozen reads, `fresh_view()` to snapshot-then-read.
-  `state.py` projects one pyjutsu view into a typed `RepoState`. Typed pyjutsu errors replace
-  porcelain parsing. No git subprocess remains: the git side of the repo is read and written
-  through pyjutsu's `ws.git` namespace, annotated release tags included.
-- **Renderer** — compact agent report; `--json` emits the `RepoState`/result model.
-- **Forge bridge** (optional extra) — `publish`→PR and the forge backend of `land`.
-
-### Package layout (mirrors Testee)
-
-```
-src/gitman/
-  cli.py        Typer intents
-  session.py    the per-invocation Session — boundary onto pyjutsu (view/fresh_view)
-  provenance.py per-session provenance — flags a dirty `@` path this session did not write
-  core.py       orchestration per intent, devenv guard, repo lock, typed-error mapper
-  hooks.py      the land pre/post-hook subprocess boundary ([land.pre_hook]/[land.post_hook])
-  lanes.py      lane registry + workspace lifecycle (create/forget/cleanup)
-  state.py      RepoState capture (composes one pyjutsu view + lanes.py)
-  models.py     Pydantic: RepoState, Lane, Change, Conflict, Op, TrunkRef, ...
-  config.py     [tool.gitman] policy (Pydantic-validated)
-  plan.py       the Step/Plan values + the declarative step interpreter
-  invariants.py canonical checks + transactional rollback (run_plan/canonical_tx/guard) + lock
-  anomalies.py  the typed anomaly registry (kind -> subject, repair, blocks)
-  repairs.py    one detect/repair registry served by `repair`
-  version.py    semver math + version-source read/write
-  release.py    tag + push flow
-  render.py     compact agent reports (plain Python)
-  markdown.py   durable Markdown projections of repo state for external PM systems (e.g. Loci)
-  init.py doctor.py repair.py
-  advanced/     optional forge extra (github) — base never imports it
-```
-
-Base deps kept lean: `pydantic`, `typer`, `pyjutsu` (which embeds jj-lib); `git` comes from
-devenv as the colocated interop layer.
-
-## 7. Intent vocabulary
-
-The intent set. Lane lifecycle verbs (`start`/`switch`/`split`/`shape`/`land`/`abandon`) are the
-additions the lane model requires; the trunk↔origin verbs (`sync`/`push`/`remote add`/`untrack`)
-are the single-model interop surface (§8); `doctor`/`init`/`repair` are the
-boundary/bootstrap/recovery verbs. Anything not listed is deferred until friction proves it.
-
-Every intent accepts `--json`; `describe`, `switch`, `start`, `split` and `land` also accept
-`--dry-run`. Five older verbs survive as **hidden, warning aliases**: `save`→`describe`,
-`reconcile`→`repair`, `subtask`→`start`, `pull`→`sync --trunk`, `catchup`→`sync --trunk --all`.
-They forward every option and exit code and name the replacement in the report's notes.
-
-| Intent | Signature | What it does | Underneath |
-|---|---|---|---|
-| `status` | `gitman status` | Canonical/off-canonical report: trunk + the lane **tree** (stacked lanes indented by `+`-path depth; `--json` stays a flat list with `base`+`depth`), plus notes. | pyjutsu view: log / op-log / workspaces (+ git numstat via `ws.git`) |
-| `log` | `gitman log --revset <revset>` | List the changes in a revset, oldest first (`--json` emits an array). The one read verb that takes a raw revset, so a consumer never imports pyjutsu itself. | `view.log(revset)` |
-| `start` | `gitman start <name> [--workspace] [--onto <lane>] [--adopt-all\|--adopt-mine] [--dry-run]` | Create a lane. A **`+`-path name** (`T+api`) **stacks** on its name-parent `T`; a flat name roots on trunk. `/` is input sugar. `--workspace` isolates it; `--onto` must equal the name-parent. | `jj new <base>` + `jj bookmark create` (+ `jj workspace add`) |
-| `switch` | `gitman switch <lane> \| --trunk [--dry-run]` | Move `@` onto an existing lane's change to resume it (navigation, never mutates trunk). Refuses to strand an unnamed dirty `@`; reports a lane checked out in another workspace. `--trunk` reparks an **unnamed** `@` left on a trunk ancestor — the shape a sibling workspace's `land` leaves behind, which no other verb could reach (project 52 item 3). It rebases, so uncommitted work comes along; it refuses an `@` that carries a lane (that is `sync`). | `jj edit <lane>` · `jj rebase @ -d <trunk>` |
-| `split` | `gitman split --paths <sel>… \| --hunks <sel> --into <lane> [-m <desc>] [--dry-run]` | Partition the current lane's single change into two sibling lanes on trunk: the carved paths onto new lane `<into>`, the remainder on the original. `--paths` selects whole files/dirs/globs; `--hunks` selects hunks (`file:i,j;…`). `@` stays on the remainder; never mutates trunk. | `jj new <trunk>` + `jj restore` ×2 + bookmark, or one `tx.split` |
-| `shape` | `gitman shape --squash <rev> [--into <rev>] [-m <desc>] \| --reorder <rev>…` | Tidy the current lane's own `base..head` range: fold one change into a neighbour, or re-stack the listed changes. Never crosses the base, so trunk is unchanged. | `tx.squash` / `tx.rebase` + `tx.set_bookmark` |
-| `describe` | `gitman describe [-m <desc>] [--dry-run]` | Describe the current lane's change. With no `-m`, print the current description. | `jj describe` |
-| `seed` | `gitman seed -m <desc>` | One-shot: make a fresh repo's first commit on trunk, leaving a clean `@`. Refuses once trunk has history. | `jj describe` @ + bookmark trunk |
-| `publish` | `gitman publish` | Push the current lane; branch = lane name. **Refuses a lane with a conflicted change** in its own range, before the verify hook and before any network call — git cannot represent a conflict, so the pushed branch would hold one side and lose the rest (D4-b). Verify hook next. | `jj git push` (forge extra: + open/update PR) |
-| `land` | `gitman land [<lane>…] [--all] [--dry-run]` | Fold lane(s) into their **base** — the parent lane (advance the parent bookmark) or **local** trunk (advance trunk, the one local trunk-advance). Refuses a lane with a live child (fold the child in first); multi-arg orders child→parent. **`--all`** folds the whole forest **bottom-up** (child→parent→trunk) and records **one** undo checkpoint for the invocation (fractal lanes, D3). **Notes, never refuses, an empty and undescribed change it folds** (D2-b) — an empty change carrying a description is deliberate and is never mentioned; `--dry-run` carries the same note. | rebase + ff base/trunk + bookmark/workspace cleanup |
-| `abandon` | `gitman abandon [<lane>] [--recursive]` | Discard a lane (terminal); abandons only the lane's **own** commits (`base..lane`, so a stacked lane's parent survives). **`--recursive`** tears down the whole `+`-path subtree **bottom-up** (child→parent), each node its own undo checkpoint; a foreign workspace an agent may still be in is forgotten but its dir is **kept** (never rmtree'd) (fractal lanes, D6). | `jj abandon` (`base..lane`) + bookmark delete + workspace cleanup |
-| `sync` | `gitman sync [--all] [--trunk] [--dry-run]` | Fetch + rebase. Plain: rebase the current lane (or `--all` lanes, parent→child) onto its **base** (parent lane head, or **local** trunk — never advances trunk). **A conflicting rebase is recorded in the lane** (non-blocking, exit 1), trunk-rooted or stacked alike (D1-a, §8); skips a lane that already records a conflict or whose base conflicted this run, and names the resolution order instead. `--trunk` integrates a genuinely-moved `origin/<trunk>`: advance or rebase local trunk, retire/rebase surviving lanes, repark `@`; with `--all`, refresh every stale workspace too — that rollback-on-conflict path is unchanged. **`--dry-run` is a real, read-only report** on either shape: no fetch, no snapshot, no mutation. | `jj git fetch` + `jj rebase` (+ content relation and trial merge for `--trunk`) |
-| `push` | `gitman push [--reset-origin]` | Publish local trunk → origin under **two gates**: content (the remote holds nothing local lacks) and push safety (the push would not drop a commit object the remote names). A refusal names the commits `--reset-origin` would drop. | `ws.git_push(<remote>, <trunk>)` (force-with-lease engine; both gates are gitman policy) |
-| `remote add` | `gitman remote add <url> [--name origin]` | Add a git remote (in-process; never touches git HEAD), bootstrapping trunk toward its first `push`. | `ws.add_remote` |
-| `untrack` | `gitman untrack <path>…` | Stop tracking machine-local file(s): add to `.gitignore` + drop from the tree (files kept on disk; on the current lane). | `.gitignore` + `ws.untrack_paths` |
-| `bookmark track` | `gitman bookmark track <lane> [--remote <name>] [--as <name>]` | Make jj track a published lane's own remote bookmark twin — fixes pyjutsu's `untracked_remote_bookmarks()` refusal on `land`/`publish`/`push`. Refuses a twin at a different commit (exit 1, names `repair --keep`), never merges a divergent twin. `--as` tracks a differently-named twin (legacy `/`-separator), and also refuses a differing commit. `gitman repair` auto-tracks the same-commit case on its own; this verb is the direct, operator-named route. | `tx.track_bookmark` |
-| `bookmark untrack` | `gitman bookmark untrack <lane> [--remote <name>]` | Stop jj tracking a lane's own remote bookmark (the bookmark counterpart to `untrack`'s file untracking). | `tx.untrack_bookmark` |
-| `resolve` | `gitman resolve [<path> --show \| --from <file\|->] [--list]` | Surface remaining conflicts / confirm cleared; `--show` hands back one path's marked text and `--from` writes a resolution into `@`. Markers left in the content are honoured, so a partial resolution stays exit 1. | `jj resolve` |
-| `undo` | `gitman undo [--op <id>] [--list]` | Revert the last intent, or the intent named by a `--list` id. | `jj undo` / `jj op restore` |
-| `doctor` | `gitman doctor` | Validate the execution boundary and toolchain (pyjutsu/jj-lib version, git, colocation, remote, frozen trunk, uv, colocated HEAD/refs/index) and report canonicity. | preflight checks |
-| `init` | `gitman init [--trunk <name>] [--colocate]` | Resolve + freeze trunk and write `gitman.toml`. `--colocate` adopts an existing `.git` or creates one first. | colocation + trunk freeze + config write |
-| `repair` | `gitman repair [--abandon] [--keep local\|origin]` | The one recovery path: adopt stray changes into lanes (or `--abandon` discard them) and heal jj↔git ref/HEAD drift, never discarding history unless asked. | anomaly registry + ref repair + `git_import` |
-| `version` | `gitman version [bump <major\|minor\|patch>]` | Show or bump the repo's semver, through the active version source (`uv`/`tag`/`file`, named in the report). `bump` refuses under `tag` — no file exists to write; use `release` instead. | provider read/write (§15) |
-| `release` | `gitman release [<level> \| --version X.Y.Z]` | (bump →) tag `vX.Y.Z` → push tag. Verify hook first; refuses a stale lock (`uv` provider only). An explicit `--version` skips the version read and lock check entirely, so it works with no version source at all. Normally called with no level, after `land` + `push`. | provider write + `git tag` + push |
-| `workspace list` | `gitman workspace list` | List workspace registrations; mark the ones with no live lane. | `ws.workspaces()` |
-| `workspace forget` | `gitman workspace forget <name>` | Drop a jj workspace registration; never removes the directory. | `ws.forget_workspace` |
-| `workspace prune` | `gitman workspace prune` | Retire every registration with no live lane and an empty `@`. | `ws.forget_workspace` |
-| `trunk rename` | `gitman trunk rename <new-name>` | Rename trunk: same commit, new bookmark, `gitman.toml` rewritten, in one atomic verb (design 58, I1). Retires the old name's **local** bookmark unconditionally — ships `--retire`-only behaviour, no `--keep-lane` (an owner decision: an un-retired old name is one `sync --trunk` away from gitman deleting its remote branch with no opt-out). Never deletes a remote branch itself; a published old name's branch survives, named explicitly in the report. When the new name already exists on the remote, the report also names the fetch staleness: the comparison read the last fetch's tracking ref, not a fresh network call. | `tx.create_bookmark` + `tx.delete_bookmark` + targeted config rewrite |
-| `trunk show` | `gitman trunk show` | Read-only: trunk's name, commit id, and published state (whether a remote twin exists and how local trunk relates to it). Composes `capture_state`'s `TrunkRef` and `render.py`'s existing relation phrasing — never re-derives the relation. No lock, no transaction, no undo line (design 58, §7 Q3). | `capture_state` (one pyjutsu view, no mutation) |
-
-**Global flags:** `--json`, `--repo <path>`.
-**Exit codes:** `0` ok · `1` VC decision needed (conflict / push rejected / verify
-blocked / off-canonical) · `2` infra/config (no remote, auth, jj/git missing, outside
-devenv, no version source) · `3` invalid usage.
-
-**The infra/VC split is a contract, not an accident (project 30 phase 3, formalised in project
-55 §7.2).** `map_pyjutsu_error` (`src/gitman/core.py`) routes a `GitError` by its message: a
-transport, DNS, authentication, or timeout failure is exit `2` (infra — retry or fix access, the
-repo's own state did not cause it); every other `GitError` (a rejected push, a failed ref export)
-is exit `1` (a VC decision for the operator). A release bus can rely on this distinction to choose
-retry-the-transport vs stop-and-ask. Pinned by `tests/test_phase3_hardening.py`
-(`test_transport_git_error_maps_to_exit_2`, `test_non_transport_git_error_maps_to_exit_1`). **Known
-fragility, recorded rather than fixed:** the routing is a substring match on the exception
-message, so it breaks silently the moment pyjutsu or libgit2 rewords one of the four keywords.
-Classifying by exception type or an error code instead would be sturdier; that is the obvious
-follow-up, not yet built.
-
-**Fractal lanes (recursive task-decomposition), Phase 2 shipped:** the whole model *makes the
-2-level (trunk + lanes) tree n-level by replacing the constant "trunk" with "this node's parent".* A
-lane name is a `+`-path (`T`, `T+api`, `T+api+handler`) and its **base is its name-parent** — a pure
-namespace lookup (D1), which retired Phase-1's DAG-ancestry base search and closed its "child-behind-
-its-base" gap by construction (I3′). **`+`, not `/`, is the separator** (issue 44 stage 4f / project
-46 decision D-A2): it is a legal git ref character, so the lane name, the jj bookmark, the git ref
-and the remote branch are one string with no parent/child collision. `/` is still accepted on
-input (`gitman start T/api`) as sugar, normalised to `+` at the CLI boundary. `start T+api` fans out
-a child under the lane `T`; `land`/`sync`/`status` are parent-aware (fold a node into its base,
-`parentHead..node` reporting, the indented `↳ on <parent>` tree), and a base with a live child
-refuses to land/abandon. **`land --all` (2B)** folds the whole forest bottom-up
-(child→parent→trunk); internal folds move no trunk, only the root fold advances it (no new
-invariant exemption), and the invocation records **one** undo checkpoint. **Parallel agents (3A)
-shipped:** N agents fan out child lanes into their own workspaces (`start T+api --workspace`) and
-fold in from their own workspace — `land` refuses to fold a lane whose `@` is live in another
-workspace (never yanks a working dir), siblings left `N behind` catch up with their own `sync`, and
-`repair` refreshes a workspace whose `@` was rewritten out from under it. **`abandon --recursive`
-(3B) shipped:** the teardown mirror of `land --all` — a *sequence* of one-level `base..node`
-abandons, ordered deepest-first, each its own tx/undo checkpoint; bottom-up so no child is orphaned,
-trunk frozen throughout (no new invariant exemption), and a foreign workspace an agent may still be
-in is kept (never rmtree'd). **The fractal-lanes model is complete:** the publish path now works for
-every non-leaf tree (D-A2), which the pre-D-A2 `/` encoding could not do.
-
-**Deferred:** the forge extra's PR-backed fold and PR status; a `decompose <task> --into a,b,c`
-batch fan-out wrapper (loop `start` for now); an interactive, prompt-driven `split` selection
-(hunk-level selection ships as `split --hunks`; see `.scratch/projects/27-implementation-guides/
-D5_HUNK_SPLIT_GUIDE.md`); re-rooting an orphaned child (a `repair` extension); pre-release version
-metadata; pluggable forges. Two further items are **designed and unbuilt** — `gitman absorb` and a
-signing-visibility check in `doctor`; see `.scratch/projects/24-deferred-backlog/BACKLOG.md` D9–D10.
-(D8, a write mode for `resolve`, shipped — the row above.)
-
-## 8. Lane & workspace flow (parallel agents)
-
-The motivating case: several agents chase several child lanes of one task simultaneously, then fold
-back. The fractal fan-out/fan-in (Phase 3A) is the shipped shape:
-
-```bash
-# a task lane `T`, three children, three isolated working copies (one agent each)
-$ gitman start T                                    # the task lane (own work allowed on it)
-$ gitman start T+api     --workspace                # → .worktrees/T+api/,     lane "T+api"
-$ gitman start T+storage --workspace                # → .worktrees/T+storage/, lane "T+storage"
-$ gitman start T+web     --workspace                # → .worktrees/T+web/,     lane "T+web"
-
-# each agent works in its own workspace dir — no contention over @
-agent-api$     cd .worktrees/T+api     && …edit… && gitman describe -m "api handler"
-# fold in FROM YOUR OWN WORKSPACE — advances the shared parent T under the others
-agent-api$     gitman land                          # T+api → T (from inside .worktrees/T+api)
-agent-storage$ cd .worktrees/T+storage && gitman sync   # catch up: T moved; rebase onto it
-agent-storage$ gitman land                          # T+storage → T
-# the coordinator folds the finished task up
-$ gitman land T                                     # T → trunk (the root fold; trunk advances only here)
-```
-
-- **`--workspace`** runs the lane in its own `jj workspace` — an isolated in-repo
-  `.worktrees/<lane>/` checkout (self-ignored so colocated git never reports it), sharing the one
-  repo. That's how true parallelism avoids stepping on a single `@`, and it matches how parallel
-  agents are spawned anyway (separate working dirs). Without `--workspace`, `start` creates
-  the lane in the current working copy (serial, single-agent flow).
-- **The brief repo lock** (I4) only bites on operations that touch shared state (trunk
-  advance, op-log head, bookmark namespace) and is anchored at the **shared** repo root, so every
-  workspace contends on one lockfile. Per-lane editing is contention-free, so parallelism is real;
-  concurrent mutating intents simply serialize (a live holder → exit 2). Concurrent lane *creation*
-  with the same name is resolved once, under the lock, at creation — never an ambiguity downstream.
-- **Fan in from the lane's own workspace.** `land`/`land --all` **refuse** to fold a lane whose `@`
-  is checked out live in another workspace — folding it there would rewrite its `@` and remove the
-  dir out from under a working agent. `cd` to the lane's workspace and `gitman land` (the `@` reparks
-  locally); the sweep names and skips any lane it can't safely fold. gitman **never** reaches into
-  another workspace's `@`: a sibling left `N behind` the advanced parent refreshes itself with its
-  own `gitman sync`; a workspace whose `@` was rewritten out from under it (a sibling's fold, a
-  `sync --trunk`) shows stale and is repaired by `gitman repair` **from inside it**.
-- **`land`** is the sanctioned local trunk-advance (I5): it folds the lane into its base (parent lane
-  or trunk), advancing the base by change-id, then retires the lane. Folding a `--workspace` lane
-  from its own dir keeps that (now parked, reusable) workspace — `cd` out and delete it, or start the
-  next child lane in it. A reviewed flow opens a PR for CI/audit, but the trunk advance is still the
-  local `land` (§8.1), not a forge merge button.
-- **An overlap at fan-in materializes, and it always did — trunk-rooted or stacked alike (D1-a,
-  project 51).** `sync` rebases every lane whose head is clean onto its base. When two sibling lanes
-  edit the same line and one lands first, the other's `sync` rebases anyway; jj records the conflict
-  **in the lane's own commit**, with markers on disk wherever that lane's `@` lives — never left on
-  its prior base, never silently declined. This is a first-class recorded state, not a reason to
-  leave a lane behind: `resolve --list` names it, `resolve <path> --show`/`--from` clears it, then
-  `land` folds normally. `sync` skips exactly two shapes a rebase cannot help, and reports the
-  resolution order instead of attempting them: a lane that **already records a conflict** (rebasing
-  again cannot clear it — only editing its markers can), and a lane whose **base conflicted this
-  run** (rebasing onto a conflicted head only buries the lane's own change inside the marker block).
-  Conflicts resolve **per lane, top-down, by editing markers** — resolving a parent auto-rebases its
-  children and changes their markers too, so a child is resolved after its parent, never in
-  parallel, and never by re-syncing (§20 records the three measured facts this rests on). This rule
-  is **specific to lanes**; `sync --trunk`'s rebase of un-pushed lands still rolls back on conflict,
-  because trunk is shared history and rolling back protects it (§8.1) — that path is unchanged.
-- **Tear down a whole branch with `abandon <node> --recursive`.** When a subtree is a dead end, the
-  opt-in cascade discards it **bottom-up** (deepest child → … → the node), each node its own tx/undo
-  checkpoint (`gitman undo` reverses one node per call). It's the teardown mirror of `land --all`:
-  bottom-up ordering means a parent is only abandoned once its children are gone, so nothing is
-  orphaned and trunk stays frozen throughout. Each node abandons only its **own** commits
-  (`base..node`), so an in-flight sibling elsewhere is unaffected. A workspace child an agent may
-  still be editing is **kept** (its jj row forgotten, its dir left with a "cd there and delete it"
-  note) — the cascade never rmtrees a dir out from under a working agent, and never blocks on one.
-  Bare `abandon <node>` stays one-level: it refuses while the node has a live child (no implicit
-  cascade).
-
-### 8.1 Trunk ↔ origin — the single local-authored model (`push` / `sync --trunk`)
-
-**Trunk is local-authored: gitman is the sole writer of trunk SHAs.** Lanes fold into local trunk via
-`land`; origin is a **mirror** you reach by fast-forward `push`. Because a sole author never seeds a
-divergence, every `push` stays a fast-forward — no re-hash twins, no force-push in the normal path.
-There is **one** origin-integration verb (`sync --trunk`) and **one** trunk-push verb (`push`); the
-old two-door `adopt`/forge-authored-trunk path is gone.
-
-**The review flow is `publish → (open PR) → land → push`:** `publish` the lane and open a PR so CI runs
-and reviewers see the diff (as *information*, not a gate); then `land` locally and `push`. The pushed
-trunk contains the PR head, so GitHub auto-marks the PR **Merged** — review and audit survive, but the
-trunk advance is local. (If trunk moved between publish and land, the rebase re-hashes the lane and you
-close the PR by hand — rare under single authorship.)
-
-`gitman push` — publish local trunk to `origin` under **two gates**, both gitman policy (issue 45):
-- **Content** (§10): does `origin/<trunk>` hold content local lacks? `in-sync` → NOOP; `local-ahead`
-  → pass; `forge-ahead`/`diverged`/unknown → **refuse, `gitman sync --trunk` first** (never clobbers
-  real forge work).
-- **Push safety**: would the push drop a commit *object* the remote still names? Content alone cannot
-  answer this — it downgrades an ancestry divergence to `local-ahead` when the remote's content is
-  contained locally (right for a re-hash twin, wrong for a foreign commit a rebase absorbed). When it
-  would, the refusal **names the commits** `--reset-origin` would drop.
-- **The engine is an unconditional force-with-lease** (`ws.git_push`): jj-lib always force-pushes
-  with a lease (= the remote-tracking ref). So both gates are *gitman's*, not the engine's — and
-  **`push --reset-origin`** is the *same* call with both gates lifted: the lease-safe migration
-  escape for legacy re-hash residue. The lease still refuses to clobber genuinely out-of-band work,
-  so even `--reset-origin` cannot overwrite a collaborator's push made since your last fetch.
-
-`gitman sync --trunk` — integrate a genuinely-moved `origin/<trunk>`:
-1. **Fetches**, then **classifies by content** (§10). `in-sync`/`local-ahead` (incl. a re-hash twin) →
-   trunk does **not** move (a lanes-only integration). `forge-ahead` → **FF** local trunk to origin.
-   `diverged` (un-pushed local lands **and** origin genuinely moved) → **rebase the un-pushed lands
-   onto origin** — the single model **never drops local work** (there is no `--force`).
-2. **The conflicted trunk bookmark is the normal divergence shape:** jj marks the local trunk bookmark
-   conflicted whenever a fetch finds real both-sides divergence; `sync --trunk` resolves it structurally
-   (rebase the local side onto the origin side, set the bookmark to the new head). A rebase that
-   *conflicts* is rolled back non-blocking (never commits markers into tracked source) → `gitman
-   resolve`.
-3. **Retires forge-merged survivor lanes by content** (empty-after-rebase across squash/merge/rebase),
-   rebases genuine survivors, and **reparks `@`** onto the advanced trunk. `--dry-run` reports the plan
-   only.
-
-Mutating intents mirror jj's bookmarks into the colocated git after each op. If a stuck
-`refs/heads/<lane>` (e.g. an abandoned lane's leftover ref) makes that export partially fail, the
-desync is **surfaced** (a report note + a `gitman doctor` `colocated-refs` check) rather than
-swallowed, and `gitman repair` heals it (re-sync refs to jj, drop leftovers) — see §11.
-
-Every trunk↔origin op stays CANONICAL and is a single `gitman undo` step (a `push` is one-way — undo
-reverts local only). **`sync` never advances trunk** (it fetches lanes-only and rebases onto *local*
-trunk) — trunk advancement is `land`'s (local) or `sync --trunk`'s (integrating origin) job, by design. Keep
-`gitman.toml` / VC wiring on **trunk**, never only in a lane, so retiring a lane can never delete it.
-
-## 9. The `RepoState` model (the Pydantic heart)
-
-Analogous to Testee's `VerificationReport`. A reloadable snapshot; the **durable history
-is the jj op-log**, the model is a point-in-time view rendered to the agent.
-
-```
-RepoState
-  repo_root: Path
-  colocated_git: bool
-  canonical: bool                   # all invariants hold
-  off_canonical: str | None         # reason, if not canonical
-  trunk: TrunkRef                   # frozen, from config (name, change_id, commit_id)
-  current_lane: str | None          # the lane of this workspace's @
-  foreign_paths: list[str]          # paths in @ this session did not write (advisory, S4)
-  session_identity: str | None      # GITMAN_SESSION or the workspace name
-  lanes: list[Lane]
-  recent_ops: list[Op]              # tail of op-log → powers undo affordances
-  notes: list[str]                  # honesty notes ("not done" / staleness)
-
-Lane
-  name: str                         # = bookmark = git branch (readable)
-  state: draft | published | merged # `merged`: head is an ancestor of <trunk>@<remote>; no `landed`
-  head: Change                      # tip change (lane = head + linear ancestors to base)
-  workspace: str | None             # isolated workspace dir, if any
-  conflict: bool
-  ahead: int · behind: int          # vs the lane's base
-  created_at: datetime | None       # oldest in-range commit's author time (survives a rebase)
-  updated_at: datetime | None       # head's committer time (moves on a rebase)
-  pr: PRRef | None                  # populated only by the github extra
-
-Change
-  change_id: str        # STABLE across rewrites — the agent's referent
-  commit_id: str        # current git hash (churns on amend)
-  description: str
-  empty: bool
-  files_changed: int · insertions: int · deletions: int
-
-Conflict   { lane, files: list[{path, sides}] }     # jj-style markers (see §10.7)
-TrunkRef   { name, change_id, commit_id }
-Op         { op_id, description, timestamp, undoable }   # description from op-log tags.args
-```
-
-## 10. Feeding `RepoState` — jj structured output
-
-> **Superseded (2026-06-17, pyjutsu migration MP1–MP3).** gitman no longer shells out to a
-> `jj` CLI or parses templated output. jj-lib runs **in-process via [pyjutsu](../Pyjutsu)**
-> (PyO3) and hands gitman **typed models** directly: `Session.view()` / `fresh_view()` →
-> `RepoView`, whose `log()` / `bookmarks()` / `diff_stat()` / `conflicts()` / `operations()`
-> return the structured data the strategies below reconstructed by hand. `state.py` projects
-> those into `RepoState`. No raw-git subprocess is retained: annotated tags now go through
-> `ws.git.create_tag`. The strategy analysis below is preserved as design rationale and as the
-> **contract pyjutsu must satisfy** (the field → source map in §10.7 still holds, now sourced from
-> pyjutsu); the jj-lib 0.44.0 pin lives in pyjutsu and `doctor` asserts
-> `pyjutsu.JJ_VERSION == pyjutsu.JJ_LIB_TARGET`.
-
-Capturing state is the central engineering question. Five strategies; Gitman layers
-several. **All validated against jj 0.38 by a 2026-06-15 spike**, and carried forward in-process
-by pyjutsu (jj-lib 0.44.0) rather than templated CLI output.
-
-### 10.1 Strategy B — a custom `json()` template (PRIMARY)
-
-jj has a `json()` template **function**. The clean win is not `json(self)` (omits
-`empty`/`conflict`, nests full parent objects) but a **custom JSON object built by
-concatenating `json()` of exactly the fields we want** — escaped, no delimiter parsing.
-Per lane (revset selects the lane's changes, `<head>` = the lane bookmark):
-
-```bash
-jj log --no-graph -r 'trunk()..<lane> | <lane>' -T '
-  "{"
-    ++ "\"change_id\":"   ++ json(change_id.short())
-    ++ ",\"commit_id\":"  ++ json(commit_id.short())
-    ++ ",\"desc\":"       ++ json(description.first_line())
-    ++ ",\"empty\":"      ++ json(empty)
-    ++ ",\"conflict\":"   ++ json(conflict)
-    ++ ",\"bookmarks\":[" ++ bookmarks.map(|b| json(b.name())).join(",") ++ "]"
-    ++ "}\n"'
-```
-
-**Spike-confirmed limitation (important):** jj has **no list/object literal** and `json()`
-rejects a `.map()` result (`Serialize` vs `ListTemplate`). So `json()` is used only on
-**scalar leaves**; **list** fields are built by concatenation — `"[" ++ xs.map(|x|
-json(x)).join(",") ++ "]"`. The template above is the verified, `json.loads`-clean form →
-parse with stdlib `json` into `Change`. Also: `self.json()` does **not** exist (json is a
-function); `\u{..}` escapes are rejected (`\x..`, `\t`, `\n` work).
-
-The op log is likewise structured: `jj op log --no-graph -T 'json(self) ++ "\n"'` emits
-`{id, parents, time:{start,end}, description, is_snapshot, tags:{args}}` — and `tags.args`
-carries the literal command behind each op, surfaced in undo reports.
-
-### 10.2 Lane enumeration
-
-Lanes = Gitman-managed bookmarks. List them with `jj bookmark list -T '...'` (name +
-target change), pair with `jj workspace list` for the workspace mapping, and run 10.1 per
-lane head. The set of lane heads also gives the revset for "all lanes" capture.
-
-### 10.3 Strategy C — colocated git for numbers jj won't template
-
-Keyed by the `commit_id` from 10.1:
-
-```bash
-git show --numstat --format= <commit_id>     # → files_changed, insertions, deletions
-git rev-list --count <trunk>..<commit_id>    # → ahead
-git rev-list --count <commit_id>..<trunk>    # → behind
-```
-
-The thesis in miniature: **git as the data layer for what git is good at**, keyed by IDs
-jj hands us.
-
-### 10.4 Strategy D — dedicated jj subcommands
-
-- **Conflicts (per-file):** `jj resolve --list` → `path\tN-sided conflict`.
-- **Recent ops (undo):** `jj op log --no-graph -T 'json(self)'`.
-- **Last fetch time:** most recent `fetch` entry in the op log → staleness notes.
-
-### 10.5 Strategy A — delimited template (defensive fallback only)
-
-A control-char-delimited (`\x1f`/`\x1e`) `jj log` template, equivalent to 10.1 without
-`json()`. Built only if a future pinned jj drops/changes `json()`. Not built now.
-
-### 10.6 Strategy E — porcelain fallback
-
-`jj status` parsing as a last resort for any facet A–D can't reach; flagged fragile.
-
-### 10.7 Field → source map & a gotcha
-
-| `RepoState` field | Source |
+| Concern | Owner |
 |---|---|
-| `trunk` | B at revset `trunk()` (trunk name from config, I1) |
-| `lanes[]` + `current_lane` | 10.2 (`jj bookmark list` + `jj workspace list`) |
-| `Lane.head` / `Change.{change_id,commit_id,desc,empty}` | B (10.1) |
-| `Change.{files_changed,insertions,deletions}` | C (git numstat) |
-| `Lane.{ahead,behind}` | C (`git rev-list --count`) |
-| `Conflict.files` / `Lane.conflict` | D (`jj resolve --list`) + `json(conflict)` |
-| `recent_ops` | D (`jj op log` json) |
-| `canonical` / `off_canonical` | invariant checks (§11) over the captured state |
+| Revisions, change IDs, bookmarks, workspaces, operation history, Git interop | jj |
+| Workspace path convention and close warning | Gitman |
+| Tool versions, environment variables, build and test tasks | devenv |
+| Task selection and command composition | Atuin skills or the developer |
+| Remote hosting and pull requests | Native jj and hosting tools |
 
-**Gotcha:** jj conflict markers differ from git's (`<<<<<<< conflict 1 of 1` / `%%%%%%%` /
-`+++++++` / `>>>>>>>` — not git's `=======`); marker-aware logic must expect the jj form.
+The native `jj` command is available to developers and agents. Gitman does not
+require all version control operations to pass through it. A workspace name is
+only a jj workspace name. It does not create a branch, bookmark, lane, task
+hierarchy, review state, or publication state.
 
-All jj reads/mutations now go through a `Session` over pyjutsu (typed models, typed errors), and
-the git side through `ws.git`. No raw git subprocess remains. The conflict-marker gotcha above
-still applies — pyjutsu surfaces jj-form markers verbatim.
+Gitman stores no repository state. It has no registry, daemon, lock shared with
+all jj writers, canonical graph rule, repair engine, or release manager. The jj
+repository and its operation log remain the source of truth.
 
-### 10.8 The trunk↔origin content relation (drives `status`/`push`/`sync --trunk`)
+The first implementation targets Linux repositories entered through devenv.
+It can target the existing Git-backed, colocated personal workflow. Support
+for other repository layouts requires a proven close warning, not an implicit
+promise.
 
-`TrunkRef` carries a **content-aware** relation between local trunk and `origin/<trunk>`, not an
-ancestry count. The one honest question: *does `origin/<trunk>` hold a commit whose **content** is
-absent from local trunk?* — answered by patch-equivalence (a commit is "already present" iff it is
-empty after rebasing onto the other side; `state._trunk_content_relation` / `_merge_tree_relation`).
-Four outcomes drive the verbs:
+## 3. Initial interface
 
-| Relation | Meaning | `status` / next |
+| Need | Interface | Decision |
 |---|---|---|
-| `in-sync` | same content (incl. a re-hash **twin** — same tree, different SHA) | `push` is a NOOP |
-| `local-ahead` | local has content origin lacks; origin has none local lacks | `gitman push` (FF) |
-| `forge-ahead` | origin has content local lacks; local has no un-pushed lands | `gitman sync --trunk` (FF) |
-| `diverged` | **both** hold content the other lacks | `gitman sync --trunk` (rebase un-pushed lands onto origin) |
+| Open an isolated workspace | `gitman work NAME [--from REVSET] [--path DIRECTORY]` | Gitman owns the stable path and base choice. |
+| See workspaces | `jj workspace list` | Native jj already shows names and paths. Use its template option if needed. |
+| Close and delete a workspace | `gitman close NAME` | Gitman warns about ignored files, then calls native removal. |
+| Keep workspace files while dropping registration | `jj workspace forget NAME` | The exceptional keep-files action stays native. |
 
-Because it compares **diffs, not SHAs**, a re-hash twin reads `in-sync` — never the old hash-based
-"N behind → integrate" nag that could discard un-pushed lands. This is what makes the single
-local-authored model safe under an occasional forge merge or collaborator push.
+The first version has no required Python API, Pydantic models, versioned JSON
+schema, or `gitman list`. Add a machine output contract only when an actual
+consumer needs one. Human output must give a usable path after `work` and a
+precise result after `close`.
 
-## 11. Enforcement — invariants & transactional rollback
+### 3.1 `gitman work NAME`
 
-Constraints that are only *documented* drift. The lane model holds by construction:
+The command creates one jj workspace. Its default destination is
+`$GITMAN_WORKSPACE_ROOT/NAME`. Devenv supplies the same absolute root when the
+developer enters any workspace of that repository. An explicit `--path` uses
+the supplied directory instead. If the root is missing and `--path` is absent,
+the command refuses with a configuration error.
 
-- **Per-intent invariant precheck.** Before acting, each mutating intent asserts the repo is
-  canonical **scoped to what it touches**: a typed anomaly blocks an intent only when its
-  subject is in the intent's subject set (`invariants.subjects_for`). An anomaly on lane A no
-  longer blocks work on lane B. Cheap; reuses the §10 capture, and refuses with the recovery
-  instruction.
-- **Transactional rollback, delta-based.** Each mutating intent captures the op-id before
-  acting, then re-captures the state and compares **the anomaly set after against the set
-  before**. An anomaly present after but not before was introduced *by this intent* (the repo
-  lock makes gitman the sole writer for the whole intent), so it rolls back — even when the repo
-  was already off-canonical elsewhere. This replaced the absolute `not after.canonical` check,
-  which could not roll back a new anomaly once any anomaly existed. A rollback auto-`jj op
-  restore`s to the captured op. **Every Gitman command either lands in a canonical state or did
-  not happen.** (Same op-log lever as `undo`, §12, used as rollback.)
-- **Some anomaly kinds are note-only.** `ref-lagging`, `colocated-record-stale`,
-  `lane-orphaned` and `lane-legacy-name` are reported but never block or roll back an intent.
-  `ref-lagging` is the normal shape between two `publish`/`push` calls, so treating it as a
-  failure would roll back a healthy intent; the others are advisory or await `repair`.
-- **Git refs are a publication artifact.** Since stage 4d only `publish` and `push` export jj
-  bookmarks to `refs/heads/*`; every other local write leaves the colocated `.git` alone, and
-  the refs catch up at the next `publish`/`push` (or a `status` read's best-effort mirror).
-  Nothing gates on a git ref. `repair` heals jj↔git drift in whichever direction it runs:
-  git-only history is imported into jj, never reset away (issue 31).
-- **One deviation handler, not N.** External mutation (raw `jj`/`git`, a human) is the one
-  thing Gitman can't prevent. So `status` classifies the repo as **canonical** or
-  **off-canonical** and there is exactly one recovery path — `gitman repair` — which adopts
-  stray changes into lanes or abandons them, and heals the colocated ref/HEAD drift. `gitman
-  doctor` surfaces that drift in its `colocated-refs`/`colocated-head` rows.
-- **An irreversible network call runs after the guard closes, not inside its body.** `push` and
-  `land`'s lane-retiring delete-push perform their remote call *after* `canonical_guard` closes
-  (issue 45 F2): a postcondition rollback runs `restore_operation`, which unwinds local jj state
-  and cannot retract a sent push. The guard proves local state canonical and publishes the refs
-  first; only then does gitman touch the remote. The repo lock stays held across both.
+The default base is `trunk()`. The optional `--from REVSET` selects another
+base, including a change in a native jj stack. Gitman resolves the revset to
+exactly one revision and prints the resolved commit ID. It accepts `root()`
+when jj resolves `trunk()` to root in a fresh repository. It does not add a
+second trunk policy. A zero-result or ambiguous revset causes refusal.
 
-## 12. The undo model (the headline feature)
+Before creation, Gitman rejects an existing workspace name, an occupied
+destination, unsafe path traversal, and a destination inside another working
+copy. It does not adopt an existing directory. It then delegates creation to
+`jj workspace add --name NAME --revision REVSET DIRECTORY`, or to the exact
+equivalent Pyjutsu operation if that makes the implementation smaller.
 
-- **Intent-level checkpoints.** A single intent (e.g. `sync` = fetch + rebase) may be
-  several jj ops. Capture the op-id before; "undo this intent" = `jj op restore
-  <captured>` — reverts the *whole* intent atomically.
-- **`gitman undo`** = undo the last intent. **`--op <id>`** = undo the intent that op id
-  names — restore to that op's PARENT, not to the op itself (mirrors `jj op undo`).
-  **`--list`** = show recent undoable intents (descriptions from op-log `tags.args`), and
-  the ids it prints are the ones `--op` expects.
-- **Every mutating report ends with its own undo command** — the escape hatch is always
-  inline. The single strongest reason to route VC through Gitman.
+The result names the workspace, absolute path, and resolved base. It gives the
+developer a path to enter. It does not change the caller's current directory,
+create a bookmark, fetch, rebase, activate devenv, or run tests. If jj creates
+only part of a workspace, Gitman reports the surviving path and registration.
+It does not delete the partial directory as an automatic recovery action.
 
-## 13. Versioning & release
+### 3.2 `gitman close NAME`
 
-Gitman owns the **semver math and the tag/release flow**. *Reading/writing the number*
-itself goes through one of three **version sources** (project 63), named by `[versioning]
-provider` or inferred when that key is absent:
+The command removes a secondary workspace and its directory **by default**.
+It delegates the final operation to `jj workspace remove NAME`. jj snapshots
+tracked working-copy changes before it removes the workspace. Gitman does not
+decide whether those changes are finished, merged, bookmarked, or published.
+It does not inspect revision ancestry to impose a retention policy.
 
-- **`uv`** (default when `pyproject.toml` exists — every pre-project-63 repo is unaffected):
-  ```
-  uv version --short          # read
-  uv version --no-sync <new>  # write pyproject.toml + uv.lock, leave the venv alone
-  uv lock --check             # prove the pair agrees
-  ```
-  A bump moves `pyproject.toml` and `uv.lock` inside **one** lane change, and `release`
-  refuses to tag while the lockfile disagrees with the manifest.
-- **`tag`** (default when no `pyproject.toml` exists): the newest `v<major>.<minor>.<patch>`
-  git tag already in the repo IS the version — no file, nothing to commit. `version bump`
-  refuses (there is no file to write; the bump happens at `release` time instead).
-- **`file`**: a `[versioning.file] path` + `pattern` (one `{version}` marker), for a repo
-  that tracks its version in a plain file (a `VERSION` file, a Nix attribute, ...).
+Before removal, Gitman inspects the target directory for ignored files. If it
+finds any, it prints a clear warning **before** invoking jj. The warning gives
+the file count and paths, or a bounded path sample with the full count. It
+states that removal will delete them. The command then proceeds, including in
+noninteractive use. This warning reports the effect; it is not a confirmation
+gate and does not protect ignored data from deletion.
 
-This closed a gap the original uv-only design left: a Nix-only repo (no `pyproject.toml`,
-no `uv.lock`) could not be versioned or tagged through gitman at all, forcing a hand-run
-`git tag` — a standing-rule exception that skipped `[release].verify`. See
-`.scratch/projects/63-non-python-repo-versioning/ISSUE.md`.
+The warning must use the ignore rules that apply to the target workspace.
+For the first implementation, the supported repository layout must have a
+reliable way to enumerate ignored files. If Gitman cannot inspect an accessible
+target, it refuses rather than claiming that no ignored files exist. Files
+created after the scan may escape the warning; Gitman does not claim atomic
+inspection across concurrent filesystem writers.
 
-`uv` itself replaced an even older configurable backend (a `{version}` pattern in a named
-file, or `read`/`write` script hooks) that rewrote the manifest and stopped — in a uv
-project the lock kept the old number, `release` tagged the drift, and the correction landed
-*after* the tag was pushed (project 32, G2). The `file` provider here does the one write
-`uv` does (never two separate writes to drift apart), so it does not reopen that gap. A
-legacy `[version]` table is **warned about**, not silently ignored and not fatal, and stays
-retired — the new table is named `[versioning]`, never `[version]`; see §15 "Retiring a
-config table".
+Gitman refuses to remove the main workspace. It reports stale workspace state
+and other native jj refusals with the next jj action when known. A missing
+directory is a separate registration-cleanup case: use native
+`jj workspace forget NAME`. `close` does not silently change its meaning from
+delete to forget.
 
-```toml
-[release]
-tag_format = "v{version}"     # default
-verify     = []               # inherits [publish].verify if set; [] = no gate
-push_tag   = true
+The result names the removed workspace and directory. It does not claim that
+the task is merged or that work has reached a remote. A developer who wants
+the files to remain uses `jj workspace forget NAME` directly.
 
-[versioning]
-provider = "tag"              # "uv" | "tag" | "file"; omit to infer (uv if pyproject.toml, else tag)
+### 3.3 Native work remains native
 
-[versioning.file]              # only read when provider = "file"
-path    = "VERSION"
-pattern = "{version}"
-```
+Use `jj status`, `jj log`, `jj diff`, `jj new`, `jj edit`, `jj split`, `jj squash`,
+`jj rebase`, `jj bookmark`, `jj git fetch`, `jj git push`, and `jj undo` for their
+normal purposes. Gitman does not reimplement those commands. Use devenv tasks
+for builds and tests. Use Atuin skills to compose commands when useful.
 
-- **Semver:** `major`→`(X+1).0.0` · `minor`→`X.(Y+1).0` · `patch`→`X.Y.(Z+1)`. v1 is
-  `MAJOR.MINOR.PATCH` only (pre-release/build metadata deferred).
-- `version bump` writes the new number into the current lane and `describe`s a "Bump version
-  to X.Y.Z" change — local, undoable. Refuses under the `tag` provider (no file to write).
-- `release` is atomic: optionally bump, create an **annotated git tag** on the lane's
-  commit (tags live on the git side — colocated; jj tag support is read-only) and push it.
-  The **verify hook runs before any write**, so a blocked release leaves no tag and no
-  bump. Release normally happens from a landed change on trunk.
-- **`release --version X.Y.Z` is self-sufficient** (Option A, project 63): it skips the
-  version read and the lock check entirely and tags the given version directly, so it works
-  even with no version source configured at all (a fresh Nix repo with no tag yet).
-- **The canonical release is six steps**, because `release <level>` refuses to tag a lane
-  commit that `land` will later rewrite: `start` → `version bump` → `describe` → `land` → `push`
-  → `release` (no level; tags trunk). The inline `release <level>` bump still works, but only
-  from clean trunk. The refusal names the sequence — project 32, G4.
-- **Agent angle:** the central Devman link plane supplies `.agents/skills/gitman/SKILL.md`, documenting
-  the lane loop *and* where this repo's version lives + how to bump it. `gitman doctor`'s
-  `version-source` row and `gitman version`'s own report always name the active provider and
-  whether it was configured or inferred — an inferred choice is never a silent gate.
+## 4. Implementation shape
 
-## 14. Safety & policy
+Start with the smallest implementation that can meet the two command
+contracts. Native `jj` is the default execution boundary. Pyjutsu is optional
+for structured reads or workspace operations when it removes code and passes
+the same acceptance tests. Do not maintain two independent implementations.
 
-- **Protected trunk.** Trunk advances only via `land` (local) or `sync --trunk` (integrating a
-  moved origin) — I5. The everyday `push` is a two-gate **policy** (content-check + push-safety
-  check → refuse non-FF → `sync --trunk`), so it never rewrites shared history in the normal path.
-  The engine's force-with-lease is the out-of-band backstop, surfaced only as the explicit `push
-  --reset-origin` migration escape — and even that cannot clobber genuine out-of-band work (the
-  lease blocks it).
-- **No raw destructive primitive** in the intent surface (no `reset --hard`, no blind
-  force-push). Lane branches force-push via `publish`; trunk reaches origin only through the
-  two-gated `push`.
-- **Everything undoable**, always surfaced inline; every command transactional (§11).
-- **Policy is Pydantic-validated config** — trunk and verify hook
-  (same discipline as `[tool.testee]`).
+Pin compatible jj and Pyjutsu versions through devenv if Pyjutsu is used. A
+Pyjutsu binding to jj-lib and a separate jj executable can differ in behavior.
+The first release does not need a Typer/Pydantic service architecture merely
+to expose two commands.
 
-## 15. Configuration
+Keep workspace path configuration to one environment value. Do not add a
+Gitman config file or a repository metadata format. Run Gitman inside the
+already active devenv environment; Gitman does not launch devenv itself.
 
-Loaded from `gitman.toml` (preferred) or `[tool.gitman]` in `pyproject.toml`,
-Pydantic-validated.
+The ignored-file warning is the main implementation risk. Prototype its
+detection against the actual supported jj workspace layout before choosing
+the language or API. For a colocated Git worktree, Git's ignore machinery may
+serve as a read-only inspection tool. jj still performs the removal. Avoid a
+second, hand-written parser for `.gitignore` rules. If accurate inspection
+requires a large subsystem, keep close out of the first release and use native
+`jj workspace remove` until a small solution exists.
 
-| Key | Meaning |
-|---|---|
-| `trunk` | Trunk bookmark/branch. **Written once by `init`, then frozen** (I1). |
-| `[lanes] workspace_dir` | Where `--workspace` lanes live (default `.worktrees/<lane>` — a hidden, self-ignored in-repo dir; `../<repo>-<lane>` for the old sibling layout). |
-| `[lanes] always_workspace` | If true, `start` creates a separate workspace even without `--workspace` (default false). An isolated start cannot adopt paths from the current working copy. |
-| `[lanes] exclude` | Bookmark-name glob patterns gitman must never treat as a lane. |
-| `[publish] verify` | Command run before publish/release (`[]` → no gate). |
-| `[publish] on_fail` | `block` (default) or `warn`. |
-| `[release] …` | Tag format, verify, push behavior (see §13). |
-| `[land.pre_hook]` / `[land.post_hook]` | Optional invocation-level land commands with timeout and an `allowed_paths` classifier. The changed-path check comes from jj's own before/after snapshot diff, so a path the repo's `.gitignore` already covers is never treated as a hook write (project 64, option b); a rewrite of a tracked, non-ignored path still blocks. `allowed_paths` only selects which refusal message names the path — it never lets a changed path through. |
-| `[versioning] provider` | Version source: `uv` \| `tag` \| `file`. Omit to infer — `uv` if `pyproject.toml` exists, else `tag` (project 63; see §13). |
-| `[versioning.file] path` | Version-file path, read when `provider = "file"` (default `VERSION`). |
-| `[versioning.file] pattern` | Template with one `{version}` marker locating the number in that file (default `"{version}"`). |
+No repository-wide lock can cover native jj users. Handle name and path races
+with ordinary filesystem checks and clear failure reports. Do not promise a
+single atomic transaction across directory creation, scanning, and jj state.
 
-### Retiring a config table
+## 5. Acceptance checks
 
-**A retired table warns, permanently. It is never a hard failure.**
+Use disposable real jj repositories and working copies. Compare the outcome
+with native jj commands. The initial checks are:
 
-Gitman manages the repo that configures gitman, and it is installed from that repo's working
-copy. So a rejection is live the moment the new code is on disk — *before* the change that
-migrates the config can land. Removing `[version]` in 0.5.0 did exactly that: gitman refused to
-run against its own trunk `gitman.toml`, including refusing the `sync` that would have landed
-the fix. The tool locked itself out of its own repo.
+1. `work` uses the same configured root from the main and secondary workspaces.
+2. `work` starts from the resolved `trunk()` revision, including root fallback.
+3. `--from` uses exactly one selected revision; missing and ambiguous results
+   refuse before creation.
+4. Existing names and occupied paths refuse without adopting or deleting files.
+5. Two attempts to create the same name or path yield at most one workspace.
+6. `close` warns before deleting ignored files and reports their count.
+7. `close` removes the target directory through jj and refuses the main workspace.
+8. `close` does not infer that anonymous revisions need bookmarks or publication.
+9. Inaccessible targets and partial failures produce accurate recovery guidance.
+10. Native `jj workspace list` reports the created workspace and stops reporting
+    it after removal.
 
-The rule that prevents it:
+The test suite should cover the supported Git-backed, colocated workspace
+layout, including ignored `.devenv` output. Do not build a simulated VCS state
+machine or network test suite for these commands.
 
-- A retired table is listed in `config.RETIRED_TABLES` with the migration the owner must make.
-- `load_config` strips it before validation and carries it out as `cfg.deprecations`.
-- `doctor` shows it as a `WARN` row; `status` and every intent report it as a `note:`.
-- The warning never expires into an error — the owner migrates on their own schedule (project
-  32, G2).
+## 6. Rewrite sequence
 
-This applies to *retired* tables only. A live table with an invalid value is still a hard
-failure (exit 2) — leniency is about schema changes gitman itself introduces, not about
-accepting broken configuration.
+1. Prove ignored-file enumeration and `jj workspace remove` behavior in a
+   disposable repo using the pinned jj version.
+2. Implement `work` with stable paths and explicit base resolution.
+3. Implement the small `close` preflight and native removal delegation.
+4. Verify the acceptance checks in main and secondary workspaces.
+5. Pilot the commands in the personal devenv workflow. Record repeated friction.
+6. Replace v1 documentation, agent guidance, and distribution only after the
+   pilot demonstrates the v2 workflow. Retire old code without compatibility
+   shims once its consumers have moved.
 
-**Project 63 named the new provider table `[versioning]`, not `[version]`.** Reviving
-`[version]` would mean deleting it from `RETIRED_TABLES`, and every repo still carrying a
-dormant, inert `[version]` table (today a permanent no-op warning) would suddenly have it
-*interpreted* — under a schema it was never written for. A new name keeps the retirement
-honest and the new feature unambiguous.
+The rewrite does not inherit v1's lanes, status model, plan executor, lock,
+repair flow, hooks, versioning, release commands, or GitHub integration.
+Additional helpers require a concrete repeated need and the feature test in
+section 1.
 
-## 16. Report design
+## 7. Technical references
 
-Compact, actionable, Testee-style. Header `Gitman <intent> — <OUTCOME>`; every mutating
-report ends with an inline **Undo** line. `status` is a uniform lane enumeration:
-
-```text
-Gitman status — CANONICAL · 3 lanes
-trunk: main @ def456  (in sync with origin)
-* fix-auth-test     draft      1 change,  +18 −4   · ws .worktrees/fix-auth-test  (you are here)
-  fix-billing-test  published  1 change,  +30 −2   · PR #41
-  fix-cart-test     draft      2 changes, +60 −9   · ws .worktrees/fix-cart-test
-Next: edit · `gitman publish` · `gitman land fix-billing-test`
-```
-
-The trunk line is **content-aware** (§10): `(in sync with origin)` · `(local-ahead — `gitman push`)` ·
-`(forge-ahead — `gitman sync --trunk`)` · `(diverged — `gitman sync --trunk` to rebase)`. It compares
-*content*, not SHAs, so a re-hash twin reads `in sync`, never a data-losing "N behind → integrate" nag.
-
-```text
-Gitman status — OFF-CANONICAL
-Reason: change `pqrs` belongs to no lane (edited outside Gitman?).
-Recover: `gitman repair`  — adopt it into a lane, or abandon it.
-Exit: 1
-```
-
-Throughlines: **"not blocked" wherever conflicts appear** (reinforce jj's first-class
-conflicts); **honesty about one-way actions** (pushed branches/tags can't be cheaply
-undone, and the report says so). Per-intent layouts (clean / behind / conflicted /
-blocked / infra-error) follow `05-vcs-brainstorming/CONCEPT_BRAINSTORM.md` §17, adapted to
-name the lane.
-
-**The resolution-order rule (project 51):** a conflict line must name the lane, the paths, the
-position to run from (`@` here, `cd <workspace dir>`, or `gitman switch <lane>` first), and the one
-verb that changes the state from there. If a report line cannot name a verb that works from where
-the operator is standing, it is not finished. A report may **never** suggest a re-sync as a way to
-clear a conflict — resolving is per lane, top-down, by editing markers, and a rebase cannot clear a
-conflict a lane already records (§20).
-
-## 17. Agent integration
-
-The central Devman link plane supplies `.agents/skills/gitman/SKILL.md` (mirrors Testee's skill): route
-*all* version control through Gitman, never raw `jj`/`git` (it breaks canonicity);
-documents the lane loop, the trunk↔origin verbs (`push`/`sync --trunk`), and the safety net; explains exit
-codes; points at `gitman undo` and `gitman repair` (off-canonical); and records the repo's
-version-bump procedure.
-
-## 18. Execution boundary
-
-Runs only inside a `devenv.sh` shell (consistent with Testee). jj-lib is embedded in-process via
-pyjutsu, so there is no `jj` CLI; `git` and `gh` (for the extra) resolve to pinned versions — no
-host drift. `gitman doctor` validates the toolchain (embedded jj-lib version, colocated `.git`,
-remote, frozen trunk, uv) and reports canonicity.
-
-## 19. Scope — v1 vs deferred
-
-**Shipped (this concept):** the lane model + invariants + transactional enforcement (§5, §11);
-the intent set (§7), incl. lane lifecycle, `shape`, `split --hunks` and workspaces (§8);
-`RepoState` + capture (§9–10); undo (§12); versioning + release (§13); config + policy (§14–15);
-compact reports (§16); the agent skill (§17); `init`/`doctor`/`repair`; the devenv boundary; a
-write mode for `resolve` (`--show`/`--from`).
-
-**Deferred until dogfooding demands it:** the forge extra (PR-backed fold and PR status),
-stacked PRs, an interactive prompt-driven `split` (hunk-level `split --hunks` shipped),
-pre-release/build version metadata, pluggable forges (GitLab/Gitea), `gitman absorb`, and
-signing visibility in `doctor`.
-
-## 20. Resolved questions
-
-The four prior open questions are now resolved by the lane model + the spike:
-
-1. **Trunk detection** → I1: resolved once at `init`, written to config, frozen; `doctor`
-   validates; ambiguity is a hard stop at `init`, never a silent runtime guess.
-2. **Branch naming** → I3: the branch *is* the readable lane name, unique-checked at
-   creation, stable via the bookmark following the change. No generation/collision/freeze
-   logic.
-3. **`RepoState` capture** → §10: custom `json()` template (Strategy B), spike-validated on
-   jj 0.38; git numstat for numbers; `jj resolve --list` for conflicts. All three are now
-   pyjutsu reads against jj-lib 0.44.0.
-4. **Multiple local changes** → I2 + lanes: not hidden and not a soup — every change is a
-   named, listable lane; `status` is a uniform enumeration; parallelism via workspaces.
-
-**Resolved during implementation (Phase 3A — parallel agents):**
-
-- **Lock mechanism / how aggressively `land` serializes** → an explicit O_EXCL lockfile at the
-  **shared** repo root (I4, `invariants.py:repo_lock`); every workspace contends on the one file.
-  Editing is lock-free; only the brief mutating transactions serialize, so concurrent fan-in is just
-  serialized one-level folds — **no second lock, no queueing/backoff**. A live holder → exit 2.
-- **Workspace cleanup semantics** → auto-`forget` + `rmtree` on `land`/`abandon` when folding from
-  *another* workspace's perspective; **keep** the dir (forget-but-say-so) if this process is cd'd
-  inside it; and when you fold a lane **from its own workspace**, the workspace is **kept** (never
-  forget the dir the session is bound to) as a clean, reusable checkout. Folding a lane whose `@` is
-  live in *another* workspace is **refused** outright (you never yank a working agent's dir).
-- **`land` ordering** — landing several lanes that touch overlapping files: sequential rebase with
-  per-lane conflict surfacing; the fold **stops** at the first conflict (partial-progress `BLOCKED`,
-  prior folds committed). `land --all` records **one** undo checkpoint for the invocation, so one
-  `gitman undo` rewinds every lane it landed; `abandon --recursive` keeps per-node checkpoints.
-
-**Resolved during implementation (Phase 3B — recursive teardown):**
-
-- **`abandon --recursive` cascade** → the teardown mirror of `land --all`: a *sequence* of one-level
-  abandons ordered deepest-first (child→parent), each its own tx/undo checkpoint. Bottom-up ordering
-  keeps the no-orphan invariant (a parent is torn down only after its children); no new
-  `_postcondition` exemption (each node moves no trunk, leaves no stray). Bare `abandon` stays
-  one-level (refuses a node with a live child).
-- **Abandon range is `base..node`, not `trunk..node`** — a single-node abandon discards only the
-  lane's *own* commits, so abandoning a stacked leaf no longer silently destroys its parent's work (a
-  Phase-1 latent data-loss bug, fixed with the cascade; for a flat lane base==trunk → unchanged).
-- **Foreign workspaces in a cascade are kept, not rmtree'd** — a workspace child of an abandoned
-  subtree may be one a concurrent agent is still editing, and gitman can't see another process's cwd;
-  the safe, consistent rule (never rmtree a `@` checked out elsewhere — same principle as the
-  `land`/`switch` guards) is to forget the jj row but leave the dir with a "cd there and delete it"
-  note. The cascade continues past it (never blocks). Bare `abandon <lane>` of a single named
-  workspace still removes its dir (an explicit, targeted teardown).
-
-**Resolved during implementation (issue 44 stage 3a — the anomaly registry):**
-
-- **`repair` UX — how much it decides automatically vs asks.** `src/gitman/anomalies.py`
-  holds one `REGISTRY: dict[str, AnomalyKind]`, and its row shape *is* the policy: a unique
-  safe resolution gets a `repair` intent name and runs automatically; anything with more
-  than one defensible outcome carries a `manual` string instead, naming the operator's
-  options rather than guessing. A row must carry one or the other — the module asserts this
-  at import. `lane-divergent` is the worked example of a row that needs both: `repair`
-  resolves the three cases where one side's history contains the other's, and `manual`
-  (`gitman repair --keep local|origin`) names the fourth case, a genuine fork, where no
-  automatic choice is safe.
-
-  `manual` text is not a dead field — it reaches the operator at the point of refusal:
-  `render.py` prints it in the `status` recovery hint, `repair.py` quotes it when a
-  divergence can't be resolved automatically, and `invariants.py` reads it for the
-  dirty-trunk-working-copy refusal. Every anomaly the registry can name ends in either an
-  automatic fix or an honest instruction — never a guess.
-
-**Resolved during implementation (project 51 — conflict materialization, the publish conflict
-gate, and honest `land`/`sync` reports):**
-
-- **A stacked lane's conflicting rebase now materializes, reversing project 23's "never
-  materialize markers into tracked source" rule — for lanes only (D1-a, option C).** That rule was
-  correct where it came from (`sync --trunk`'s rebase of un-pushed lands, where rolling back
-  protects **trunk**, a shared resource) and wrong where it was copied to (a lane's own `sync`,
-  where declining to rebase protects nothing and removes the operator's only resolution surface —
-  no markers, no path list, no diff, an undiscoverable escape). Before this, a stacked lane whose
-  rebase conflicted was left on its prior base forever, invisible to `resolve`, unlandable, and
-  blocking its own parent — the only exit was `abandon`, discarding the work. `sync --trunk`'s own
-  rollback-on-conflict is untouched: trunk is still shared history.
-- **Three measured jj-lib facts decided the shape of the fix; do not re-derive them.**
-  **F1** — jj propagates a conflict to descendants automatically: rebasing a parent lane that
-  conflicts also rebases every commit below it, including a stacked child's, **in the same
-  transaction**, and the child inherits the conflict whether or not gitman's own code touches it.
-  **F2** — a rebase never clears a conflict: resolving a parent completely and then rebasing its
-  already-conflicted child leaves the child conflicted, with the same markers; only **editing that
-  lane's own markers** clears it. This is why a report may never suggest a re-sync as the fix.
-  **F3** — rebasing onto a conflicted head makes a conflict *worse*, measured: three sides instead
-  of two, with the lane's own change buried inside the marker block instead of intact on its own
-  line. `sync` therefore rebases every lane whose head is clean, and skips exactly two shapes a
-  rebase cannot help — a lane that already records a conflict (F2), and a lane whose base
-  conflicted this run (F3) — reporting the resolution order instead of attempting either. Neither
-  skip is an anomaly kind: a materialized conflict is a first-class recorded state, not off-canonical,
-  and a blocking kind here would make landing an unrelated sibling roll itself back for having
-  introduced a conflict elsewhere.
-- **`land` warns rather than refusing an empty, undescribed fold (D2-b).** `start L; land L` used to
-  fold a contentless, messageless commit onto trunk in silence — two such commits already sit beside
-  `v0.9.1`/`v0.9.2` in this repo's own history. The owner chose a note over a refusal: `land` never
-  drops or refuses a change for being empty, so no workflow is locked out and there is no
-  `--allow-empty` flag to add. An empty change that carries a description is a deliberate marker
-  (`start` + `describe -m` is a supported shape) and is never mentioned.
-- **`publish` refuses a lane with a conflicted change, before any network call (D4-b).** A conflicted
-  change cannot be represented in git — jj exports one side of the conflict, so a pushed branch
-  silently held neither the markers nor the lane's own content (reproduced: the remote got the
-  base's side, at the lane's own commit id, with the lane's work simply absent). Folded into this
-  project rather than filed separately, because materializing more conflicts (D1-a) increases how
-  often a conflicted lane exists to publish.
-
-**Resolved during implementation (project 55 §7.2 — the transport/VC exit-code split):** the owner
-signed off on formalising the keyword-based split that already shipped in project 30 phase 3,
-rather than rebuilding it on exception type or an error code. §7 above states the contract; the
-fragility of a substring match on the exception message is recorded there and at the code site
-(`src/gitman/core.py`, `map_pyjutsu_error`) as a named, open follow-up — not fixed in this pass,
-because reclassifying by exception type/code is a larger, riskier change the owner has not asked
-for.
+- [Jujutsu working copies and workspaces](https://docs.jj-vcs.dev/latest/working-copy/)
+- [Jujutsu workspace commands](https://docs.jj-vcs.dev/latest/cli-reference/)
+- [Jujutsu revsets and `trunk()`](https://docs.jj-vcs.dev/latest/revsets/)
+- [Jujutsu visible anonymous branches](https://docs.jj-vcs.dev/latest/glossary/)

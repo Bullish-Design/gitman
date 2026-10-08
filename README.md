@@ -1,135 +1,23 @@
 # Gitman
 
-**The single version-control interface for coding agents.**
-
-Gitman wraps [jujutsu (`jj`)](https://github.com/jj-vcs/jj) for local operations and uses
-**colocated git** as the interop layer for GitHub/CI/collaborators. Instead of an agent
-running `git add`/`commit`/`rebase`/`push`/`tag` (or `jj` plumbing) ad hoc, it asks
-Gitman, which decides what to run, runs it safely, captures the repo state into one
-Pydantic model, and returns a compact, structured, actionable report.
-
-Gitman is **not** a new VCS and **not** a git wrapper for power users. It exposes a tiny
-set of **intents** over a **canonical "lane" workflow**, engineered so an agent cannot get
-wedged, lose work, or leave the repo in a shape no one can reason about. jujutsu's data
-model (auto-snapshot working copy, first-class conflicts, total undo via the operation
-log, stable change IDs, workspaces) is what makes that safety real rather than guardrails
-over a sharp tool.
-
-See [`docs/GITMAN_CONCEPT.md`](docs/GITMAN_CONCEPT.md) for the full design. New to
-jujutsu? [`docs/JUJUTSU_PRIMER.md`](docs/JUJUTSU_PRIMER.md) is a git-user's guide to the
-jj model and how Gitman rides on it.
-
-## The lane model
-
-The repo is always a **set of canonical lanes**. A **lane** is a unit of work: a readable
-name, anchored on trunk, kept linear, with a stable identity Gitman tracks. A lane is a
-named jj **bookmark** (which *is* the git branch) on a trunk descendant, optionally in its
-own jj **workspace** for parallel agents. Multiplicity is fine; anarchy is not.
-
-**Trunk is local-authored:** Gitman is the sole writer of trunk SHAs. Lanes fold into local trunk via
-`land`; origin is a mirror reached by fast-forward `push`, and `sync --trunk` integrates a
-genuinely-moved origin (rebasing your un-pushed lands — never dropping work). One model, no
-forge-authored trunk door.
-
-## Markdown projections
-
-Gitman publishes deterministic, human-facing Markdown views of the repository, its
-lanes, and their observed head changes after `status` and successful state transitions.
-Gitman and jj remain authoritative; the Markdown is a project-management projection.
-
-The output directory is controlled by `GITMAN_MARKDOWN_DIR`, resolved relative to the
-shared repository root. It defaults to `.gitman/markdown`, where Gitman's self-ignore
-makes it disposable runtime output. A repository using Loci can make the same views
-durable and searchable:
-
-```sh
-export GITMAN_MARKDOWN_DIR=.loci/gitman
-gitman status
-```
-
-The configured directory must remain inside the repository. Projections contain stable
-change IDs and semantic workflow state, but deliberately omit commit IDs and diff
-statistics: writing a tracked projection changes those revision-dependent values and
-would otherwise make the file self-invalidating.
-
-## Intents
+A small helper that opens and closes isolated [jujutsu](https://github.com/jj-vcs/jj)
+(`jj`) workspaces. Native `jj` stays the interface for revisions, bookmarks, history,
+conflicts, remotes, and undo.
 
 ```
-# lane loop
-start <name> [--workspace]   switch <lane>   split --paths <sel> --into <lane>
-shape [--squash <rev>] [--reorder <rev>…]   describe [-m]
-sync [--all]   publish   land [<lane>…]   abandon [<lane>]   status
-# trunk ↔ origin (single local-authored model)
-remote add <url>   push [--reset-origin]   sync --trunk [--dry-run]   untrack <path>…
-# safety net / bootstrap / meta
-undo [--op|--list]   resolve [--list]   repair [--abandon]   seed -m
-version [bump <major|minor|patch>]   release [<level>|--version X.Y.Z]   init [--colocate]   doctor
+gitman work NAME [--from REVSET] [--path DIRECTORY]   open a workspace
+gitman close NAME                                     delete a secondary workspace
 ```
 
-Exit codes: `0` ok · `1` VC decision needed (conflict / push rejected / verify blocked /
-off-canonical) · `2` infra/config · `3` invalid usage.
+- `work` puts the workspace at `$GITMAN_WORKSPACE_ROOT/NAME`. The base is `trunk()` unless
+  you pass `--from`. It prints the resolved commit ID and the path.
+- `close` warns about ignored files, such as `.devenv` output, then runs `jj workspace remove`.
+  The warning appears before the deletion. It is not a confirmation prompt.
+- Gitman stores no state. It creates no bookmark or branch.
 
-## Requirements
+Requirements: jj 0.46.0 or later (earlier versions lack `workspace remove` and
+`workspace add --colocate`), Git 2.42 or later, and a colocated Git-backed repository.
 
-Runs inside a [`devenv.sh`](https://devenv.sh) shell, which provides `git`, `uv`, and
-Python 3.13. There is no `jj` CLI: jj-lib 0.44.0 is embedded in-process through
-[pyjutsu](https://github.com/Bullish-Design/Pyjutsu). uv is the version backend.
-
-```bash
-devenv shell -- gitman doctor
-devenv shell -- gitman status
-```
-
-## Installing gitman in another repo
-
-Gitman and pyjutsu are not on PyPI. Both publish to **GitHub releases**, and pyjutsu's wheel
-is pinned in gitman's own `[tool.uv.sources]`. uv carries that pin into your lock, so one
-entry is enough:
-
-```toml
-# your pyproject.toml
-[dependency-groups]
-dev = ["gitman"]
-
-[tool.uv.sources]
-gitman = { git = "https://github.com/Bullish-Design/gitman", tag = "v0.10.2" }
-```
-
-```bash
-uv sync
-uv run gitman doctor
-```
-
-No nix, no wheelhouse, and no Rust toolchain: `uv` fetches the prebuilt pyjutsu wheel from
-its release. The wheel is abi3 and manylinux_2_39, so it serves CPython 3.13 and later on
-x86-64 Linux with glibc 2.39 or newer. On another platform uv builds pyjutsu from the release
-sdist, which does need Rust.
-
-Earlier versions resolved pyjutsu from a vendomat wheelhouse via `UV_FIND_LINKS`. That worked
-only in a repo wired to the exact vendomat revision gitman was built against — see project 32,
-G3.
-
-## Use it in your repo
-
-See **[`docs/USING_GITMAN.md`](docs/USING_GITMAN.md)** for the full adoption guide
-(devenv toolchain, install, `gitman init --colocate`, config, exit codes). The short version:
-
-```bash
-devenv shell -- gitman init --colocate   # colocate jj onto git (new or existing) + freeze trunk
-devenv shell -- gitman status
-```
-
-The central Devman link plane supplies `.agents/skills/gitman/SKILL.md` so coding agents know the loop.
-
-## Examples
-
-Runnable demo and an annotated config live in [`examples/`](examples/):
-
-```bash
-devenv shell -- bash examples/lane-loop.sh    # end-to-end lane loop in a throwaway repo
-```
-
-## Status
-
-Pre-1.0, under active development. Base dependencies are `pydantic` + `typer` only; the
-GitHub forge bridge is a deferred optional extra (`gitman[github]`).
+See [`docs/USING_GITMAN.md`](docs/USING_GITMAN.md) to adopt it,
+[`docs/GITMAN_CONCEPT.md`](docs/GITMAN_CONCEPT.md) for the design, and
+[`docs/JUJUTSU_PRIMER.md`](docs/JUJUTSU_PRIMER.md) for the jj model.

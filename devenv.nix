@@ -6,6 +6,8 @@
 
   # https://devenv.sh/basics/
   env.PROJ = "gitman";
+  # One absolute workspace root, identical in the main and every secondary workspace.
+  env.GITMAN_WORKSPACE_ROOT = "/home/andrew/Documents/Projects/gitman-workspaces";
 
   # A .env exists but gitman needs no env vars; silence the integration hint.
   dotenv.disableHint = true;

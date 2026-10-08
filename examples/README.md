@@ -1,14 +1,10 @@
 # Gitman examples
 
-- **[`lane-loop.sh`](lane-loop.sh)** — a runnable end-to-end demo of the lane loop in a
-  throwaway colocated repo (init → seed → start → describe → status → land → undo → conflict
-  rollback → repair). It never touches your real repo:
+- **[`workspace-loop.sh`](workspace-loop.sh)**: a runnable demo of `work` and `close` in a
+  throwaway colocated repository. It never touches your real repository:
 
   ```bash
-  devenv shell -- bash examples/lane-loop.sh
+  devenv shell -- bash examples/workspace-loop.sh
   ```
 
-- **[`gitman.toml`](gitman.toml)** — an annotated sample config covering every key
-  (`trunk`, `[lanes]`, `[publish]` verify hook, `[release]`).
-
-For adopting Gitman in your own repo, see [`../docs/USING_GITMAN.md`](../docs/USING_GITMAN.md).
+For adopting Gitman in your own repository, see [`../docs/USING_GITMAN.md`](../docs/USING_GITMAN.md).
