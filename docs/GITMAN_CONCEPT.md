@@ -123,10 +123,10 @@ command. Record how often you create, revisit, remove, and forget workspaces.
 Record path or base failures and the steps needed before native removal. A
 disposable example validates the commands; it does not complete this pilot.
 
-The shared Devman Gitman skill still describes v1 lanes and version control
-commands. Projects that use v1 must keep those instructions until they migrate.
-Publish version-specific guidance for v2 projects before changing the shared
-skill's default behavior. This repository's `AGENTS.md` takes precedence here.
+The shared Devman `gitman` skill describes v1 lanes. The `gitman-v2` skill
+describes the work-only interface. Link one version per project. RepoMan keeps
+v1 as its default and selects v2 only when the tracked project manifest says
+`gitmanVersion = 2`. This repository's `AGENTS.md` takes precedence here.
 
 ## 7. Technical references
 

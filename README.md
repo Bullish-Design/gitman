@@ -20,3 +20,4 @@ Git-backed repository. Gitman does not call the Git command directly.
 See [`docs/USING_GITMAN.md`](docs/USING_GITMAN.md) to adopt it,
 [`docs/GITMAN_CONCEPT.md`](docs/GITMAN_CONCEPT.md) for the design, and
 [`docs/JUJUTSU_PRIMER.md`](docs/JUJUTSU_PRIMER.md) for the jj model.
+The usage guide also covers versioned agent skills and RepoMan's v2 opt-in.

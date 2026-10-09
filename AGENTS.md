@@ -7,8 +7,9 @@ Gitman v2 opens jj workspaces at stable paths. The authority is
 ## Version control
 
 Use native `jj` for all version control. Gitman does not wrap it.
-The linked Devman Gitman skill still describes v1. This file takes precedence in this
-repository. Do not use the skill's lane, land, repair, or status commands here.
+Use the linked `gitman-v2` skill for the work-only interface. The shared
+`gitman` skill remains for v1 projects. This file takes precedence when the
+skills and repository instructions disagree. Do not use v1 lane commands here.
 
 - Run `jj status`, `jj log`, `jj diff`, `jj new`, `jj describe`, `jj bookmark`, `jj git fetch`,
   `jj git push`, and `jj undo` directly.

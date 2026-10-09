@@ -2,8 +2,8 @@
 
 ## Install
 
-Add Gitman to the devenv of the repository and pin jj 0.46.0 or later. Set one absolute
-workspace root. The value must be the same in every workspace of the repository:
+Add Gitman to the repository's development dependencies. Pin jj 0.46.0 or
+later. Set one absolute workspace root. Use the same root in every workspace:
 
 ```nix
 # devenv.nix
@@ -16,11 +16,39 @@ workspace root. The value must be the same in every workspace of the repository:
 
 ```toml
 # pyproject.toml
+[dependency-groups]
+dev = ["gitman"]
+
 [tool.uv.sources]
-gitman = { git = "https://github.com/Bullish-Design/gitman", tag = "v2.0.0" }
+gitman = { git = "https://github.com/Bullish-Design/gitman", rev = "88c19933337731e64a015ff4235382502fc4f483" }
 ```
 
-Colocate the repository once with `jj git init --colocate`.
+This commit provides the work-only interface. No v2 release tag exists yet.
+Add `gitman` to an existing dev group instead of replacing its other entries.
+Run `uv sync --group dev` inside devenv. Colocate the repository once with
+`jj git init --colocate`. Gitman does not require the Git command at runtime.
+See [uv's Git source guide](https://docs.astral.sh/uv/concepts/dependencies/#git)
+for the `rev` source field.
+
+## Agent guidance and RepoMan
+
+Use the `gitman-v2` skill in repositories that run this interface. Keep the
+`gitman` skill in repositories that still use v1 lanes. The repository's
+`AGENTS.md` remains the local authority. Do not link both skills to one project.
+
+When a project uses a RepoMan version that supports `gitmanVersion`, select v2
+in its tracked `.repoman/project.toml`:
+
+```toml
+schema = 1
+managers = ["git", "test"]
+gitmanVersion = 2
+```
+
+RepoMan then routes workspace creation to `gitman-v2`, uses native jj for
+integration, and runs `jj status` for its version control status task. The
+default RepoMan setting remains v1 for projects that use lanes. Link the v2
+skill from the shared Devman pool before generating the RepoMan router.
 
 ## Open a workspace
 
