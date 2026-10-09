@@ -19,9 +19,6 @@ __pycache__/
 .devenv/
 .direnv/
 
-# gitman runtime state (lock, etc.)
-.gitman/
-
 # caches
 .cache/
 .pytest_cache/
@@ -31,9 +28,6 @@ __pycache__/
 # local working notes: loose scratch is untracked; tracked design docs live in .scratch/projects/
 .scratch/*
 !.scratch/projects/
-
-# retired old-gitman code, kept for reference only
-archive/
 
 # machine-local agent state (per-machine permission grants; never shared)
 .claude/settings.local.json
