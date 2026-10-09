@@ -134,6 +134,14 @@ def test_usage_errors_exit_2(repo, monkeypatch, capsys):
     assert gitman(monkeypatch, capsys, repo.main, "work")[0] == 2
 
 
+def test_close_is_not_a_command(repo, monkeypatch, capsys):
+    code, out, err = gitman(monkeypatch, capsys, repo.main, "close", "t1")
+    assert code == 2
+    assert not out
+    assert "invalid choice: 'close'" in err
+    assert "t1" not in repo.workspaces()
+
+
 def test_partial_creation_reports_leftovers_and_deletes_nothing(repo, monkeypatch, capsys):
     # A fake jj that registers the workspace through the real one, then fails.
     real = subprocess.run(["which", "jj"], capture_output=True, text=True, check=True).stdout.strip()
@@ -202,13 +210,12 @@ def test_concurrent_attempts_for_one_name(repo, monkeypatch):
     assert repo.workspaces().count("same") == 1
 
 
-def test_close_accepts_a_path_with_trailing_space(repo, monkeypatch, capsys, tmp_path):
+def test_work_prints_a_path_with_trailing_space(repo, monkeypatch, capsys, tmp_path):
     target = tmp_path / "trailing "
     code, out, _ = work(monkeypatch, capsys, repo.main, "t1", "--path", str(target))
     assert code == 0 and f"cd '{target}'" in out
-    code, out, _ = gitman(monkeypatch, capsys, repo.main, "close", "t1")
-    assert code == 0 and str(target) in out
-    assert not target.exists()
+    assert target.is_dir()
+    assert "t1" in repo.workspaces()
 
 
 def test_read_only_git_directory_reports_refusal(repo, monkeypatch, capsys):

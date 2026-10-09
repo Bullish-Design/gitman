@@ -1,4 +1,4 @@
-"""The `work` and `close` operations. jj holds all workspace state."""
+"""The `work` operation. jj holds all workspace state."""
 
 import contextlib
 import fcntl
@@ -6,10 +6,7 @@ import os
 import re
 import shlex
 import subprocess
-import sys
 from pathlib import Path
-
-from gitman import ignored
 
 ROOT_VAR = "GITMAN_WORKSPACE_ROOT"
 NAME_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]{0,63}")
@@ -27,9 +24,7 @@ def jj(args: list[str], cwd: Path) -> str:
         raise Refusal(f"cannot run jj: {err}") from err
     if done.returncode != 0:
         detail = done.stderr.strip()
-        if args[:2] in (["workspace", "add"], ["workspace", "remove"]) and (
-            "--colocate" in detail or "unrecognized subcommand 'remove'" in detail
-        ):
+        if args[:2] == ["workspace", "add"] and "--colocate" in detail:
             detail += "\nGitman needs jj 0.46.0 or later."
         raise Refusal(f"jj {' '.join(args[:2])} failed:\n{detail}")
     return done.stdout
@@ -132,64 +127,3 @@ def _leftovers(name: str, dest: Path, cwd: Path) -> str:
     if registered:
         return f"{dir_note}; workspace {name!r} is still registered: `jj workspace forget {name}`"
     return f"{dir_note}; workspace {name!r} is not registered"
-
-
-def close(name: str, cwd: Path) -> str:
-    """Warn about ignored files in workspace `name`, then remove it with jj. Return the report."""
-    with _repo_lock(cwd):
-        if name not in workspace_names(cwd):
-            raise Refusal(f"no workspace named {name!r}: see `jj workspace list`")
-        target = jj_path(["workspace", "root", "--name", name], cwd)
-        if (target / ".jj" / "repo").is_dir():
-            raise Refusal(f"{name!r} is the main workspace: gitman closes secondary workspaces only")
-        if not os.path.lexists(target):
-            raise Refusal(f"{target} is missing: drop the registration with `jj workspace forget {name}`")
-        if target.is_symlink():
-            raise Refusal(f"{target} is a symlink: gitman will not delete through it; use native jj")
-        here = cwd.resolve()
-        if here == target.resolve() or target.resolve() in here.parents:
-            raise Refusal(f"you are inside {target}: run `cd` to another workspace first")
-        try:
-            stat = target.stat()
-            identity = (stat.st_dev, stat.st_ino)
-        except OSError as err:
-            raise Refusal(f"cannot inspect {target}: {err}") from err
-        try:
-            # Let jj snapshot ordinary new files before checking what it did not track.
-            jj(["log", "--no-graph", "-r", "@", "-T", "commit_id"], target)
-            found = ignored.scan(target)
-        except ignored.InspectionError as err:
-            raise Refusal(
-                f"cannot inspect files, so nothing was removed: {err}\n"
-                f"to remove anyway, use `jj workspace remove {name}`; "
-                f"to keep the files, use `jj workspace forget {name}`"
-            ) from None
-        if found.untracked.count:
-            raise Refusal(
-                f"{target} has {found.untracked.count} untracked path(s) that jj did not snapshot:\n"
-                f"{ignored.describe(found.untracked)}\n"
-                f"check or move them before close; use `jj workspace remove {name}` to delete anyway"
-            )
-        if found.submodules.count:
-            raise Refusal(
-                f"{target} has {found.submodules.count} tracked Git submodule(s):\n"
-                f"{ignored.describe(found.submodules)}\n"
-                f"inspect them before close; use `jj workspace remove {name}` to delete anyway"
-            )
-        try:
-            current = jj_path(["workspace", "root", "--name", name], cwd)
-            stat = current.stat()
-            current_identity = (stat.st_dev, stat.st_ino)
-        except OSError as err:
-            raise Refusal(f"workspace {name!r} changed during inspection: {err}") from err
-        if current != target or current_identity != identity or current.is_symlink():
-            raise Refusal(f"workspace {name!r} changed during inspection: nothing was removed")
-        if found.ignored.count:
-            print(
-                f"warning: removing workspace {name!r} deletes {found.ignored.count} ignored file(s):\n"
-                f"{ignored.describe(found.ignored)}",
-                file=sys.stderr,
-                flush=True,
-            )
-        jj(["workspace", "remove", name], cwd)
-    return f"closed workspace {name}; removed {target}"

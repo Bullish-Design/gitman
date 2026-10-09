@@ -1,7 +1,7 @@
 # Gitman examples
 
-- **[`workspace-loop.sh`](workspace-loop.sh)**: a runnable demo of `work` and `close` in a
-  throwaway colocated repository. It never touches your real repository:
+- **[`workspace-loop.sh`](workspace-loop.sh)**: a runnable demo of `work` and native jj
+  workspace commands in a disposable colocated repository. It leaves real repositories alone:
 
   ```bash
   devenv shell -- bash examples/workspace-loop.sh

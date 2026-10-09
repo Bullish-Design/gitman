@@ -1,7 +1,7 @@
 [project]
 name = "gitman"
 version = "2.0.0"
-description = "Small jj workspace helper: open and close isolated workspaces at a stable path."
+description = "Small jj workspace helper: open isolated workspaces at a stable path."
 readme = "README.md"
 requires-python = ">=3.13"
 license = { text = "MIT" }
@@ -10,7 +10,7 @@ authors = [
   { name = "Bullish Design", email = "BullishDesignEngineering@gmail.com" },
 ]
 
-# No runtime dependencies: gitman calls the native `jj` and `git` commands from devenv.
+# No Python runtime dependencies: gitman calls native `jj` from devenv.
 dependencies = []
 
 [dependency-groups]

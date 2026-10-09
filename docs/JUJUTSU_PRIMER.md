@@ -1,6 +1,6 @@
 # A Beginner's Guide to Jujutsu
 
-Gitman v2 does not wrap jj. You run `jj` yourself. Gitman only opens and closes
+Gitman v2 does not wrap jj. You run `jj` yourself. Gitman only opens
 workspaces (see [`USING_GITMAN.md`](USING_GITMAN.md)). This guide teaches the jj model
 that you use for everything else. The commands run against jj 0.46.0.
 
@@ -109,7 +109,9 @@ legal. Gitman does not require a bookmark for a workspace.
 **Workspaces** are multiple working copies backed by one repo. `jj workspace add ../other`
 gives you a second directory with its *own* `@`, sharing the same operation log and commits.
 This is the native, first-class way to run **several lines of work in parallel** without
-stashing or cloning. `gitman work` and `gitman close` add a stable path and a deletion warning
-on top of it.
+stashing or cloning. `gitman work` adds a stable path. Native
+`jj workspace remove NAME` deletes a workspace and its directory. Native
+`jj workspace forget NAME` keeps its files and drops its registration. Gitman
+does not scan or warn about files before removal.
 
 ---

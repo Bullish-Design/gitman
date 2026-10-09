@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Demo: open two workspaces, then close one that holds ignored output.
+# Demo: open two workspaces, then use native jj to remove or forget them.
 set -euo pipefail
 
 demo="$(mktemp -d)"
@@ -19,7 +19,10 @@ mkdir -p "$GITMAN_WORKSPACE_ROOT/api/.devenv"
 echo output > "$GITMAN_WORKSPACE_ROOT/api/.devenv/cache"
 
 jj workspace list
-gitman close api      # warns about the ignored file, then removes the directory
-jj workspace forget ui  # keeps the files
+echo "Inspect $GITMAN_WORKSPACE_ROOT/api before removal. Native jj deletes its directory."
+jj workspace remove api  # deletes the workspace and its directory, including ignored output
+test ! -e "$GITMAN_WORKSPACE_ROOT/api"
+jj workspace forget ui  # drops the registration and keeps the files
+test -d "$GITMAN_WORKSPACE_ROOT/ui"
 jj workspace list
 ls "$GITMAN_WORKSPACE_ROOT"

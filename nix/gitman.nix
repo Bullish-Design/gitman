@@ -64,7 +64,7 @@ in
       else
         gh release create "$tag" dist/* \
           --title "gitman $version" \
-          --notes "gitman $version: open and close isolated jj workspaces.
+          --notes "gitman $version: open isolated jj workspaces at stable paths.
 
     [tool.uv.sources]
     gitman = { git = \"https://github.com/Bullish-Design/gitman\", tag = \"$tag\" }"

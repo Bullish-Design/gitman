@@ -1,4 +1,4 @@
-# Pinned native jj. nixpkgs lags: 0.43 lacks `jj workspace remove` and `workspace add --colocate`,
+# Pinned native jj. nixpkgs lags: 0.43 lacks `workspace add --colocate`,
 # which gitman needs (added in jj 0.46.0). Replace this file with `pkgs.jujutsu` once nixpkgs
 # ships 0.46 or later.
 { pkgs }:

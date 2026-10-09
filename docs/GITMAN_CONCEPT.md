@@ -1,210 +1,135 @@
 # Gitman v2 — a small jj workspace helper
 
-**Date:** 2026-10-08  
-**Status:** Implemented in Gitman 2.0.0  
-**Scope:** Clean rewrite for the personal devenv workflow
+**Date:** 2026-10-09  
+**Status:** Implemented in Gitman v2  
+**Scope:** Personal devenv workflow
 
-This document defines Gitman v2. It replaces the v1 concept, which remains in
-the Git history. The working notes for the rewrite are in
-`.scratch/projects/66-gitman-v2-rewrite/`. Two facts from the build refine the
-text below: jj 0.46.0 is the minimum version, because it added
-`jj workspace remove` and `jj workspace add --colocate`; and `work` takes a
-short advisory lock in the Git directory so that two Gitman callers cannot
-create one name twice.
+This document defines the current Gitman contract. The v2 rewrite notes are in
+`.scratch/projects/66-gitman-v2-rewrite/`. The review in
+`.scratch/projects/67-gitman-v2-review/REVIEW.md` records the earlier two-command
+design and remains a historical record. The project removed `gitman close` before
+the real-use pilot. Native jj now handles workspace removal.
 
 ## 1. Purpose
 
-Gitman v2 helps a developer open and close isolated jj workspaces. It provides
-a stable place for each workspace and a clear warning before deletion removes
-ignored files. Native jj remains the normal interface for revisions, bookmarks,
-history, conflicts, remotes, and recovery.
-
-Gitman v2 succeeds when a developer can use several task directories without
-learning a second revision model. The helper must stay small enough to replace
-with direct jj commands if its value disappears.
+Gitman opens an isolated jj workspace at a stable path. Native jj manages
+revisions, bookmarks, history, conflicts, remotes, recovery, and workspace
+removal. Gitman stores no repository state and creates no bookmark.
 
 **Feature test:** Add a Gitman operation only when it provides a useful workflow
 that native jj, a jj alias, or a short devenv script cannot provide clearly.
+Reconsider a close helper after a real-use pilot identifies repeated friction.
 
 ## 2. Boundaries
 
 | Concern | Owner |
 |---|---|
-| Revisions, change IDs, bookmarks, workspaces, operation history, Git interop | jj |
-| Workspace path convention and close warning | Gitman |
+| Revisions, bookmarks, workspace registration, operation history, Git interop | jj |
+| Stable workspace path and base selection during creation | Gitman |
 | Tool versions, environment variables, build and test tasks | devenv |
 | Task selection and command composition | Atuin skills or the developer |
 | Remote hosting and pull requests | Native jj and hosting tools |
 
-The native `jj` command is available to developers and agents. Gitman does not
-require all version control operations to pass through it. A workspace name is
-only a jj workspace name. It does not create a branch, bookmark, lane, task
-hierarchy, review state, or publication state.
+The native `jj` command remains available to developers and agents. A workspace
+name is a jj workspace name. It is not a branch, bookmark, lane, task hierarchy,
+review state, or publication state. The jj repository and operation log remain
+the source of truth.
 
-Gitman stores no repository state. It has no registry, daemon, lock shared with
-all jj writers, canonical graph rule, repair engine, or release manager. The jj
-repository and its operation log remain the source of truth.
+The current implementation targets Linux and colocated, Git-backed jj
+repositories entered through devenv. It uses an advisory lock in the shared Git
+directory during creation. The lock coordinates Gitman callers, not native jj
+writers.
 
-The first implementation targets Linux repositories entered through devenv.
-It can target the existing Git-backed, colocated personal workflow. Support
-for other repository layouts requires a proven close warning, not an implicit
-promise.
+## 3. Interface
 
-## 3. Initial interface
-
-| Need | Interface | Decision |
+| Need | Interface | Result |
 |---|---|---|
-| Open an isolated workspace | `gitman work NAME [--from REVSET] [--path DIRECTORY]` | Gitman owns the stable path and base choice. |
-| See workspaces | `jj workspace list` | Native jj already shows names and paths. Use its template option if needed. |
-| Close and delete a workspace | `gitman close NAME` | Gitman warns about ignored files, then calls native removal. |
-| Keep workspace files while dropping registration | `jj workspace forget NAME` | The exceptional keep-files action stays native. |
+| Open a workspace | `gitman work NAME [--from REVSET] [--path DIRECTORY]` | Creates a jj workspace at a stable path. |
+| See workspaces | `jj workspace list` | Shows jj workspace registrations. |
+| Delete a workspace | `jj workspace remove NAME` | Removes the registration and its directory. |
+| Keep files, drop registration | `jj workspace forget NAME` | Leaves the directory and its files in place. |
 
-The first version has no required Python API, Pydantic models, versioned JSON
-schema, or `gitman list`. Add a machine output contract only when an actual
-consumer needs one. Human output must give a usable path after `work` and a
-precise result after `close`.
+Gitman does not scan files or warn before native workspace removal. Inspect
+the target directory yourself before `jj workspace remove NAME`, including
+ignored and untracked files. Gitman does not decide whether work is merged,
+bookmarked, or pushed.
 
 ### 3.1 `gitman work NAME`
 
-The command creates one jj workspace. Its default destination is
-`$GITMAN_WORKSPACE_ROOT/NAME`. Devenv supplies the same absolute root when the
-developer enters any workspace of that repository. An explicit `--path` uses
-the supplied directory instead. If the root is missing and `--path` is absent,
-the command refuses with a configuration error.
+The default destination is `$GITMAN_WORKSPACE_ROOT/NAME`. Devenv supplies the
+same absolute root in each workspace of a repository. `--path DIRECTORY` uses
+the specified directory instead. If the root is missing and `--path` is absent,
+Gitman refuses the request.
 
-The default base is `trunk()`. The optional `--from REVSET` selects another
-base, including a change in a native jj stack. Gitman resolves the revset to
-exactly one revision and prints the resolved commit ID. It accepts `root()`
-when jj resolves `trunk()` to root in a fresh repository. It does not add a
-second trunk policy. A zero-result or ambiguous revset causes refusal.
+The default base is `trunk()`. `--from REVSET` selects another base, including a
+change in a native jj stack. Gitman resolves the revset to exactly one commit
+ID. It accepts `root()` when `trunk()` resolves to root in a fresh repository.
+An empty or ambiguous revset causes refusal.
 
 Before creation, Gitman rejects an existing workspace name, an occupied
-destination, unsafe path traversal, and a destination inside another working
-copy. It does not adopt an existing directory. It then delegates creation to
+destination, an invalid name, and a destination inside another jj working copy.
+It does not adopt an existing directory. It then calls
 `jj workspace add --name NAME --revision COMMIT_ID --colocate DIRECTORY`.
-It holds a short advisory lock against other Gitman callers during creation.
+The advisory lock prevents two Gitman callers from creating the same name at
+the same time. An atomic directory creation prevents them from claiming the
+same path.
 
-The result names the workspace, absolute path, and resolved base. It gives the
-developer a path to enter. It does not change the caller's current directory,
-create a bookmark, fetch, rebase, activate devenv, or run tests. If jj creates
-only part of a workspace, Gitman reports the surviving path and registration.
-It does not delete the partial directory as an automatic recovery action.
+The result gives the workspace name, absolute path, resolved base, and a `cd`
+command. Gitman does not change the caller's directory, create a bookmark,
+fetch, rebase, activate devenv, or run tests. If jj creates only part of a
+workspace, Gitman reports the remaining path and registration. It leaves that
+path in place for inspection.
 
-### 3.2 `gitman close NAME`
-
-The command removes a secondary workspace and its directory **by default**.
-It delegates the final operation to `jj workspace remove NAME`. jj snapshots
-tracked working-copy changes before it removes the workspace. Gitman does not
-decide whether those changes are finished, merged, bookmarked, or published.
-It does not inspect revision ancestry to impose a retention policy.
-
-Before removal, Gitman asks jj to snapshot the target. It refuses if Git still
-finds untracked files, directories, or tracked submodules. A developer can inspect or move them,
-then retry. Native `jj workspace remove NAME` remains the explicit way to
-delete them anyway. Gitman then inspects the target for ignored files. If it
-finds any, it prints a clear warning **before** invoking jj. The warning gives
-the file count and paths, or a bounded path sample with the full count. It
-states that removal will delete them. The command then proceeds, including in
-noninteractive use. This warning reports the effect; it is not a confirmation
-gate and does not protect ignored data from deletion.
-
-The warning must use the ignore rules that apply to the target workspace.
-For the first implementation, the supported repository layout must have a
-reliable way to enumerate ignored files. If Gitman cannot inspect an accessible
-target, it refuses rather than claiming that no ignored files exist. It checks
-that the workspace name still points to the inspected directory before removal.
-It holds an advisory lock against other Gitman callers during this check.
-Native jj writers do not take that lock. Files created after the scan can
-escape the warning. A native jj writer can also change the registration after
-the final check. Gitman does not claim an atomic inspection and removal.
-
-Gitman refuses to remove the main workspace. It reports stale workspace state
-and other native jj refusals with the next jj action when known. A missing
-directory is a separate registration-cleanup case: use native
-`jj workspace forget NAME`. `close` does not silently change its meaning from
-delete to forget.
-
-The result names the removed workspace and directory. It does not claim that
-the task is merged or that work has reached a remote. A developer who wants
-the files to remain uses `jj workspace forget NAME` directly.
-
-### 3.3 Native work remains native
+### 3.2 Native work remains native
 
 Use `jj status`, `jj log`, `jj diff`, `jj new`, `jj edit`, `jj split`, `jj squash`,
 `jj rebase`, `jj bookmark`, `jj git fetch`, `jj git push`, and `jj undo` for their
-normal purposes. Gitman does not reimplement those commands. Use devenv tasks
-for builds and tests. Use Atuin skills to compose commands when useful.
+normal purposes. Use `jj workspace remove NAME` to delete a workspace and its
+directory. Use `jj workspace forget NAME` to keep the files and drop only the
+registration.
 
-## 4. Implementation shape
+## 4. Implementation
 
-Start with the smallest implementation that can meet the two command
-contracts. Native `jj` is the execution boundary. Do not maintain a second
-workspace implementation.
+Native jj is the execution boundary. The package uses only the Python standard
+library. Gitman does not call the Git command directly. The colocated layout
+remains required because Gitman uses `jj git root` to locate its lock file and
+`jj workspace add --colocate` to create the workspace.
 
-Pin jj 0.46.0 or later through devenv. Gitman uses CLI behavior introduced in
-that version.
-The first release does not need a Typer/Pydantic service architecture merely
-to expose two commands.
-
-Keep workspace path configuration to one environment value. Do not add a
-Gitman config file or a repository metadata format. Run Gitman inside the
-already active devenv environment; Gitman does not launch devenv itself.
-
-The ignored-file warning is the main implementation risk. Prototype its
-detection against the actual supported jj workspace layout before choosing
-the language or API. For a colocated Git worktree, Git's ignore machinery may
-serve as a read-only inspection tool. jj still performs the removal. Avoid a
-second, hand-written parser for `.gitignore` rules. If accurate inspection
-requires a large subsystem, keep close out of the first release and use native
-`jj workspace remove` until a small solution exists.
-
-No repository-wide lock can cover native jj users. Gitman locks its own work
-and close calls. It handles path races with filesystem checks and clear failure
-reports. It cannot promise one atomic transaction across a scan and native jj.
+Pin jj 0.46.0 or later through devenv. `work` requires
+`jj workspace add --colocate`, which that version provides. Keep path
+configuration to one environment value. Gitman does not launch devenv itself.
 
 ## 5. Acceptance checks
 
-Use disposable real jj repositories and working copies. Compare the outcome
-with native jj commands. The initial checks are:
+Use disposable real jj repositories and working copies. Keep jj and Git
+configuration isolated. Check these cases:
 
-1. `work` uses the same configured root from the main and secondary workspaces.
+1. `work` uses the same configured root from main and secondary workspaces.
 2. `work` starts from the resolved `trunk()` revision, including root fallback.
-3. `--from` uses exactly one selected revision; missing and ambiguous results
-   refuse before creation.
+3. `--from` selects exactly one revision; missing and ambiguous results refuse.
 4. Existing names and occupied paths refuse without adopting or deleting files.
-5. Two attempts to create the same name or path yield at most one workspace.
-6. `close` refuses paths that jj did not track. It warns before deleting
-   ignored files and reports their count.
-7. `close` removes the target directory through jj and refuses the main workspace.
-8. `close` does not infer that anonymous revisions need bookmarks or publication.
-9. Inaccessible targets and partial failures produce accurate recovery guidance.
-10. Native `jj workspace list` reports the created workspace and stops reporting
-    it after removal.
+5. Concurrent attempts yield at most one workspace for a name or path.
+6. Partial creation reports the surviving directory and registration.
+7. Native `jj workspace list` reports created workspaces.
+8. `gitman close NAME` exits with usage code 2.
 
-The test suite should cover the supported Git-backed, colocated workspace
-layout, including ignored `.devenv` output. Do not build a simulated VCS state
-machine or network test suite for these commands.
+The tests cover the supported colocated layout. They do not simulate a version
+control state machine or test a remote.
 
-## 6. Rewrite sequence
+## 6. Pilot and migration
 
-1. Prove ignored-file enumeration and `jj workspace remove` behavior in a
-   disposable repo using the pinned jj version.
-2. Implement `work` with stable paths and explicit base resolution.
-3. Implement the small `close` preflight and native removal delegation.
-4. Verify the acceptance checks in main and secondary workspaces.
-5. Pilot the commands in the personal devenv workflow. Record repeated friction.
-6. Replace v1 documentation, agent guidance, and distribution only after the
-   pilot demonstrates the v2 workflow. Retire old code without compatibility
-   shims once its consumers have moved.
+Use `work` in real projects before deciding whether Gitman needs another
+command. Record how often you create, revisit, remove, and forget workspaces.
+Record path or base failures and the steps needed before native removal. A
+disposable example validates the commands; it does not complete this pilot.
 
-The rewrite does not inherit v1's lanes, status model, plan executor, sole-writer rule,
-repair flow, hooks, versioning, release commands, or GitHub integration.
-Additional helpers require a concrete repeated need and the feature test in
-section 1.
+The shared Devman Gitman skill still describes v1 lanes and version control
+commands. Projects that use v1 must keep those instructions until they migrate.
+Publish version-specific guidance for v2 projects before changing the shared
+skill's default behavior. This repository's `AGENTS.md` takes precedence here.
 
 ## 7. Technical references
 
 - [Jujutsu working copies and workspaces](https://docs.jj-vcs.dev/latest/working-copy/)
 - [Jujutsu workspace commands](https://docs.jj-vcs.dev/latest/cli-reference/)
 - [Jujutsu revsets and `trunk()`](https://docs.jj-vcs.dev/latest/revsets/)
-- [Jujutsu visible anonymous branches](https://docs.jj-vcs.dev/latest/glossary/)

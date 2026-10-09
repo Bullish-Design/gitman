@@ -13,9 +13,9 @@
   dotenv.disableHint = true;
 
   # https://devenv.sh/packages/
-  # The pinned jj 0.46.0 (nix/jj.nix) is the native `jj` command that gitman calls. `git` is
-  # the read-only ignored-file probe for `gitman close`. `gh` publishes release assets
-  # (nix/gitman.nix, gitman:publish).
+  # The pinned jj 0.46.0 (nix/jj.nix) provides `workspace add --colocate`.
+  # `git` supports repository work and the publish task; Gitman does not call it directly.
+  # `gh` publishes release assets (nix/gitman.nix, gitman:publish).
   packages = [
     (import ./nix/jj.nix { inherit pkgs; })
     pkgs.git
