@@ -12,6 +12,7 @@ gitman work NAME [--from REVSET] [--path DIRECTORY]   open a workspace
   you pass `--from`. It prints the resolved commit ID and the path.
 - `jj workspace remove NAME` deletes a workspace and its directory. `jj workspace forget NAME`
   drops its registration and keeps its files. Gitman does not scan or warn about files before removal.
+- Gitman has no other command. Native `jj` and `gh` do the rest; the usage guide lists them.
 - Gitman stores no state. It creates no bookmark or branch.
 
 Requirements: jj 0.46.0 or later for `workspace add --colocate`, and a colocated
