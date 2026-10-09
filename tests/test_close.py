@@ -1,6 +1,9 @@
+import os
 import shutil
 import subprocess
+from pathlib import Path
 
+import pytest
 from conftest import gitman
 
 from gitman import ignored, workspace
@@ -154,3 +157,105 @@ def test_close_does_not_require_publication(repo, monkeypatch, capsys):
     code, out, _ = close(monkeypatch, capsys, repo.main)
     assert code == 0 and "merged" not in out
     assert "unpublished" in repo.jj("log", "--no-graph", "-r", "all()", "-T", 'description ++ "\\n"')
+
+
+@pytest.mark.parametrize(
+    ("setting", "path"),
+    [
+        ('auto-track = "none()"', "plain"),
+        ('max-new-file-size = "1B"', "large"),
+    ],
+)
+def test_close_refuses_files_jj_did_not_track(repo, monkeypatch, capsys, setting, path):
+    target = open_workspace(repo, monkeypatch, capsys)
+    config = Path(os.environ["JJ_CONFIG"])
+    config.write_text(config.read_text() + f"\n[snapshot]\n{setting}\n")
+    (target / path).write_text("valuable")
+    code, _, err = close(monkeypatch, capsys, repo.main)
+    assert code == 1 and "untracked path(s)" in err and path in err
+    assert (target / path).read_text() == "valuable"
+    assert "t1" in repo.workspaces()
+
+
+def test_close_refuses_nested_repository(repo, monkeypatch, capsys):
+    target = open_workspace(repo, monkeypatch, capsys)
+    nested = target / "nested"
+    nested.mkdir()
+    subprocess.run(["jj", "git", "init", "--colocate"], cwd=nested, check=True, capture_output=True)
+    (nested / "secret").write_text("valuable")
+    code, _, err = close(monkeypatch, capsys, repo.main)
+    assert code == 1 and "nested/" in err
+    assert (nested / "secret").read_text() == "valuable"
+
+
+def test_close_refuses_sparse_excluded_file(repo, monkeypatch, capsys):
+    target = open_workspace(repo, monkeypatch, capsys)
+    repo.jj("sparse", "set", "--clear", "--add", "a.txt", cwd=target)
+    (target / "excluded").mkdir()
+    (target / "excluded" / "secret").write_text("valuable")
+    code, _, err = close(monkeypatch, capsys, repo.main)
+    assert code == 1 and "excluded/secret" in err
+    assert (target / "excluded" / "secret").read_text() == "valuable"
+
+
+def test_close_refuses_wrong_git_worktree_link(repo, monkeypatch, capsys):
+    target = open_workspace(repo, monkeypatch, capsys)
+    (target / ".git").write_text(f"gitdir: {repo.main / '.git'}\n")
+    code, _, err = close(monkeypatch, capsys, repo.main)
+    assert code == 1 and "cannot inspect" in err
+    assert target.exists() and "t1" in repo.workspaces()
+
+
+def test_close_refuses_symlinked_target(repo, monkeypatch, capsys):
+    target = open_workspace(repo, monkeypatch, capsys)
+    moved = target.with_name("moved")
+    target.rename(moved)
+    target.symlink_to(moved, target_is_directory=True)
+    code, _, err = close(monkeypatch, capsys, repo.main)
+    assert code == 1 and "symlink" in err
+    assert moved.exists() and "t1" in repo.workspaces()
+
+
+def test_close_refuses_permission_denied_directory(repo, monkeypatch, capsys):
+    target = open_workspace(repo, monkeypatch, capsys)
+    private = target / "private"
+    private.mkdir()
+    (private / "secret.log").write_text("valuable")
+    private.chmod(0)
+    try:
+        code, _, err = close(monkeypatch, capsys, repo.main)
+        assert code == 1 and "Permission denied" in err
+        assert target.exists() and "t1" in repo.workspaces()
+    finally:
+        private.chmod(0o700)
+
+
+def test_close_refuses_name_swap_during_scan(repo, monkeypatch, capsys):
+    target = open_workspace(repo, monkeypatch, capsys)
+    replacement = repo.root / "replacement"
+    real_scan = ignored.scan
+
+    def swap(path):
+        result = real_scan(path)
+        repo.jj("workspace", "remove", "t1")
+        repo.jj("workspace", "add", "--name", "t1", "--revision=root()", "--colocate", str(replacement))
+        (replacement / "secret").write_text("valuable")
+        return result
+
+    monkeypatch.setattr(ignored, "scan", swap)
+    code, _, err = close(monkeypatch, capsys, repo.main)
+    assert code == 1 and "changed during inspection" in err
+    assert not target.exists()
+    assert (replacement / "secret").read_text() == "valuable"
+    assert "t1" in repo.workspaces()
+
+
+def test_gitlink_listing_selects_submodules(tmp_path, monkeypatch):
+    fake_dir = tmp_path / "fakebin"
+    fake_dir.mkdir()
+    fake = fake_dir / "git"
+    fake.write_text("#!/bin/sh\nprintf '160000 deadbeef 0\\tsub\\000100644 deadbeef 0\\tfile\\000'\n")
+    fake.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{fake_dir}{os.pathsep}{os.environ['PATH']}")
+    found = ignored._listing(tmp_path, stage=True)
+    assert found.count == 1 and found.sample == (b"sub",)

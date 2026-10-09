@@ -1,6 +1,7 @@
 """The gitman command line: `work` and `close`."""
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -32,5 +33,8 @@ def main(argv: list[str] | None = None) -> int:
     except workspace.Refusal as err:
         print(f"gitman: {err}", file=sys.stderr)
         return 1
-    print(report)
+    try:
+        print(report, flush=True)
+    except BrokenPipeError:
+        sys.stdout = open(os.devnull, "w")
     return 0

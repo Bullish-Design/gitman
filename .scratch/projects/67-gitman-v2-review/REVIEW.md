@@ -263,3 +263,15 @@ The lock covers Gitman work callers, not native jj or close. An NFS mount may ch
 3. **Cleanup delivery:** Choose (A) finish fixes, then advance and push yznmonwz through the normal workflow, or (B) publish the cleanup first with known close limits. I recommend A.
 4. **Shared Devman skill:** Choose (A) update the central skill after each linked project has v2, or (B) keep separate versioned v1 and v2 skills during migration. I recommend B during the transition.
 5. **Platform scope:** Choose (A) retain Linux and Git-backed support only, or (B) add another platform after a real consumer needs it. I recommend A.
+
+### Follow-up implementation, 2026-10-08
+
+The findings above describe the source before the fixes. The implementation now shares the Gitman lock between work and close. Close rechecks the workspace path and directory identity after inspection. A native jj writer can still change the registration after the final check. The concept and usage guide state this limit.
+
+Close now asks jj to snapshot the target before Git scans it. It refuses remaining untracked paths and tracked Git submodules. It still warns about ignored files before removal. New tests cover size limits, disabled auto-track, nested repositories, sparse paths, a wrong Git link, permission failure, a symlink target, and a workspace name swap. A parser test covers Git's submodule index mode. A full registered submodule remains untested.
+
+Gitman now maps lock and destination errors to refusals, keeps an empty partial directory, preserves trailing spaces in jj paths, quotes the printed cd path, and handles a closed stdout pipe. The Git scan streams path output and keeps only ten samples. The package still uses the Python standard library only.
+
+The v2 cleanup is now in this repository's change ancestry. AGENTS.md explicitly overrides the linked v1 skill for this repository. The central Devman skill remains unchanged because its repository has extensive unrelated active work. Other linked projects need a coordinated skill migration.
+
+The final devenv gate passed: Ruff lint, Ruff format, and 56 tests. A temporary wheel installed into a clean virtual environment. Its help showed only work and close. The installed wheel also completed examples/workspace-loop.sh in a disposable repository.

@@ -7,12 +7,15 @@ Gitman v2 is a small helper that opens and closes jj workspaces. The authority i
 ## Version control
 
 Use native `jj` for all version control. Gitman does not wrap it.
+The linked Devman Gitman skill still describes v1. This file takes precedence in this
+repository. Do not use the skill's lane, land, repair, or status commands here.
 
 - Run `jj status`, `jj log`, `jj diff`, `jj new`, `jj describe`, `jj bookmark`, `jj git fetch`,
   `jj git push`, and `jj undo` directly.
 - Open a task directory with `gitman work NAME`. List workspaces with `jj workspace list`.
-- Close a task directory with `gitman close NAME`. It deletes the directory. It warns first
-  about ignored files. To keep the files, run `jj workspace forget NAME`.
+- Close a task directory with `gitman close NAME`. It refuses paths that jj did not track
+  and tracked Git submodules. It warns before deleting ignored files. To keep the files,
+  run `jj workspace forget NAME`.
 - Create a bookmark before you push. A workspace name is not a bookmark.
 - Do not use raw `git` to change the repository. Read-only `git` is fine.
 

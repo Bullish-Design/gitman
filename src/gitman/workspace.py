@@ -4,6 +4,7 @@ import contextlib
 import fcntl
 import os
 import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -25,8 +26,21 @@ def jj(args: list[str], cwd: Path) -> str:
     except OSError as err:
         raise Refusal(f"cannot run jj: {err}") from err
     if done.returncode != 0:
-        raise Refusal(f"jj {' '.join(args[:2])} failed:\n{done.stderr.strip()}")
+        detail = done.stderr.strip()
+        if args[:2] in (["workspace", "add"], ["workspace", "remove"]) and (
+            "--colocate" in detail or "unrecognized subcommand 'remove'" in detail
+        ):
+            detail += "\nGitman needs jj 0.46.0 or later."
+        raise Refusal(f"jj {' '.join(args[:2])} failed:\n{detail}")
     return done.stdout
+
+
+def jj_path(args: list[str], cwd: Path) -> Path:
+    """Read one path without removing valid spaces from its name."""
+    output = jj(args, cwd)
+    if not output.endswith("\n"):
+        raise Refusal(f"jj {' '.join(args[:2])} returned no path")
+    return Path(output[:-1])
 
 
 def workspace_names(cwd: Path) -> list[str]:
@@ -73,33 +87,41 @@ def work(name: str, revset: str, path: str | None, cwd: Path) -> str:
         if name in workspace_names(cwd):
             raise Refusal(f"workspace {name!r} already exists: see `jj workspace list`")
         # An atomic mkdir claims the path: of two racing callers, only one succeeds.
-        dest.parent.mkdir(parents=True, exist_ok=True)
         try:
+            dest.parent.mkdir(parents=True, exist_ok=True)
             dest.mkdir()
         except FileExistsError:
             raise Refusal(f"{dest} already exists: gitman does not adopt an existing path") from None
+        except OSError as err:
+            raise Refusal(f"cannot create {dest}: {err}") from err
         try:
             jj(["workspace", "add", "--name", name, f"--revision={base}", "--colocate", str(dest)], cwd)
         except Refusal as err:
             raise Refusal(f"{err}\n{_leftovers(name, dest, cwd)}") from None
-    return f"workspace: {name}\npath: {dest}\nbase: {base} ({revset})\nenter it with: cd {dest}"
+    return f"workspace: {name}\npath: {dest}\nbase: {base} ({revset})\nenter it with: cd {shlex.quote(str(dest))}"
 
 
 @contextlib.contextmanager
 def _repo_lock(cwd: Path):
     """Hold an advisory lock in the shared Git directory. It covers gitman callers only, not native jj."""
-    lock_path = Path(jj(["git", "root"], cwd).strip()) / "gitman-work.lock"
-    with open(lock_path, "w") as handle:
-        fcntl.flock(handle, fcntl.LOCK_EX)
+    lock_path = jj_path(["git", "root"], cwd) / "gitman-work.lock"
+    try:
+        handle = open(lock_path, "a+")
+    except OSError as err:
+        raise Refusal(f"cannot open workspace lock {lock_path}: {err}") from err
+    try:
+        try:
+            fcntl.flock(handle, fcntl.LOCK_EX)
+        except OSError as err:
+            raise Refusal(f"cannot lock {lock_path}: {err}") from err
         yield
+    finally:
+        handle.close()
 
 
 def _leftovers(name: str, dest: Path, cwd: Path) -> str:
     """Name what a failed `jj workspace add` left behind. Delete nothing."""
-    if dest.is_dir() and not any(dest.iterdir()):
-        dest.rmdir()  # Gitman created this empty directory itself; nothing of jj's is in it.
-        dir_note = f"{dest} was not created"
-    elif os.path.lexists(dest):
+    if os.path.lexists(dest):
         dir_note = f"{dest} remains; remove it by hand once you have checked it"
     else:
         dir_note = f"{dest} was not created"
@@ -114,30 +136,60 @@ def _leftovers(name: str, dest: Path, cwd: Path) -> str:
 
 def close(name: str, cwd: Path) -> str:
     """Warn about ignored files in workspace `name`, then remove it with jj. Return the report."""
-    if name not in workspace_names(cwd):
-        raise Refusal(f"no workspace named {name!r}: see `jj workspace list`")
-    target = Path(jj(["workspace", "root", "--name", name], cwd).strip())
-    if (target / ".jj" / "repo").is_dir():
-        raise Refusal(f"{name!r} is the main workspace: gitman closes secondary workspaces only")
-    if not os.path.lexists(target):
-        raise Refusal(f"{target} is missing: drop the registration with `jj workspace forget {name}`")
-    if target.is_symlink():
-        raise Refusal(f"{target} is a symlink: gitman will not delete through it; use native jj")
-    here = cwd.resolve()
-    if here == target.resolve() or target.resolve() in here.parents:
-        raise Refusal(f"you are inside {target}: run `cd` to another workspace first")
-    try:
-        found = ignored.ignored_files(target)
-    except ignored.InspectionError as err:
-        raise Refusal(
-            f"cannot inspect ignored files, so nothing was removed: {err}\n"
-            f"to remove anyway, use `jj workspace remove {name}`; to keep the files, use `jj workspace forget {name}`"
-        ) from None
-    if found:
-        print(
-            f"warning: removing workspace {name!r} deletes {len(found)} ignored file(s):\n{ignored.describe(found)}",
-            file=sys.stderr,
-            flush=True,
-        )
-    jj(["workspace", "remove", name], cwd)
+    with _repo_lock(cwd):
+        if name not in workspace_names(cwd):
+            raise Refusal(f"no workspace named {name!r}: see `jj workspace list`")
+        target = jj_path(["workspace", "root", "--name", name], cwd)
+        if (target / ".jj" / "repo").is_dir():
+            raise Refusal(f"{name!r} is the main workspace: gitman closes secondary workspaces only")
+        if not os.path.lexists(target):
+            raise Refusal(f"{target} is missing: drop the registration with `jj workspace forget {name}`")
+        if target.is_symlink():
+            raise Refusal(f"{target} is a symlink: gitman will not delete through it; use native jj")
+        here = cwd.resolve()
+        if here == target.resolve() or target.resolve() in here.parents:
+            raise Refusal(f"you are inside {target}: run `cd` to another workspace first")
+        try:
+            stat = target.stat()
+            identity = (stat.st_dev, stat.st_ino)
+        except OSError as err:
+            raise Refusal(f"cannot inspect {target}: {err}") from err
+        try:
+            # Let jj snapshot ordinary new files before checking what it did not track.
+            jj(["log", "--no-graph", "-r", "@", "-T", "commit_id"], target)
+            found = ignored.scan(target)
+        except ignored.InspectionError as err:
+            raise Refusal(
+                f"cannot inspect files, so nothing was removed: {err}\n"
+                f"to remove anyway, use `jj workspace remove {name}`; "
+                f"to keep the files, use `jj workspace forget {name}`"
+            ) from None
+        if found.untracked.count:
+            raise Refusal(
+                f"{target} has {found.untracked.count} untracked path(s) that jj did not snapshot:\n"
+                f"{ignored.describe(found.untracked)}\n"
+                f"check or move them before close; use `jj workspace remove {name}` to delete anyway"
+            )
+        if found.submodules.count:
+            raise Refusal(
+                f"{target} has {found.submodules.count} tracked Git submodule(s):\n"
+                f"{ignored.describe(found.submodules)}\n"
+                f"inspect them before close; use `jj workspace remove {name}` to delete anyway"
+            )
+        try:
+            current = jj_path(["workspace", "root", "--name", name], cwd)
+            stat = current.stat()
+            current_identity = (stat.st_dev, stat.st_ino)
+        except OSError as err:
+            raise Refusal(f"workspace {name!r} changed during inspection: {err}") from err
+        if current != target or current_identity != identity or current.is_symlink():
+            raise Refusal(f"workspace {name!r} changed during inspection: nothing was removed")
+        if found.ignored.count:
+            print(
+                f"warning: removing workspace {name!r} deletes {found.ignored.count} ignored file(s):\n"
+                f"{ignored.describe(found.ignored)}",
+                file=sys.stderr,
+                flush=True,
+            )
+        jj(["workspace", "remove", name], cwd)
     return f"closed workspace {name}; removed {target}"

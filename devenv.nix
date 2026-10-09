@@ -38,7 +38,7 @@
 
   enterShell = ''
     # Only announce in an interactive terminal; stay silent when a command captures
-    # stdout (e.g. an agent running `devenv shell -- gitman status`).
+    # stdout (e.g. an agent running `devenv shell -- gitman --help`).
     if [ -t 1 ]; then
       echo "gitman devenv"
       jj version

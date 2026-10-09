@@ -11,8 +11,9 @@ gitman close NAME                                     delete a secondary workspa
 
 - `work` puts the workspace at `$GITMAN_WORKSPACE_ROOT/NAME`. The base is `trunk()` unless
   you pass `--from`. It prints the resolved commit ID and the path.
-- `close` warns about ignored files, such as `.devenv` output, then runs `jj workspace remove`.
-  The warning appears before the deletion. It is not a confirmation prompt.
+- `close` lets jj snapshot new files. It refuses if untracked paths or tracked Git submodules
+  remain. It warns about ignored files, such as `.devenv`
+  output, then runs `jj workspace remove`. The warning is not a confirmation prompt.
 - Gitman stores no state. It creates no bookmark or branch.
 
 Requirements: jj 0.46.0 or later (earlier versions lack `workspace remove` and

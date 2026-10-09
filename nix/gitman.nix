@@ -1,7 +1,6 @@
 # Reusable devenv module: Gitman dev-verification entrypoints.
 #
-# Gitman's *own* CI (lint + tests) — distinct from the generic, off-by-default publish
-# publish hook of the retired v1 tool. Import it from devenv.nix:
+# Gitman's own checks (lint and tests). Import them from devenv.nix:
 #
 #   imports = [ ./nix/gitman.nix ];
 #

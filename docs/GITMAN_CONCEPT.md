@@ -81,8 +81,8 @@ second trunk policy. A zero-result or ambiguous revset causes refusal.
 Before creation, Gitman rejects an existing workspace name, an occupied
 destination, unsafe path traversal, and a destination inside another working
 copy. It does not adopt an existing directory. It then delegates creation to
-`jj workspace add --name NAME --revision REVSET DIRECTORY`, or to the exact
-equivalent Pyjutsu operation if that makes the implementation smaller.
+`jj workspace add --name NAME --revision COMMIT_ID --colocate DIRECTORY`.
+It holds a short advisory lock against other Gitman callers during creation.
 
 The result names the workspace, absolute path, and resolved base. It gives the
 developer a path to enter. It does not change the caller's current directory,
@@ -98,7 +98,10 @@ tracked working-copy changes before it removes the workspace. Gitman does not
 decide whether those changes are finished, merged, bookmarked, or published.
 It does not inspect revision ancestry to impose a retention policy.
 
-Before removal, Gitman inspects the target directory for ignored files. If it
+Before removal, Gitman asks jj to snapshot the target. It refuses if Git still
+finds untracked files, directories, or tracked submodules. A developer can inspect or move them,
+then retry. Native `jj workspace remove NAME` remains the explicit way to
+delete them anyway. Gitman then inspects the target for ignored files. If it
 finds any, it prints a clear warning **before** invoking jj. The warning gives
 the file count and paths, or a bounded path sample with the full count. It
 states that removal will delete them. The command then proceeds, including in
@@ -108,9 +111,12 @@ gate and does not protect ignored data from deletion.
 The warning must use the ignore rules that apply to the target workspace.
 For the first implementation, the supported repository layout must have a
 reliable way to enumerate ignored files. If Gitman cannot inspect an accessible
-target, it refuses rather than claiming that no ignored files exist. Files
-created after the scan may escape the warning; Gitman does not claim atomic
-inspection across concurrent filesystem writers.
+target, it refuses rather than claiming that no ignored files exist. It checks
+that the workspace name still points to the inspected directory before removal.
+It holds an advisory lock against other Gitman callers during this check.
+Native jj writers do not take that lock. Files created after the scan can
+escape the warning. A native jj writer can also change the registration after
+the final check. Gitman does not claim an atomic inspection and removal.
 
 Gitman refuses to remove the main workspace. It reports stale workspace state
 and other native jj refusals with the next jj action when known. A missing
@@ -132,12 +138,11 @@ for builds and tests. Use Atuin skills to compose commands when useful.
 ## 4. Implementation shape
 
 Start with the smallest implementation that can meet the two command
-contracts. Native `jj` is the default execution boundary. Pyjutsu is optional
-for structured reads or workspace operations when it removes code and passes
-the same acceptance tests. Do not maintain two independent implementations.
+contracts. Native `jj` is the execution boundary. Do not maintain a second
+workspace implementation.
 
-Pin compatible jj and Pyjutsu versions through devenv if Pyjutsu is used. A
-Pyjutsu binding to jj-lib and a separate jj executable can differ in behavior.
+Pin jj 0.46.0 or later through devenv. Gitman uses CLI behavior introduced in
+that version.
 The first release does not need a Typer/Pydantic service architecture merely
 to expose two commands.
 
@@ -153,9 +158,9 @@ second, hand-written parser for `.gitignore` rules. If accurate inspection
 requires a large subsystem, keep close out of the first release and use native
 `jj workspace remove` until a small solution exists.
 
-No repository-wide lock can cover native jj users. Handle name and path races
-with ordinary filesystem checks and clear failure reports. Do not promise a
-single atomic transaction across directory creation, scanning, and jj state.
+No repository-wide lock can cover native jj users. Gitman locks its own work
+and close calls. It handles path races with filesystem checks and clear failure
+reports. It cannot promise one atomic transaction across a scan and native jj.
 
 ## 5. Acceptance checks
 
@@ -168,7 +173,8 @@ with native jj commands. The initial checks are:
    refuse before creation.
 4. Existing names and occupied paths refuse without adopting or deleting files.
 5. Two attempts to create the same name or path yield at most one workspace.
-6. `close` warns before deleting ignored files and reports their count.
+6. `close` refuses paths that jj did not track. It warns before deleting
+   ignored files and reports their count.
 7. `close` removes the target directory through jj and refuses the main workspace.
 8. `close` does not infer that anonymous revisions need bookmarks or publication.
 9. Inaccessible targets and partial failures produce accurate recovery guidance.
@@ -191,7 +197,7 @@ machine or network test suite for these commands.
    pilot demonstrates the v2 workflow. Retire old code without compatibility
    shims once its consumers have moved.
 
-The rewrite does not inherit v1's lanes, status model, plan executor, lock,
+The rewrite does not inherit v1's lanes, status model, plan executor, sole-writer rule,
 repair flow, hooks, versioning, release commands, or GitHub integration.
 Additional helpers require a concrete repeated need and the feature test in
 section 1.

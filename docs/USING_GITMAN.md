@@ -52,9 +52,11 @@ A workspace name is only a jj workspace name. Create a bookmark when you want to
 gitman close api
 ```
 
-`close` lists how many ignored files the deletion removes, with a bounded sample of paths.
-Then jj snapshots the tracked changes and deletes the directory. Gitman does not check
-whether the work is merged or pushed. Run it from outside the target directory.
+`close` lets jj snapshot new files first. It refuses if Git still finds untracked files,
+directories, or tracked submodules. Check those paths before you retry. To delete them anyway,
+run native `jj workspace remove api`. If only ignored files remain, Gitman gives their count and a
+bounded path sample before jj deletes the directory. Gitman does not check whether work
+is merged or pushed. Run it from outside the target directory.
 
 To keep the files, drop only the registration:
 
@@ -68,5 +70,7 @@ inspect a target it cannot read.
 ## Limits
 
 - Files created after the scan can miss the warning.
-- The scan lists ignored files. It does not list untracked files that jj chose not to track.
-- An advisory lock covers concurrent Gitman callers only, not native `jj` writers.
+- The scan refuses untracked paths that jj did not snapshot. It can miss files that another
+  process creates after the scan.
+- An advisory lock covers concurrent Gitman callers only. Native `jj` writers can still
+  change a workspace between the final check and removal.

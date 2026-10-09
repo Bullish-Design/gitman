@@ -200,3 +200,69 @@ def test_concurrent_attempts_for_one_name(repo, monkeypatch):
         t.join()
     assert results.count(0) == 1
     assert repo.workspaces().count("same") == 1
+
+
+def test_close_accepts_a_path_with_trailing_space(repo, monkeypatch, capsys, tmp_path):
+    target = tmp_path / "trailing "
+    code, out, _ = work(monkeypatch, capsys, repo.main, "t1", "--path", str(target))
+    assert code == 0 and f"cd '{target}'" in out
+    code, out, _ = gitman(monkeypatch, capsys, repo.main, "close", "t1")
+    assert code == 0 and str(target) in out
+    assert not target.exists()
+
+
+def test_read_only_git_directory_reports_refusal(repo, monkeypatch, capsys):
+    git_dir = repo.main / ".git"
+    (git_dir / "gitman-work.lock").unlink(missing_ok=True)
+    git_dir.chmod(0o500)
+    try:
+        code, _, err = work(monkeypatch, capsys, repo.main, "t1")
+        assert code == 1 and "cannot open workspace lock" in err
+        assert "Traceback" not in err
+    finally:
+        git_dir.chmod(0o700)
+
+
+def test_unwritable_destination_reports_refusal(repo, monkeypatch, capsys):
+    repo.root.mkdir()
+    repo.root.chmod(0o500)
+    try:
+        code, _, err = work(monkeypatch, capsys, repo.main, "t1")
+        assert code == 1 and "cannot create" in err
+        assert "Traceback" not in err
+        assert not (repo.root / "t1").exists()
+    finally:
+        repo.root.chmod(0o700)
+
+
+def test_partial_add_keeps_empty_destination(repo, monkeypatch, capsys):
+    real = subprocess.run(["which", "jj"], capture_output=True, text=True, check=True).stdout.strip()
+    fake_dir = repo.root.parent / "fakebin-early"
+    fake_dir.mkdir()
+    fake = fake_dir / "jj"
+    fake.write_text(
+        "#!/bin/sh\n"
+        'if [ "$1 $2" = "workspace add" ]; then echo "add failed before registration" >&2; exit 1; fi\n'
+        f'exec {real} "$@"\n'
+    )
+    fake.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{fake_dir}{os.pathsep}{os.environ['PATH']}")
+    code, _, err = work(monkeypatch, capsys, repo.main, "t1")
+    assert code == 1 and "add failed before registration" in err
+    assert "not registered" in err
+    assert (repo.root / "t1").is_dir()
+    assert not list((repo.root / "t1").iterdir())
+
+
+def test_closed_stdout_does_not_report_failed_creation(repo):
+    process = subprocess.Popen(
+        [sys.executable, "-c", CALL, "work", "t1"],
+        cwd=repo.main,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    assert process.stdout is not None
+    process.stdout.close()
+    _, stderr = process.communicate()
+    assert process.returncode == 0 and b"BrokenPipeError" not in stderr
+    assert "t1" in repo.workspaces()
