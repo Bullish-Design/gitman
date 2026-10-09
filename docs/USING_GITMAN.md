@@ -20,14 +20,30 @@ later. Set one absolute workspace root. Use the same root in every workspace:
 dev = ["gitman"]
 
 [tool.uv.sources]
-gitman = { git = "https://github.com/Bullish-Design/gitman", tag = "v0.12.0" }
+gitman = { git = "https://github.com/Bullish-Design/gitman", tag = "v0.12.1" }
 ```
 
 Add `gitman` to an existing dev group instead of replacing its other entries.
 Run `uv sync --group dev` inside devenv. Colocate the repository once with
-`jj git init --colocate`. Gitman does not require the Git command at runtime.
+`jj git init --colocate`. `gitman work` runs `jj workspace add --colocate`, which
+needs the `git` command on `PATH`.
 See [uv's Git source guide](https://docs.astral.sh/uv/concepts/dependencies/#git)
 for the `tag` source field.
+
+## Install with Nix
+
+The repository has a flake. It builds the command and the pinned jj that
+`gitman work` needs:
+
+```nix
+inputs.gitman.url = "git+https://github.com/Bullish-Design/gitman?ref=refs/tags/v0.12.1";
+# gitman.packages.${system}.default       the `gitman` command
+# gitman.packages.${system}.jujutsu-bin   jj 0.46.0, the one jj to install on the host
+```
+
+Install the flake's `jujutsu-bin` as the host's only jj. Gitman does not wrap
+jj, because two jj versions on one repository can fail on the operation log.
+`nix flake check` runs the full suite and the real `gitman work` command.
 
 ## Agent guidance
 

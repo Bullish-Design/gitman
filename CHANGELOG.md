@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.12.1
+
+Packaging only. The command is unchanged.
+
+- Add `flake.nix` and `nix/package.nix`. The flake builds `gitman` with `packages.default`,
+  exports the pinned jj 0.46.0 as `packages.jujutsu-bin`, and adds `overlays.default`.
+  `nix flake check` runs the suite and the real `gitman work` command.
+- Correct `docs/USING_GITMAN.md`: `gitman work` needs `git` on `PATH`, because
+  `jj workspace add --colocate` runs it.
+
 ## 0.12.0 — breaking
 
 Gitman is now a work-only tool. It has one command:
