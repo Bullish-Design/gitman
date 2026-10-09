@@ -1,14 +1,12 @@
-# Gitman v2 — a small jj workspace helper
+# Gitman — a small jj workspace helper
 
 **Date:** 2026-10-09  
-**Status:** Implemented in Gitman v2  
+**Status:** Implemented in Gitman 0.12.0  
 **Scope:** Personal devenv workflow
 
-This document defines the current Gitman contract. The v2 rewrite notes are in
-`.scratch/projects/66-gitman-v2-rewrite/`. The review in
-`.scratch/projects/67-gitman-v2-review/REVIEW.md` records the earlier two-command
-design and remains a historical record. The project removed `gitman close` before
-the real-use pilot. Native jj now handles workspace removal.
+This document defines the current Gitman contract. The design history is in
+projects 66 and 67 under `.scratch/projects/`. Earlier drafts called this
+interface v2. Gitman has no `close` command. Native jj removes workspaces.
 
 ## 1. Purpose
 
@@ -123,10 +121,9 @@ command. Record how often you create, revisit, remove, and forget workspaces.
 Record path or base failures and the steps needed before native removal. A
 disposable example validates the commands; it does not complete this pilot.
 
-The shared Devman `gitman` skill describes v1 lanes. The `gitman-v2` skill
-describes the work-only interface. Link one version per project. RepoMan keeps
-v1 as its default and selects v2 only when the tracked project manifest says
-`gitmanVersion = 2`. This repository's `AGENTS.md` takes precedence here.
+Version control is native jj and `gh`. The Devman `gitman` skill describes the
+work-only interface and gives the native commands for each lifecycle step.
+This repository's `AGENTS.md` takes precedence here.
 
 ## 7. Technical references
 
