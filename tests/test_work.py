@@ -142,6 +142,17 @@ def test_close_is_not_a_command(repo, monkeypatch, capsys):
     assert "t1" not in repo.workspaces()
 
 
+@pytest.mark.parametrize("verb", ["status", "land", "start", "doctor"])
+def test_retired_commands_exit_2(repo, monkeypatch, capsys, verb):
+    code, out, err = gitman(monkeypatch, capsys, repo.main, verb)
+    assert code == 2 and not out and f"invalid choice: '{verb}'" in err
+
+
+def test_help_lists_only_work(repo, monkeypatch, capsys):
+    code, out, _ = gitman(monkeypatch, capsys, repo.main, "--help")
+    assert code == 0 and "{work}" in out
+
+
 def test_partial_creation_reports_leftovers_and_deletes_nothing(repo, monkeypatch, capsys):
     # A fake jj that registers the workspace through the real one, then fails.
     real = subprocess.run(["which", "jj"], capture_output=True, text=True, check=True).stdout.strip()
