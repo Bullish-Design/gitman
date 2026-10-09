@@ -1,6 +1,6 @@
 # A Beginner's Guide to Jujutsu
 
-Gitman v2 does not wrap jj. You run `jj` yourself. Gitman only opens
+Gitman does not wrap jj. You run `jj` yourself. Gitman only opens
 workspaces (see [`USING_GITMAN.md`](USING_GITMAN.md)). This guide teaches the jj model
 that you use for everything else. The commands run against jj 0.46.0.
 

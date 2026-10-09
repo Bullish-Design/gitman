@@ -20,35 +20,20 @@ later. Set one absolute workspace root. Use the same root in every workspace:
 dev = ["gitman"]
 
 [tool.uv.sources]
-gitman = { git = "https://github.com/Bullish-Design/gitman", rev = "88c19933337731e64a015ff4235382502fc4f483" }
+gitman = { git = "https://github.com/Bullish-Design/gitman", tag = "v0.12.0" }
 ```
 
-This commit provides the work-only interface. No v2 release tag exists yet.
 Add `gitman` to an existing dev group instead of replacing its other entries.
 Run `uv sync --group dev` inside devenv. Colocate the repository once with
 `jj git init --colocate`. Gitman does not require the Git command at runtime.
 See [uv's Git source guide](https://docs.astral.sh/uv/concepts/dependencies/#git)
-for the `rev` source field.
+for the `tag` source field.
 
-## Agent guidance and RepoMan
+## Agent guidance
 
-Use the `gitman-v2` skill in repositories that run this interface. Keep the
-`gitman` skill in repositories that still use v1 lanes. The repository's
-`AGENTS.md` remains the local authority. Do not link both skills to one project.
-
-When a project uses a RepoMan version that supports `gitmanVersion`, select v2
-in its tracked `.repoman/project.toml`:
-
-```toml
-schema = 1
-managers = ["git", "test"]
-gitmanVersion = 2
-```
-
-RepoMan then routes workspace creation to `gitman-v2`, uses native jj for
-integration, and runs `jj status` for its version control status task. The
-default RepoMan setting remains v1 for projects that use lanes. Link the v2
-skill from the shared Devman pool before generating the RepoMan router.
+Link the `gitman` skill from the shared Devman pool. It describes `gitman work`
+and the native jj and `gh` commands. The repository's `AGENTS.md` remains the
+local authority. RepoMan's `repoman` skill owns the lifecycle order.
 
 ## Open a workspace
 
@@ -73,6 +58,25 @@ jj undo
 ```
 
 A workspace name is only a jj workspace name. Create a bookmark when you want to push.
+
+## Finish work with native jj
+
+Gitman has one command. Use these native commands for the other lifecycle steps:
+
+| Step | Command |
+|---|---|
+| Status | `jj status` |
+| Describe | `jj describe -m "message"` |
+| Bookmark | `jj bookmark create NAME -r @-` |
+| Sync | `jj git fetch`, then `jj rebase -d trunk()` |
+| Push | `jj git push --bookmark NAME` |
+| Pull request | `gh pr create` |
+| Merge | `gh pr merge` |
+| Undo | `jj undo` |
+| Remove a workspace | `jj workspace remove NAME` |
+
+`jj status` snapshots the working copy. Run the project's verify step before you
+integrate. Never push or merge on red.
 
 ## Remove a workspace with jj
 
