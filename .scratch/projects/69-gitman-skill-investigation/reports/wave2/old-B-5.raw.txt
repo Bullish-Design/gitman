@@ -1,0 +1,147 @@
+DECISION SANDBOX /tmp/gitman-wave2-old-b-5-iqk9ieii
+DECISION ENV JJ_CONFIG=/tmp/gitman-wave2-old-b-5-iqk9ieii/jjconfig.toml XDG_CONFIG_HOME=/tmp/gitman-wave2-old-b-5-iqk9ieii/xdg GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null GIT_CONFIG_NOSYSTEM=1 GITMAN_WORKSPACE_ROOT=/tmp/gitman-wave2-old-b-5-iqk9ieii/workspaces
+DECISION The repository has no remote. Local main integration requires no push.
+$ (cd /tmp/gitman-wave2-old-b-5-iqk9ieii && jj git init --colocate /tmp/gitman-wave2-old-b-5-iqk9ieii/repo)
+[stdout]
+[stderr]
+Initialized repo in "repo"
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-5-iqk9ieii/repo && jj config list user.name)
+[stdout]
+user.name = "Experiment User"
+[stderr]
+[exit 0]
+WRITE /tmp/gitman-wave2-old-b-5-iqk9ieii/repo/line.txt (b'base\n')
+$ (cd /tmp/gitman-wave2-old-b-5-iqk9ieii/repo && jj status)
+[stdout]
+Working copy changes:
+A line.txt
+Working copy  (@) : moxrooql ab9bbbb5 (no description set)
+Parent commit (@-): zzzzzzzz 00000000 (empty) (no description set)
+[stderr]
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-5-iqk9ieii/repo && jj describe -m Base)
+[stdout]
+[stderr]
+Working copy  (@) now at: moxrooql 77fc02c1 Base
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-5-iqk9ieii/repo && jj bookmark create main -r @)
+[stdout]
+[stderr]
+Created 1 bookmarks pointing to moxrooql 77fc02c1 main | Base
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-5-iqk9ieii/repo && jj new main)
+[stdout]
+[stderr]
+Working copy  (@) now at: qmsqqymp 2a41069b (empty) (no description set)
+Parent commit (@-)      : moxrooql 77fc02c1 main | Base
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-5-iqk9ieii/repo && jj workspace list)
+[stdout]
+default: . qmsqqymp 2a41069b (empty) (no description set)
+[stderr]
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-5-iqk9ieii/repo && jj log -r '(::working_copies() ~ ::trunk()) ~ empty()')
+[stdout]
+○  moxrooql experiment@example.test 2026-10-11 17:55:56 main 77fc02c1
+│  Base
+~
+[stderr]
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-5-iqk9ieii/repo && gitman work feature)
+[stdout]
+workspace: feature
+path: /tmp/gitman-wave2-old-b-5-iqk9ieii/workspaces/feature
+base: 0000000000000000000000000000000000000000 (trunk())
+enter it with: cd /tmp/gitman-wave2-old-b-5-iqk9ieii/workspaces/feature
+[stderr]
+[exit 0]
+WRITE /tmp/gitman-wave2-old-b-5-iqk9ieii/workspaces/feature/feature.txt (b'feature\n')
+$ (cd /tmp/gitman-wave2-old-b-5-iqk9ieii/workspaces/feature && jj status)
+[stdout]
+Working copy changes:
+A feature.txt
+Working copy  (@) : vtvyzkqm 36a2af96 (no description set)
+Parent commit (@-): zzzzzzzz 00000000 (empty) (no description set)
+[stderr]
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-5-iqk9ieii/workspaces/feature && jj describe -m 'Add feature')
+[stdout]
+[stderr]
+Working copy  (@) now at: vtvyzkqm 584ba69b Add feature
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-5-iqk9ieii/workspaces/feature && jj new)
+[stdout]
+[stderr]
+Working copy  (@) now at: zlluprzv 892c67ea (empty) (no description set)
+Parent commit (@-)      : vtvyzkqm 584ba69b Add feature
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-5-iqk9ieii/workspaces/feature && jj bookmark create feature -r @-)
+[stdout]
+[stderr]
+Created 1 bookmarks pointing to vtvyzkqm 584ba69b feature | Add feature
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-5-iqk9ieii/workspaces/feature && jj status)
+[stdout]
+The working copy has no changes.
+Working copy  (@) : zlluprzv 892c67ea (empty) (no description set)
+Parent commit (@-): vtvyzkqm 584ba69b feature | Add feature
+[stderr]
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-5-iqk9ieii/workspaces/feature && python3 -c 'from pathlib import Path; assert Path('"'"'feature.txt'"'"').read_text() == '"'"'feature\n'"'"'')
+[stdout]
+[stderr]
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-5-iqk9ieii/workspaces/feature && jj git fetch)
+[stdout]
+[stderr]
+Warning: No matching remotes for names: origin
+Error: No git remotes to fetch from
+[exit 1]
+DECISION Fetch exit 1; no remote is configured, so continue with local trunk.
+$ (cd /tmp/gitman-wave2-old-b-5-iqk9ieii/workspaces/feature && jj rebase -b @ -d 'trunk()')
+[stdout]
+[stderr]
+Skipped rebase of 2 commits that were already in place.
+Nothing changed.
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-5-iqk9ieii/workspaces/feature && jj bookmark set main -r feature)
+[stdout]
+[stderr]
+Error: Refusing to move bookmark backwards or sideways: main
+Hint: Use --allow-backwards to allow it.
+[exit 1]
+$ (cd /tmp/gitman-wave2-old-b-5-iqk9ieii/repo && jj new main)
+[stdout]
+[stderr]
+Working copy  (@) now at: oqyyrnrv 4f2216c9 (empty) (no description set)
+Parent commit (@-)      : moxrooql 77fc02c1 main | Base
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-5-iqk9ieii/repo && jj log -r '(::feature@ ~ ::trunk()) ~ empty()')
+[stdout]
+○  vtvyzkqm experiment@example.test 2026-10-11 17:55:56 feature 584ba69b
+│  Add feature
+~
+[stderr]
+[exit 0]
+DECISION Workspace directory files before removal: ['feature.txt']
+$ (cd /tmp/gitman-wave2-old-b-5-iqk9ieii/repo && jj workspace remove feature)
+[stdout]
+[stderr]
+Removed Git worktree for "/tmp/gitman-wave2-old-b-5-iqk9ieii/workspaces/feature".
+Removed workspace directory "/tmp/gitman-wave2-old-b-5-iqk9ieii/workspaces/feature".
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-5-iqk9ieii/repo && jj workspace list)
+[stdout]
+default: . oqyyrnrv 4f2216c9 (empty) (no description set)
+[stderr]
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-5-iqk9ieii/repo && jj log -r main)
+[stdout]
+○  moxrooql experiment@example.test 2026-10-11 17:55:56 main 77fc02c1
+│  Base
+~
+[stderr]
+[exit 0]

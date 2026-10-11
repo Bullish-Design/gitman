@@ -1,0 +1,199 @@
+ROOT /tmp/gitman-wave3-b-6-buphjtja
+$ (cd /tmp/gitman-wave3-b-6-buphjtja && jj git init --colocate repo)
+Initialized repo in "repo"
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-6-buphjtja/repo && bash -c 'printf "base\n" > README.md')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-6-buphjtja/repo && jj describe -m 'Add base')
+Working copy  (@) now at: mrtmssqy e13e2f5c Add base
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-6-buphjtja/repo && jj bookmark create main -r @)
+Created 1 bookmarks pointing to mrtmssqy e13e2f5c main | Add base
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-6-buphjtja/repo && jj new main)
+Working copy  (@) now at: txzpszkt c7ec524a (empty) (no description set)
+Parent commit (@-)      : mrtmssqy e13e2f5c main | Add base
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-6-buphjtja && jj git init --no-colocate origin)
+Initialized repo in "origin"
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-6-buphjtja/repo && jj git remote add origin /tmp/gitman-wave3-b-6-buphjtja/origin/.jj/repo/store/git)
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-6-buphjtja/repo && jj git push --remote origin --bookmark main)
+Changes to push to origin:
+  bookmark: main [add to e13e2f5c86fe]
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-6-buphjtja/repo && jj status)
+The working copy has no changes.
+Working copy  (@) : txzpszkt c7ec524a (empty) (no description set)
+Parent commit (@-): mrtmssqy e13e2f5c main | Add base
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-6-buphjtja/repo && jj workspace list)
+default: . txzpszkt c7ec524a (empty) (no description set)
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-6-buphjtja/repo && jj log -r '(::working_copies() ~ ::main) ~ empty()')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-6-buphjtja/repo && jj bookmark list)
+main: mrtmssqy e13e2f5c Add base
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-6-buphjtja/repo && jj log -r 'trunk()')
+◆  mrtmssqy test@example.com 2026-10-11 18:09:35 main e13e2f5c
+│  Add base
+~
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-6-buphjtja/repo && jj git fetch --remote origin)
+Nothing changed.
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-6-buphjtja/repo && gitman work feature)
+workspace: feature
+path: /tmp/gitman-wave3-b-6-buphjtja/workspaces/feature
+base: e13e2f5c86fe3a02ed522a19afd0613e2126e1f8 (trunk())
+enter it with: cd /tmp/gitman-wave3-b-6-buphjtja/workspaces/feature
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-6-buphjtja/workspaces/feature && bash -c 'printf "feature\n" > feature.txt')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-6-buphjtja/workspaces/feature && bash -c 'test "$(cat feature.txt)" = feature')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-6-buphjtja/repo && bash -c 'printf "unrelated\n" > unrelated.txt')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-6-buphjtja/repo && jj status)
+Working copy changes:
+A unrelated.txt
+Working copy  (@) : txzpszkt 5316290d (no description set)
+Parent commit (@-): mrtmssqy e13e2f5c main | Add base
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-6-buphjtja/workspaces/feature && jj status)
+Working copy changes:
+A feature.txt
+Working copy  (@) : qsnpztqq 3ecf4eda (no description set)
+Parent commit (@-): mrtmssqy e13e2f5c main | Add base
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-6-buphjtja/workspaces/feature && jj diff)
+Added regular file feature.txt:
+        1: feature
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-6-buphjtja/workspaces/feature && jj log -r '@|@-')
+@  qsnpztqq test@example.com 2026-10-11 18:09:51 feature@ 3ecf4eda
+│  (no description set)
+◆  mrtmssqy test@example.com 2026-10-11 18:09:35 main e13e2f5c
+│  Add base
+~
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-6-buphjtja/workspaces/feature && jj describe -r @ -m 'Add feature marker')
+Working copy  (@) now at: qsnpztqq 28052765 Add feature marker
+Parent commit (@-)      : mrtmssqy e13e2f5c main | Add base
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-6-buphjtja/workspaces/feature && jj log -r '@|@-')
+@  qsnpztqq test@example.com 2026-10-11 18:09:59 feature@ 28052765
+│  Add feature marker
+◆  mrtmssqy test@example.com 2026-10-11 18:09:35 main e13e2f5c
+│  Add base
+~
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-6-buphjtja/workspaces/feature && jj bookmark create feature -r @)
+Created 1 bookmarks pointing to qsnpztqq 28052765 feature | Add feature marker
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-6-buphjtja/workspaces/feature && jj git fetch --remote origin)
+Nothing changed.
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-6-buphjtja/workspaces/feature && jj log -r 'conflicts()')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-6-buphjtja/workspaces/feature && jj log -r 'divergent()')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-6-buphjtja/workspaces/feature && jj bookmark set main -r @)
+Moved 1 bookmarks to qsnpztqq 28052765 feature main* | Add feature marker
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-6-buphjtja/workspaces/feature && jj git push --remote origin --bookmark main)
+Changes to push to origin:
+  bookmark: main [move forward from e13e2f5c86fe to 28052765d603]
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: ztpvznty b80ba014 (empty) (no description set)
+Parent commit (@-)      : qsnpztqq 28052765 feature main | Add feature marker
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-6-buphjtja/repo && jj status)
+Working copy changes:
+A unrelated.txt
+Working copy  (@) : txzpszkt 5316290d (no description set)
+Parent commit (@-): mrtmssqy e13e2f5c Add base
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-6-buphjtja/repo && jj workspace list)
+default: . txzpszkt 5316290d (no description set)
+feature: ../workspaces/feature ztpvznty b80ba014 (empty) (no description set)
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-6-buphjtja/repo && jj bookmark list)
+feature: qsnpztqq 28052765 Add feature marker
+main: qsnpztqq 28052765 Add feature marker
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-6-buphjtja/repo && jj log -r 'main|feature|feature@|divergent()')
+○  ztpvznty test@example.com 2026-10-11 18:10:01 feature@ b80ba014
+│  (empty) (no description set)
+◆  qsnpztqq test@example.com 2026-10-11 18:09:59 feature main 28052765
+│  Add feature marker
+~
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-6-buphjtja/repo && jj log -r '(::feature@ ~ ::main) ~ empty()')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-6-buphjtja/workspaces/feature && jj status)
+The working copy has no changes.
+Working copy  (@) : ztpvznty b80ba014 (empty) (no description set)
+Parent commit (@-): qsnpztqq 28052765 feature main | Add feature marker
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-6-buphjtja/workspaces/feature && git status --short --ignored)
+!! .jj/
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-6-buphjtja/workspaces/feature && find . -maxdepth 2 -type f -not -path './.git/*' -not -path './.jj/*' -print)
+./.git
+./README.md
+./feature.txt
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-6-buphjtja/repo && jj workspace remove feature)
+Removed Git worktree for "/tmp/gitman-wave3-b-6-buphjtja/workspaces/feature".
+Removed workspace directory "/tmp/gitman-wave3-b-6-buphjtja/workspaces/feature".
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-6-buphjtja/repo && jj status)
+Working copy changes:
+A unrelated.txt
+Working copy  (@) : txzpszkt 5316290d (no description set)
+Parent commit (@-): mrtmssqy e13e2f5c Add base
+[exit 0]
+

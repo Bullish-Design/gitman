@@ -1,0 +1,596 @@
+=== Attempt 1: setup push command rejected; outer devenv exit 1 ===
+TEMP_ROOT=/tmp/gitman-removal-A.Sf8Kx4
+JJ_VERSION=jj 0.46.0-7d382314f9420b4b8d932245b49c99492c812b9f
+
+$ cat > /tmp/gitman-removal-A.Sf8Kx4/jj-config.toml (test user config)
+[user]
+name = "Test User"
+email = "test@example.invalid"
+EXIT=0
+
+$ mkdir -p /tmp/gitman-removal-A.Sf8Kx4/workspaces
+EXIT=0
+
+$ jj git init --no-colocate /tmp/gitman-removal-A.Sf8Kx4/origin
+Initialized repo in "../../../../../tmp/gitman-removal-A.Sf8Kx4/origin"
+EXIT=0
+
+$ jj git init --colocate /tmp/gitman-removal-A.Sf8Kx4/repo
+Initialized repo in "../../../../../tmp/gitman-removal-A.Sf8Kx4/repo"
+EXIT=0
+
+$ cd /tmp/gitman-removal-A.Sf8Kx4/repo
+EXIT=0
+
+$ pwd
+/tmp/gitman-removal-A.Sf8Kx4/repo
+EXIT=0
+
+$ jj root
+/tmp/gitman-removal-A.Sf8Kx4/repo
+EXIT=0
+
+$ bash -c printf\ \"def\ greet\(name\):\\n\ \ \ \ return\ f\\\"Hello\,\ \{name\}\!\\\"\\n\"\ \>\ app.py
+EXIT=0
+
+$ bash -c printf\ \"ignored-note.txt\\n\"\ \>\ .gitignore
+EXIT=0
+
+$ jj status
+Working copy changes:
+A .gitignore
+A app.py
+Working copy  (@) : nmptumtk ee467cd1 (no description set)
+Parent commit (@-): zzzzzzzz 00000000 (empty) (no description set)
+EXIT=0
+
+$ jj describe -m Add\ initial\ greeting
+Working copy  (@) now at: nmptumtk ad5f73ed Add initial greeting
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+EXIT=0
+
+$ jj bookmark create main -r @
+Created 1 bookmarks pointing to nmptumtk ad5f73ed main | Add initial greeting
+EXIT=0
+
+$ jj git remote add origin /tmp/gitman-removal-A.Sf8Kx4/origin/.jj/repo/store/git
+EXIT=0
+
+$ jj git push --bookmark main --allow-new
+error: unexpected argument '--allow-new' found
+
+  tip: a similar argument exists: '--all'
+
+Usage: jj git push --bookmark <BOOKMARK> --all
+
+For more information, try '--help'.
+EXIT=2
+
+=== Attempt 2: feature write command quoting failed; outer devenv exit 1 ===
+TEMP_ROOT=/tmp/gitman-removal-A.1M0ujV
+JJ_VERSION=jj 0.46.0-7d382314f9420b4b8d932245b49c99492c812b9f
+
+$ cat > /tmp/gitman-removal-A.1M0ujV/jj-config.toml (test user config)
+[user]
+name = "Test User"
+email = "test@example.invalid"
+EXIT=0
+
+$ mkdir -p /tmp/gitman-removal-A.1M0ujV/workspaces
+EXIT=0
+
+$ jj git init --no-colocate /tmp/gitman-removal-A.1M0ujV/origin
+Initialized repo in "../../../../../tmp/gitman-removal-A.1M0ujV/origin"
+EXIT=0
+
+$ jj git init --colocate /tmp/gitman-removal-A.1M0ujV/repo
+Initialized repo in "../../../../../tmp/gitman-removal-A.1M0ujV/repo"
+EXIT=0
+
+$ cd /tmp/gitman-removal-A.1M0ujV/repo
+EXIT=0
+
+$ pwd
+/tmp/gitman-removal-A.1M0ujV/repo
+EXIT=0
+
+$ jj root
+/tmp/gitman-removal-A.1M0ujV/repo
+EXIT=0
+
+$ bash -c printf\ \"def\ greet\(name\):\\n\ \ \ \ return\ f\\\"Hello\,\ \{name\}\!\\\"\\n\"\ \>\ app.py
+EXIT=0
+
+$ bash -c printf\ \"ignored-note.txt\\n\"\ \>\ .gitignore
+EXIT=0
+
+$ jj status
+Working copy changes:
+A .gitignore
+A app.py
+Working copy  (@) : nylzkkku 9e4347f1 (no description set)
+Parent commit (@-): zzzzzzzz 00000000 (empty) (no description set)
+EXIT=0
+
+$ jj describe -m Add\ initial\ greeting
+Working copy  (@) now at: nylzkkku 9a35bb14 Add initial greeting
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+EXIT=0
+
+$ jj bookmark create main -r @
+Created 1 bookmarks pointing to nylzkkku 9a35bb14 main | Add initial greeting
+EXIT=0
+
+$ jj git remote add origin /tmp/gitman-removal-A.1M0ujV/origin/.jj/repo/store/git
+EXIT=0
+
+$ jj git push --bookmark main
+Changes to push to origin:
+  bookmark: main [add to 9a35bb149da1]
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: wpzqumky 37c923b8 (empty) (no description set)
+Parent commit (@-)      : nylzkkku 9a35bb14 main | Add initial greeting
+EXIT=0
+
+$ jj new main
+Working copy  (@) now at: pmklltpy a85ec4e5 (empty) (no description set)
+Parent commit (@-)      : nylzkkku 9a35bb14 main | Add initial greeting
+EXIT=0
+
+PHASE: candidate before work
+
+$ jj status
+The working copy has no changes.
+Working copy  (@) : pmklltpy a85ec4e5 (empty) (no description set)
+Parent commit (@-): nylzkkku 9a35bb14 main | Add initial greeting
+EXIT=0
+
+$ jj workspace list
+default: . pmklltpy a85ec4e5 (empty) (no description set)
+EXIT=0
+
+$ jj log -r \(::working_copies\(\)\ ~\ ::main\)\ ~\ empty\(\)
+EXIT=0
+
+$ jj bookmark list
+main: nylzkkku 9a35bb14 Add initial greeting
+EXIT=0
+
+$ jj log -r trunk\(\)
+◆  nylzkkku test@example.invalid 2026-10-12 11:50:28 main 9a35bb14
+│  Add initial greeting
+~
+EXIT=0
+
+$ jj git fetch
+Nothing changed.
+EXIT=0
+
+$ jj bookmark list
+main: nylzkkku 9a35bb14 Add initial greeting
+EXIT=0
+
+$ jj log -r trunk\(\)
+◆  nylzkkku test@example.invalid 2026-10-12 11:50:28 main 9a35bb14
+│  Add initial greeting
+~
+EXIT=0
+
+DECISION: main is local landing target; use explicit --from main. No unfinished work in revset.
+
+$ pwd
+/tmp/gitman-removal-A.1M0ujV/repo
+EXIT=0
+
+$ jj root
+/tmp/gitman-removal-A.1M0ujV/repo
+EXIT=0
+
+$ gitman work feature-a --from main
+workspace: feature-a
+path: /tmp/gitman-removal-A.1M0ujV/workspaces/feature-a
+base: 9a35bb149da11e3c4ab9d0dd48207f8d38df9efb (main)
+enter it with: cd /tmp/gitman-removal-A.1M0ujV/workspaces/feature-a
+EXIT=0
+
+$ cd /tmp/gitman-removal-A.1M0ujV/workspaces/feature-a
+EXIT=0
+
+$ pwd
+/tmp/gitman-removal-A.1M0ujV/workspaces/feature-a
+EXIT=0
+
+$ jj root
+/tmp/gitman-removal-A.1M0ujV/workspaces/feature-a
+EXIT=0
+
+$ jj status
+The working copy has no changes.
+Working copy  (@) : xuprrymn e09197f0 (empty) (no description set)
+Parent commit (@-): nylzkkku 9a35bb14 main | Add initial greeting
+EXIT=0
+
+$ bash -c cat\ \>\>\ app.py\ \<\<\\x27PY\\x27\\n\\n\\ndef\ farewell\(name\):\\n\ \ \ \ return\ f\"Goodbye\,\ \{name\}\!\"\\nPY
+bash: line 1: warning: here-document at line 1 delimited by end-of-file (wanted `x27PYx27nnndef')
+bash: -c: line 1: syntax error near unexpected token `('
+bash: -c: line 1: `cat >> app.py <<\x27PY\x27\n\n\ndef farewell(name):\n    return f"Goodbye, {name}!"\nPY'
+EXIT=2
+
+=== Attempt 3: complete run; outer devenv exit 0 ===
+TEMP_ROOT=/tmp/gitman-removal-A.tlXcWW
+JJ_VERSION=jj 0.46.0-7d382314f9420b4b8d932245b49c99492c812b9f
+
+$ cat > /tmp/gitman-removal-A.tlXcWW/jj-config.toml (test user config)
+[user]
+name = "Test User"
+email = "test@example.invalid"
+EXIT=0
+
+$ mkdir -p /tmp/gitman-removal-A.tlXcWW/workspaces
+EXIT=0
+
+$ jj git init --no-colocate /tmp/gitman-removal-A.tlXcWW/origin
+Initialized repo in "../../../../../tmp/gitman-removal-A.tlXcWW/origin"
+EXIT=0
+
+$ jj git init --colocate /tmp/gitman-removal-A.tlXcWW/repo
+Initialized repo in "../../../../../tmp/gitman-removal-A.tlXcWW/repo"
+EXIT=0
+
+$ cd /tmp/gitman-removal-A.tlXcWW/repo
+EXIT=0
+
+$ pwd
+/tmp/gitman-removal-A.tlXcWW/repo
+EXIT=0
+
+$ jj root
+/tmp/gitman-removal-A.tlXcWW/repo
+EXIT=0
+
+$ bash -c printf\ \"def\ greet\(name\):\\n\ \ \ \ return\ f\\\"Hello\,\ \{name\}\!\\\"\\n\"\ \>\ app.py
+EXIT=0
+
+$ bash -c printf\ \"ignored-note.txt\\n\"\ \>\ .gitignore
+EXIT=0
+
+$ jj status
+Working copy changes:
+A .gitignore
+A app.py
+Working copy  (@) : orunzzvs ed07ef8f (no description set)
+Parent commit (@-): zzzzzzzz 00000000 (empty) (no description set)
+EXIT=0
+
+$ jj describe -m Add\ initial\ greeting
+Working copy  (@) now at: orunzzvs d330ace8 Add initial greeting
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+EXIT=0
+
+$ jj bookmark create main -r @
+Created 1 bookmarks pointing to orunzzvs d330ace8 main | Add initial greeting
+EXIT=0
+
+$ jj git remote add origin /tmp/gitman-removal-A.tlXcWW/origin/.jj/repo/store/git
+EXIT=0
+
+$ jj git push --bookmark main
+Changes to push to origin:
+  bookmark: main [add to d330ace8b659]
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: zrovkxvk ba9a63db (empty) (no description set)
+Parent commit (@-)      : orunzzvs d330ace8 main | Add initial greeting
+EXIT=0
+
+$ jj new main
+Working copy  (@) now at: mukqkmlv 35997d2a (empty) (no description set)
+Parent commit (@-)      : orunzzvs d330ace8 main | Add initial greeting
+EXIT=0
+
+PHASE: candidate before work
+
+$ jj status
+The working copy has no changes.
+Working copy  (@) : mukqkmlv 35997d2a (empty) (no description set)
+Parent commit (@-): orunzzvs d330ace8 main | Add initial greeting
+EXIT=0
+
+$ jj workspace list
+default: . mukqkmlv 35997d2a (empty) (no description set)
+EXIT=0
+
+$ jj log -r \(::working_copies\(\)\ ~\ ::main\)\ ~\ empty\(\)
+EXIT=0
+
+$ jj bookmark list
+main: orunzzvs d330ace8 Add initial greeting
+EXIT=0
+
+$ jj log -r trunk\(\)
+◆  orunzzvs test@example.invalid 2026-10-12 11:51:13 main d330ace8
+│  Add initial greeting
+~
+EXIT=0
+
+$ jj git fetch
+Nothing changed.
+EXIT=0
+
+$ jj bookmark list
+main: orunzzvs d330ace8 Add initial greeting
+EXIT=0
+
+$ jj log -r trunk\(\)
+◆  orunzzvs test@example.invalid 2026-10-12 11:51:13 main d330ace8
+│  Add initial greeting
+~
+EXIT=0
+
+DECISION: main is local landing target; use explicit --from main. No unfinished work in revset.
+
+$ pwd
+/tmp/gitman-removal-A.tlXcWW/repo
+EXIT=0
+
+$ jj root
+/tmp/gitman-removal-A.tlXcWW/repo
+EXIT=0
+
+$ gitman work feature-a --from main
+workspace: feature-a
+path: /tmp/gitman-removal-A.tlXcWW/workspaces/feature-a
+base: d330ace8b659c879030d4f4974706b3e8ff188e5 (main)
+enter it with: cd /tmp/gitman-removal-A.tlXcWW/workspaces/feature-a
+EXIT=0
+
+$ cd /tmp/gitman-removal-A.tlXcWW/workspaces/feature-a
+EXIT=0
+
+$ pwd
+/tmp/gitman-removal-A.tlXcWW/workspaces/feature-a
+EXIT=0
+
+$ jj root
+/tmp/gitman-removal-A.tlXcWW/workspaces/feature-a
+EXIT=0
+
+$ jj status
+The working copy has no changes.
+Working copy  (@) : ymvmlqyo 93049eaa (empty) (no description set)
+Parent commit (@-): orunzzvs d330ace8 main | Add initial greeting
+EXIT=0
+
+$ python3 -c from\ pathlib\ import\ Path\;\ p=Path\(\'app.py\'\)\;\ p.write_text\(p.read_text\(\)\ +\ \'\\n\\ndef\ farewell\(name\):\\n\ \ \ \ return\ f\"Goodbye\,\ \{name\}\!\"\\n\'\)
+EXIT=0
+
+$ python3 -c from\ pathlib\ import\ Path\;\ Path\(\'test_app.py\'\).write_text\(\'import\ unittest\\nfrom\ app\ import\ greet\,\ farewell\\n\\nclass\ GreetingTest\(unittest.TestCase\):\\n\ \ \ \ def\ test_greet\(self\):\\n\ \ \ \ \ \ \ \ self.assertEqual\(greet\(\"Ada\"\)\,\ \"Hello\,\ Ada\!\"\)\\n\\n\ \ \ \ def\ test_farewell\(self\):\\n\ \ \ \ \ \ \ \ self.assertEqual\(farewell\(\"Ada\"\)\,\ \"Goodbye\,\ Ada\!\"\)\\n\'\)
+EXIT=0
+
+$ python3 -B -m unittest -q
+----------------------------------------------------------------------
+Ran 2 tests in 0.000s
+
+OK
+EXIT=0
+
+PHASE: candidate finish work
+
+$ jj status
+Working copy changes:
+M app.py
+A test_app.py
+Working copy  (@) : ymvmlqyo 0bc8b662 (no description set)
+Parent commit (@-): orunzzvs d330ace8 main | Add initial greeting
+EXIT=0
+
+$ jj diff
+Modified regular file app.py:
+   1    1: def greet(name):
+   2    2:     return f"Hello, {name}!"
+        3: 
+        4: 
+        5: def farewell(name):
+        6:     return f"Goodbye, {name}!"
+Added regular file test_app.py:
+        1: import unittest
+        2: from app import greet, farewell
+        3: 
+        4: class GreetingTest(unittest.TestCase):
+        5:     def test_greet(self):
+        6:         self.assertEqual(greet("Ada"), "Hello, Ada!")
+        7: 
+        8:     def test_farewell(self):
+        9:         self.assertEqual(farewell("Ada"), "Goodbye, Ada!")
+EXIT=0
+
+$ jj log -r @\ \|\ @-
+@  ymvmlqyo test@example.invalid 2026-10-12 11:51:14 feature-a@ 0bc8b662
+│  (no description set)
+◆  orunzzvs test@example.invalid 2026-10-12 11:51:13 main d330ace8
+│  Add initial greeting
+~
+EXIT=0
+
+$ jj describe -r @ -m Add\ farewell\ greeting
+Working copy  (@) now at: ymvmlqyo 30cf0c93 Add farewell greeting
+Parent commit (@-)      : orunzzvs d330ace8 main | Add initial greeting
+EXIT=0
+
+$ jj status
+Working copy changes:
+M app.py
+A test_app.py
+Working copy  (@) : ymvmlqyo 30cf0c93 Add farewell greeting
+Parent commit (@-): orunzzvs d330ace8 main | Add initial greeting
+EXIT=0
+
+$ jj log -r @\ \|\ @-
+@  ymvmlqyo test@example.invalid 2026-10-12 11:51:14 feature-a@ 30cf0c93
+│  Add farewell greeting
+◆  orunzzvs test@example.invalid 2026-10-12 11:51:13 main d330ace8
+│  Add initial greeting
+~
+EXIT=0
+
+$ jj bookmark create feature-a -r @
+Created 1 bookmarks pointing to ymvmlqyo 30cf0c93 feature-a | Add farewell greeting
+EXIT=0
+
+$ jj git fetch
+Nothing changed.
+EXIT=0
+
+$ jj bookmark list
+feature-a: ymvmlqyo 30cf0c93 Add farewell greeting
+main: orunzzvs d330ace8 Add initial greeting
+EXIT=0
+
+$ jj log -r main\ \|\ feature-a\ \|\ main@origin
+@  ymvmlqyo test@example.invalid 2026-10-12 11:51:14 feature-a feature-a@ 30cf0c93
+│  Add farewell greeting
+◆  orunzzvs test@example.invalid 2026-10-12 11:51:13 main d330ace8
+│  Add initial greeting
+~
+EXIT=0
+
+$ jj log -r conflicts\(\)
+EXIT=0
+
+$ jj log -r divergent\(\)
+EXIT=0
+
+DECISION: feature-a descends from current main; no rebase needed.
+
+$ jj bookmark set main -r feature-a
+Moved 1 bookmarks to ymvmlqyo 30cf0c93 feature-a main* | Add farewell greeting
+EXIT=0
+
+$ jj git push --bookmark main
+Changes to push to origin:
+  bookmark: main [move forward from d330ace8b659 to 30cf0c93f88a]
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: zrrlrsyq 7f17214b (empty) (no description set)
+Parent commit (@-)      : ymvmlqyo 30cf0c93 feature-a main | Add farewell greeting
+EXIT=0
+
+$ jj bookmark list
+feature-a: ymvmlqyo 30cf0c93 Add farewell greeting
+main: ymvmlqyo 30cf0c93 Add farewell greeting
+EXIT=0
+
+$ jj log -r main\ \|\ main@origin\ \|\ feature-a
+◆  ymvmlqyo test@example.invalid 2026-10-12 11:51:14 feature-a main 30cf0c93
+│  Add farewell greeting
+~
+EXIT=0
+
+$ jj status
+The working copy has no changes.
+Working copy  (@) : zrrlrsyq 7f17214b (empty) (no description set)
+Parent commit (@-): ymvmlqyo 30cf0c93 feature-a main | Add farewell greeting
+EXIT=0
+
+$ cd /tmp/gitman-removal-A.tlXcWW/repo
+EXIT=0
+
+$ pwd
+/tmp/gitman-removal-A.tlXcWW/repo
+EXIT=0
+
+$ jj root
+/tmp/gitman-removal-A.tlXcWW/repo
+EXIT=0
+
+$ jj status
+The working copy has no changes.
+Working copy  (@) : mukqkmlv 35997d2a (empty) (no description set)
+Parent commit (@-): orunzzvs d330ace8 Add initial greeting
+EXIT=0
+
+$ jj new main
+Working copy  (@) now at: nrpupozs 15b82c0e (empty) (no description set)
+Parent commit (@-)      : ymvmlqyo 30cf0c93 feature-a main | Add farewell greeting
+Added 1 files, modified 1 files, removed 0 files
+EXIT=0
+
+$ jj status
+The working copy has no changes.
+Working copy  (@) : nrpupozs 15b82c0e (empty) (no description set)
+Parent commit (@-): ymvmlqyo 30cf0c93 feature-a main | Add farewell greeting
+EXIT=0
+
+$ jj log -r @\ \|\ @-\ \|\ main
+@  nrpupozs test@example.invalid 2026-10-12 11:51:15 default@ 15b82c0e
+│  (empty) (no description set)
+◆  ymvmlqyo test@example.invalid 2026-10-12 11:51:14 feature-a main 30cf0c93
+│  Add farewell greeting
+~
+EXIT=0
+
+$ cd /tmp/gitman-removal-A.tlXcWW/workspaces/feature-a
+EXIT=0
+
+$ pwd
+/tmp/gitman-removal-A.tlXcWW/workspaces/feature-a
+EXIT=0
+
+$ jj root
+/tmp/gitman-removal-A.tlXcWW/workspaces/feature-a
+EXIT=0
+
+$ bash -c printf\ \"Keep\ this\ local\ note.\\n\"\ \>\ ignored-note.txt
+EXIT=0
+
+PHASE: candidate remove workspace checks
+
+$ jj workspace list
+default: ../../repo nrpupozs 15b82c0e (empty) (no description set)
+feature-a: . zrrlrsyq 7f17214b (empty) (no description set)
+EXIT=0
+
+$ jj bookmark list
+feature-a: ymvmlqyo 30cf0c93 Add farewell greeting
+main: ymvmlqyo 30cf0c93 Add farewell greeting
+EXIT=0
+
+$ jj log -r main\ \|\ main@origin\ \|\ feature-a\ \|\ feature-a@
+@  zrrlrsyq test@example.invalid 2026-10-12 11:51:14 feature-a@ 7f17214b
+│  (empty) (no description set)
+◆  ymvmlqyo test@example.invalid 2026-10-12 11:51:14 feature-a main 30cf0c93
+│  Add farewell greeting
+~
+EXIT=0
+
+$ jj log -r \(::feature-a@\ ~\ ::main\)\ ~\ empty\(\)
+EXIT=0
+
+$ jj log -r divergent\(\)
+EXIT=0
+
+$ jj status
+The working copy has no changes.
+Working copy  (@) : zrrlrsyq 7f17214b (empty) (no description set)
+Parent commit (@-): ymvmlqyo 30cf0c93 feature-a main | Add farewell greeting
+EXIT=0
+
+$ find /tmp/gitman-removal-A.tlXcWW/workspaces/feature-a -maxdepth 1 -mindepth 1 -printf %f\\n
+.git
+.jj
+.gitignore
+app.py
+test_app.py
+ignored-note.txt
+EXIT=0
+
+$ git status --ignored --short
+!! .jj/
+!! ignored-note.txt
+EXIT=0
+
+DECISION: ignored-note.txt remains. Candidate says ask user to choose deletion or retention, then wait. No real user request in test. Do not remove or forget workspace.
+
+$ jj workspace list
+default: ../../repo nrpupozs 15b82c0e (empty) (no description set)
+feature-a: . zrrlrsyq 7f17214b (empty) (no description set)
+EXIT=0
+TEMP_ROOT=/tmp/gitman-removal-A.tlXcWW

@@ -1,0 +1,222 @@
+$ mktemp -d
+/tmp/tmp.yNZpWZd8qe
+[exit 0]
+Setup: JJ_CONFIG=/tmp/tmp.yNZpWZd8qe/jj-config.toml; GIT_CONFIG_GLOBAL=/dev/null; GITMAN_WORKSPACE_ROOT=/tmp/tmp.yNZpWZd8qe/workspaces
+
+$ jj git init --no-colocate /tmp/tmp.yNZpWZd8qe/origin
+Initialized repo in "../../tmp.yNZpWZd8qe/origin"
+[exit 0]
+
+$ jj git init --colocate /tmp/tmp.yNZpWZd8qe/repo
+Initialized repo in "../../tmp.yNZpWZd8qe/repo"
+[exit 0]
+
+$ bash -c printf\ \"base\\n\"\ \>\ \"\$1\" _ /tmp/tmp.yNZpWZd8qe/repo/README.md
+[exit 0]
+
+$ jj -R /tmp/tmp.yNZpWZd8qe/repo describe -m base
+Working copy  (@) now at: sosyruzk 912d8d5e base
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+[exit 0]
+
+$ jj -R /tmp/tmp.yNZpWZd8qe/repo bookmark create main -r @
+Created 1 bookmarks pointing to sosyruzk 912d8d5e main | base
+[exit 0]
+
+$ jj -R /tmp/tmp.yNZpWZd8qe/repo git remote add origin /tmp/tmp.yNZpWZd8qe/origin/.jj/repo/store/git
+[exit 0]
+
+$ jj -R /tmp/tmp.yNZpWZd8qe/repo git push -b main
+Changes to push to origin:
+  bookmark: main [add to 912d8d5e87be]
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: tzvyvrmv a17c4d47 (empty) (no description set)
+Parent commit (@-)      : sosyruzk 912d8d5e main | base
+[exit 0]
+
+$ pwd
+/tmp/tmp.yNZpWZd8qe/repo
+[exit 0]
+
+$ jj root
+/tmp/tmp.yNZpWZd8qe/repo
+[exit 0]
+
+$ jj status
+The working copy has no changes.
+Working copy  (@) : tzvyvrmv a17c4d47 (empty) (no description set)
+Parent commit (@-): sosyruzk 912d8d5e main | base
+[exit 0]
+
+$ jj workspace list
+default: . tzvyvrmv a17c4d47 (empty) (no description set)
+[exit 0]
+
+$ jj log -r \(::working_copies\(\)\ ~\ ::main\)\ ~\ empty\(\)
+[exit 0]
+
+$ jj bookmark list
+main: sosyruzk 912d8d5e base
+[exit 0]
+
+$ jj log -r trunk\(\)
+◆  sosyruzk tester@example.test 2026-10-11 18:15:05 main 912d8d5e
+│  base
+~
+[exit 0]
+
+$ jj git remote list
+origin /tmp/tmp.yNZpWZd8qe/origin/.jj/repo/store/git
+[exit 0]
+
+$ jj git fetch
+Nothing changed.
+[exit 0]
+
+$ pwd
+/tmp/tmp.yNZpWZd8qe/repo
+[exit 0]
+
+$ jj root
+/tmp/tmp.yNZpWZd8qe/repo
+[exit 0]
+
+$ gitman work task-a --from main
+workspace: task-a
+path: /tmp/tmp.yNZpWZd8qe/workspaces/task-a
+base: 912d8d5e87be48cfcc8eeceb9e54b9dc2f55219e (main)
+enter it with: cd /tmp/tmp.yNZpWZd8qe/workspaces/task-a
+[exit 0]
+
+$ bash -c printf\ \"feature\ enabled\\n\"\ \>\ \"\$1\" _ /tmp/tmp.yNZpWZd8qe/workspaces/task-a/feature.txt
+[exit 0]
+
+$ bash -c test\ \"\$\(cat\ \"\$1\"\)\"\ =\ \"feature\ enabled\" _ /tmp/tmp.yNZpWZd8qe/workspaces/task-a/feature.txt
+[exit 0]
+
+$ jj -R /tmp/tmp.yNZpWZd8qe/workspaces/task-a status
+Working copy changes:
+A ../workspaces/task-a/feature.txt
+Working copy  (@) : nqxrvmlm 880d2e51 (no description set)
+Parent commit (@-): sosyruzk 912d8d5e main | base
+[exit 0]
+
+$ jj -R /tmp/tmp.yNZpWZd8qe/workspaces/task-a diff
+Added regular file ../workspaces/task-a/feature.txt:
+        1: feature enabled
+[exit 0]
+
+$ jj -R /tmp/tmp.yNZpWZd8qe/workspaces/task-a log -r @\ \|\ @-
+@  nqxrvmlm tester@example.test 2026-10-11 18:15:19 task-a@ 880d2e51
+│  (no description set)
+◆  sosyruzk tester@example.test 2026-10-11 18:15:05 main 912d8d5e
+│  base
+~
+[exit 0]
+
+$ jj -R /tmp/tmp.yNZpWZd8qe/workspaces/task-a describe -r @ -m Add\ feature
+Working copy  (@) now at: nqxrvmlm 22e93be4 Add feature
+Parent commit (@-)      : sosyruzk 912d8d5e main | base
+[exit 0]
+
+$ jj -R /tmp/tmp.yNZpWZd8qe/workspaces/task-a log -r @\ \|\ @-
+@  nqxrvmlm tester@example.test 2026-10-11 18:15:20 task-a@ 22e93be4
+│  Add feature
+◆  sosyruzk tester@example.test 2026-10-11 18:15:05 main 912d8d5e
+│  base
+~
+[exit 0]
+
+$ jj -R /tmp/tmp.yNZpWZd8qe/workspaces/task-a bookmark create task-a -r @
+Created 1 bookmarks pointing to nqxrvmlm 22e93be4 task-a | Add feature
+[exit 0]
+
+$ bash -c printf\ \"unrelated\ pending\ work\\n\"\ \>\ \"\$1\" _ /tmp/tmp.yNZpWZd8qe/repo/other.txt
+[exit 0]
+
+$ jj -R /tmp/tmp.yNZpWZd8qe/repo status
+Working copy changes:
+A other.txt
+Working copy  (@) : tzvyvrmv ff5d5040 (no description set)
+Parent commit (@-): sosyruzk 912d8d5e main | base
+[exit 0]
+
+$ jj -R /tmp/tmp.yNZpWZd8qe/workspaces/task-a git fetch
+Nothing changed.
+[exit 0]
+
+$ jj -R /tmp/tmp.yNZpWZd8qe/workspaces/task-a log -r main\ \|\ main@origin\ \|\ task-a\ \|\ task-a@
+@  nqxrvmlm tester@example.test 2026-10-11 18:15:20 task-a task-a@ 22e93be4
+│  Add feature
+◆  sosyruzk tester@example.test 2026-10-11 18:15:05 main 912d8d5e
+│  base
+~
+[exit 0]
+
+$ jj -R /tmp/tmp.yNZpWZd8qe/workspaces/task-a log -r conflicts\(\)
+[exit 0]
+
+$ jj -R /tmp/tmp.yNZpWZd8qe/workspaces/task-a log -r divergent\(\)
+[exit 0]
+
+$ jj -R /tmp/tmp.yNZpWZd8qe/workspaces/task-a bookmark set main -r task-a
+Moved 1 bookmarks to nqxrvmlm 22e93be4 main* task-a | Add feature
+[exit 0]
+
+$ jj -R /tmp/tmp.yNZpWZd8qe/workspaces/task-a git push -b main
+Changes to push to origin:
+  bookmark: main [move forward from 912d8d5e87be to 22e93be4762d]
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: stuqknls e0896100 (empty) (no description set)
+Parent commit (@-)      : nqxrvmlm 22e93be4 main task-a | Add feature
+[exit 0]
+
+$ jj -R /tmp/tmp.yNZpWZd8qe/workspaces/task-a bookmark list --all-remotes
+main: nqxrvmlm 22e93be4 Add feature
+  @git: nqxrvmlm 22e93be4 Add feature
+  @origin: nqxrvmlm 22e93be4 Add feature
+task-a: nqxrvmlm 22e93be4 Add feature
+  @git: nqxrvmlm 22e93be4 Add feature
+[exit 0]
+
+$ jj -R /tmp/tmp.yNZpWZd8qe/repo status
+Working copy changes:
+A other.txt
+Working copy  (@) : tzvyvrmv ff5d5040 (no description set)
+Parent commit (@-): sosyruzk 912d8d5e base
+[exit 0]
+
+$ cat /tmp/tmp.yNZpWZd8qe/repo/other.txt
+unrelated pending work
+[exit 0]
+
+$ jj -R /tmp/tmp.yNZpWZd8qe/repo workspace list
+default: . tzvyvrmv ff5d5040 (no description set)
+task-a: ../workspaces/task-a stuqknls e0896100 (empty) (no description set)
+[exit 0]
+
+$ jj -R /tmp/tmp.yNZpWZd8qe/repo log -r default@\ \|\ main\ \|\ task-a@
+@  tzvyvrmv tester@example.test 2026-10-11 18:15:20 default@ ff5d5040
+│  (no description set)
+~
+
+○  stuqknls tester@example.test 2026-10-11 18:15:28 task-a@ e0896100
+│  (empty) (no description set)
+◆  nqxrvmlm tester@example.test 2026-10-11 18:15:20 main task-a 22e93be4
+│  Add feature
+~
+[exit 0]
+
+$ test -d /tmp/tmp.yNZpWZd8qe/workspaces/task-a
+[exit 0]
+
+$ cat /tmp/tmp.yNZpWZd8qe/workspaces/task-a/feature.txt
+feature enabled
+[exit 0]
+
+$ jj -R /tmp/tmp.yNZpWZd8qe/workspaces/task-a status
+The working copy has no changes.
+Working copy  (@) : stuqknls e0896100 (empty) (no description set)
+Parent commit (@-): nqxrvmlm 22e93be4 main task-a | Add feature
+[exit 0]
+Decision: main landed and pushed; default@ is nonempty and still based on old main; preserve other.txt; leave task-a registered; report pending default checkout update.

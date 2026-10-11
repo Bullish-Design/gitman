@@ -1,0 +1,67 @@
+DECISION: SCENARIO 5-recovery; sandbox /tmp/gitman-old-a-5-recovery-p864wd5h
+$ write /tmp/gitman-old-a-5-recovery-p864wd5h/jjconfig.toml '[user]\nname = "Test User"\nemail = "test@example.invalid"\n'
+[exit 0; output empty]
+$ (cd /tmp/gitman-old-a-5-recovery-p864wd5h && jj git init --colocate /tmp/gitman-old-a-5-recovery-p864wd5h/main)
+exit=0
+stdout:
+stderr:
+Initialized repo in "main"
+
+$ write /tmp/gitman-old-a-5-recovery-p864wd5h/main/file.txt 'base\n'
+[exit 0; output empty]
+$ (cd /tmp/gitman-old-a-5-recovery-p864wd5h/main && jj status)
+exit=0
+stdout:
+Working copy changes:
+A file.txt
+Working copy  (@) : kmllnnmp 10b558d3 (no description set)
+Parent commit (@-): zzzzzzzz 00000000 (empty) (no description set)
+stderr:
+
+$ (cd /tmp/gitman-old-a-5-recovery-p864wd5h/main && jj describe -m Initial)
+exit=0
+stdout:
+stderr:
+Working copy  (@) now at: kmllnnmp abdfc9b1 Initial
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+
+$ (cd /tmp/gitman-old-a-5-recovery-p864wd5h/main && jj bookmark create main -r @)
+exit=0
+stdout:
+stderr:
+Created 1 bookmarks pointing to kmllnnmp abdfc9b1 main | Initial
+
+$ (cd /tmp/gitman-old-a-5-recovery-p864wd5h/main && jj new main)
+exit=0
+stdout:
+stderr:
+Working copy  (@) now at: otuxxvll 19ccc515 (empty) (no description set)
+Parent commit (@-)      : kmllnnmp abdfc9b1 main | Initial
+
+DECISION: Check workspaces and described work before opening another workspace.
+$ (cd /tmp/gitman-old-a-5-recovery-p864wd5h/main && jj workspace list)
+exit=0
+stdout:
+default: . otuxxvll 19ccc515 (empty) (no description set)
+stderr:
+
+$ (cd /tmp/gitman-old-a-5-recovery-p864wd5h/main && jj log -r '(::working_copies() ~ ::trunk()) ~ empty()')
+exit=0
+stdout:
+○  kmllnnmp test@example.invalid 2026-10-11 17:59:19 main abdfc9b1
+│  Initial
+~
+stderr:
+
+$ (cd /tmp/gitman-old-a-5-recovery-p864wd5h/main && jj git remote list)
+exit=0
+stdout:
+stderr:
+
+$ (cd /tmp/gitman-old-a-5-recovery-p864wd5h/main && jj log -r 'trunk()' --no-graph -T 'commit_id ++ " " ++ description ++ "\n"')
+exit=0
+stdout:
+0000000000000000000000000000000000000000 
+stderr:
+
+DECISION: No remote. trunk() is root while local main holds Initial. Precheck shows Initial outside trunk; stop before gitman work and ask how to define trunk or choose --from main.

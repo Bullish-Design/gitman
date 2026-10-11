@@ -1,0 +1,103 @@
+$ mktemp -d /tmp/gitman-old-C-3.XXXXXX
+/tmp/gitman-old-C-3.EVSsUA
+[exit 0]
+$ mkdir "$sandbox/repo"
+[exit 0]
+$ cat > "$sandbox/jjconfig.toml" <<'EOF'
+user.name = "Scenario User"
+user.email = "scenario@example.invalid"
+EOF
+[exit 0]
+$ export JJ_CONFIG="$sandbox/jjconfig.toml" GIT_CONFIG_GLOBAL=/dev/null GITMAN_WORKSPACE_ROOT="$sandbox/workspaces"
+[exit 0]
+
+$ jj git init --colocate .
+Initialized repo in "."
+[exit 0]
+
+$ printf 'base\n' > README.md
+[exit 0]
+
+$ jj status
+Working copy changes:
+A README.md
+Working copy  (@) : txtxnzxv 306348ce (no description set)
+Parent commit (@-): zzzzzzzz 00000000 (empty) (no description set)
+[exit 0]
+
+$ jj describe -m 'Initialize scenario'
+Working copy  (@) now at: txtxnzxv e3c3b248 Initialize scenario
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+[exit 0]
+
+$ jj bookmark create main -r @
+Created 1 bookmarks pointing to txtxnzxv e3c3b248 main | Initialize scenario
+[exit 0]
+
+$ jj new main
+Working copy  (@) now at: yzmlwkuu 58f2e0b7 (empty) (no description set)
+Parent commit (@-)      : txtxnzxv e3c3b248 main | Initialize scenario
+[exit 0]
+
+$ jj git init --no-colocate ../origin
+Initialized repo in "../origin"
+[exit 0]
+
+$ jj git remote add origin ../origin/.jj/repo/store/git
+[exit 0]
+
+$ jj git push --bookmark main
+Changes to push to origin:
+  bookmark: main [add to e3c3b2486142]
+[exit 0]
+
+$ jj git fetch
+Nothing changed.
+[exit 0]
+
+$ jj workspace list
+default: . yzmlwkuu 58f2e0b7 (empty) (no description set)
+[exit 0]
+
+$ jj log -r '(::working_copies() ~ ::trunk()) ~ empty()'
+[exit 0]
+
+$ gitman work failing
+workspace: failing
+path: /tmp/gitman-old-C-3.EVSsUA/workspaces/failing
+base: e3c3b2486142802a8b5faa6c478177b04d21b2c0 (trunk())
+enter it with: cd /tmp/gitman-old-C-3.EVSsUA/workspaces/failing
+[exit 0]
+
+$ cd ../workspaces/failing && printf 'incomplete\n' > feature.txt
+[exit 0]
+
+$ cd ../workspaces/failing && jj status
+Working copy changes:
+A feature.txt
+Working copy  (@) : mupvksrs b0033570 (no description set)
+Parent commit (@-): txtxnzxv e3c3b248 main | Initialize scenario
+[exit 0]
+
+$ cd ../workspaces/failing && jj describe -m 'Add incomplete feature'
+Working copy  (@) now at: mupvksrs ffcbac6c Add incomplete feature
+Parent commit (@-)      : txtxnzxv e3c3b248 main | Initialize scenario
+[exit 0]
+
+$ cd ../workspaces/failing && jj bookmark create failing -r @
+Created 1 bookmarks pointing to mupvksrs ffcbac6c failing | Add incomplete feature
+[exit 0]
+
+$ cd ../workspaces/failing && test -f expected.txt
+[exit 1]
+
+$ jj workspace list
+default: . yzmlwkuu 58f2e0b7 (empty) (no description set)
+failing: ../workspaces/failing mupvksrs ffcbac6c failing | Add incomplete feature
+[exit 0]
+
+$ jj log -r '(::failing@ ~ ::trunk()) ~ empty()'
+○  mupvksrs scenario@example.invalid 2026-10-11 17:59:58 failing failing@ ffcbac6c
+│  Add incomplete feature
+~
+[exit 0]

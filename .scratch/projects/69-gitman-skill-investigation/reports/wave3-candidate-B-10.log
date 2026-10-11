@@ -1,0 +1,318 @@
+ROOT /tmp/gitman-wave3-b-10-6z54t5d4
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4 && jj git init --colocate repo)
+Initialized repo in "repo"
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/repo && bash -c 'printf "base\n" > README.md')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/repo && jj describe -m 'Add base')
+Working copy  (@) now at: kwxynryq 19b6c15e Add base
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/repo && jj bookmark create main -r @)
+Created 1 bookmarks pointing to kwxynryq 19b6c15e main | Add base
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/repo && jj new main)
+Working copy  (@) now at: toqmpxsm eeb6ded0 (empty) (no description set)
+Parent commit (@-)      : kwxynryq 19b6c15e main | Add base
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/repo && jj status)
+The working copy has no changes.
+Working copy  (@) : toqmpxsm eeb6ded0 (empty) (no description set)
+Parent commit (@-): kwxynryq 19b6c15e main | Add base
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/repo && jj workspace list)
+default: . toqmpxsm eeb6ded0 (empty) (no description set)
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/repo && jj log -r '(::working_copies() ~ ::main) ~ empty()')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/repo && jj bookmark list)
+main: kwxynryq 19b6c15e Add base
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/repo && jj log -r 'trunk()')
+◆  zzzzzzzz root() 00000000
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/repo && jj git remote list)
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/repo && gitman work feature --from main)
+workspace: feature
+path: /tmp/gitman-wave3-b-10-6z54t5d4/workspaces/feature
+base: 19b6c15ea94351e47619ea325cd6243529da7591 (main)
+enter it with: cd /tmp/gitman-wave3-b-10-6z54t5d4/workspaces/feature
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/workspaces/feature && bash -c 'printf "feature\n" > feature.txt')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/workspaces/feature && bash -c 'test "$(cat feature.txt)" = feature')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/workspaces/feature && jj status)
+Working copy changes:
+A feature.txt
+Working copy  (@) : qnwklotn 55a3aa4f (no description set)
+Parent commit (@-): kwxynryq 19b6c15e main | Add base
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/workspaces/feature && jj diff)
+Added regular file feature.txt:
+        1: feature
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/workspaces/feature && jj log -r '@|@-')
+@  qnwklotn test@example.com 2026-10-11 18:12:35 feature@ 55a3aa4f
+│  (no description set)
+○  kwxynryq test@example.com 2026-10-11 18:12:26 main 19b6c15e
+│  Add base
+~
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/workspaces/feature && jj describe -r @ -m 'Add feature marker')
+Working copy  (@) now at: qnwklotn 83180d23 Add feature marker
+Parent commit (@-)      : kwxynryq 19b6c15e main | Add base
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/workspaces/feature && jj log -r '@|@-')
+@  qnwklotn test@example.com 2026-10-11 18:12:36 feature@ 83180d23
+│  Add feature marker
+○  kwxynryq test@example.com 2026-10-11 18:12:26 main 19b6c15e
+│  Add base
+~
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/workspaces/feature && jj bookmark create feature -r @)
+Created 1 bookmarks pointing to qnwklotn 83180d23 feature | Add feature marker
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/repo && jj op log --limit 4)
+@  c302bf384650 andrew@server feature@ 2 seconds ago, lasted 10 milliseconds
+│  create bookmark feature pointing to commit 83180d23fa87d0ad3e5b80cebbbe973a669bc1ef
+│  args: jj bookmark create feature -r @
+○  5a82dacc38ca andrew@server feature@ 2 seconds ago, lasted 14 milliseconds
+│  describe commit 55a3aa4f5bb1d86aae56c856fdacdedc5e45295b
+│  args: jj describe -r @ -m 'Add feature marker'
+○  ebdec312edb2 andrew@server feature@ 3 seconds ago, lasted 13 milliseconds
+│  snapshot working copy
+│  args: jj status
+○  20e21aa2b62e andrew@server feature@ 4 seconds ago, lasted 9 milliseconds
+│  create initial working-copy commit in workspace feature
+│  args: jj workspace add --name feature '--revision=19b6c15ea94351e47619ea325cd6243529da7591' --colocate /tmp/gitman-wave3-b-10-6z54t5d4/workspaces/feature
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/workspaces/feature && jj log -r 'conflicts()')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/workspaces/feature && jj log -r 'divergent()')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/workspaces/feature && jj bookmark set main -r @)
+Moved 1 bookmarks to qnwklotn 83180d23 feature main* | Add feature marker
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/repo && jj status)
+The working copy has no changes.
+Working copy  (@) : toqmpxsm eeb6ded0 (empty) (no description set)
+Parent commit (@-): kwxynryq 19b6c15e Add base
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/repo && jj new main)
+Working copy  (@) now at: swltpyts 083f3b49 (empty) (no description set)
+Parent commit (@-)      : qnwklotn 83180d23 feature main | Add feature marker
+Added 1 files, modified 0 files, removed 0 files
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/repo && jj bookmark list)
+feature: qnwklotn 83180d23 Add feature marker
+main: qnwklotn 83180d23 Add feature marker
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/repo && jj log -r '(::feature@ ~ ::main) ~ empty()')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/repo && jj --at-op=c302bf384650 describe -r feature -m 'Alternate feature marker')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/repo && jj log -r 'divergent()')
+Concurrent modification detected, resolving automatically.
+Rebased 1 descendant commits onto commits rewritten by other operation.
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/repo && jj bookmark list)
+feature: qnwklotn 53d73c0c Alternate feature marker
+main: qnwklotn 53d73c0c Alternate feature marker
+  @git (ahead by 1 commits, behind by 1 commits): qnwklotn/1 83180d23 (hidden) Add feature marker
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/repo && jj workspace list)
+default: . swltpyts 5f31dca6 (empty) (no description set)
+feature: ../workspaces/feature qnwklotn 53d73c0c feature main* | Alternate feature marker
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/repo && jj log -r '(::feature@ ~ ::main) ~ empty()')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/repo && jj op log --limit 4)
+@    9f4817bef2ae andrew@server default@ 8 seconds ago, lasted 15 milliseconds
+├─╮  reconcile divergent operations
+│ │  args: jj log -r 'divergent()'
+○ │  80ff013c2284 andrew@server default@ 12 seconds ago, lasted 13 milliseconds
+│ │  new empty commit
+│ │  args: jj new main
+○ │  03f39e8bd630 andrew@server feature@ 13 seconds ago, lasted 8 milliseconds
+│ │  point bookmark main to commit 83180d23fa87d0ad3e5b80cebbbe973a669bc1ef
+│ │  args: jj bookmark set main -r @
+│ ○  85c0306c3c29 andrew@server default@ 9 seconds ago, lasted 16 milliseconds
+├─╯  describe commit 83180d23fa87d0ad3e5b80cebbbe973a669bc1ef
+│    args: jj '--at-op=c302bf384650' describe -r feature -m 'Alternate feature marker'
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/repo && jj log -r 'main|feature|feature@|swltpyts')
+@  swltpyts test@example.com 2026-10-11 18:12:48 default@ 5f31dca6
+│  (empty) (no description set)
+○  qnwklotn test@example.com 2026-10-11 18:12:47 feature main* feature@ 53d73c0c
+│  Alternate feature marker
+~
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/repo && jj --at-op=9f4817bef2ae describe -r feature -m 'Variant A')
+Rebased 1 descendant commits.
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/repo && jj --at-op=9f4817bef2ae describe -r feature -m 'Variant B')
+Rebased 1 descendant commits.
+Warning: Failed to update Git HEAD ref
+Caused by:
+1: Could not prepare reference edit, "reference"="HEAD", "referent"="HEAD"
+2: Expected reference content 83180d23fa87d0ad3e5b80cebbbe973a669bc1ef
+Warning: Failed to export some bookmarks:
+  feature@git: Failed to set: Could not prepare reference edit, "reference"="refs/heads/feature", "referent"="refs/heads/feature": Expected reference content 53d73c0c154fe6aa598dfab674b7e1e4e299fbf1
+  main@git: Failed to set: Could not prepare reference edit, "reference"="refs/heads/main", "referent"="refs/heads/main": Expected reference content 83180d23fa87d0ad3e5b80cebbbe973a669bc1ef
+Hint: Git doesn't allow a branch/tag name that looks like a parent directory of
+another (e.g. `foo` and `foo/bar`). Try to rename the bookmarks/tags that failed
+to export or their "parent" bookmarks/tags.
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/repo && jj log -r 'divergent()')
+Concurrent modification detected, resolving automatically.
+@  swltpyts/1 test@example.com 2026-10-11 18:12:59 default@ 7b7148a0 (divergent)
+│  (empty) (no description set)
+○  qnwklotn/1 test@example.com 2026-10-11 18:12:59 feature?? feature@git main?? main@git feature@ 521e4f42 (divergent)
+│  Variant A
+~
+
+○  swltpyts/0 test@example.com 2026-10-11 18:13:00 c0dbc087 (divergent)
+│  (empty) (no description set)
+○  qnwklotn/0 test@example.com 2026-10-11 18:13:00 feature?? main?? 9987588d (divergent)
+│  Variant B
+~
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/repo && jj bookmark list)
+feature (conflicted):
+  - qnwklotn/2 53d73c0c (hidden) Alternate feature marker
+  + qnwklotn/1 521e4f42 (divergent) Variant A
+  + qnwklotn/0 9987588d (divergent) Variant B
+  @git (behind by 1 commits): qnwklotn/1 521e4f42 (divergent) Variant A
+main (conflicted):
+  - qnwklotn/2 53d73c0c (hidden) Alternate feature marker
+  + qnwklotn/1 521e4f42 (divergent) Variant A
+  + qnwklotn/0 9987588d (divergent) Variant B
+  @git (behind by 1 commits): qnwklotn/1 521e4f42 (divergent) Variant A
+Hint: Some bookmarks have conflicts. Use `jj bookmark set <name> -r <rev>` to resolve.
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/repo && jj workspace list)
+default: . swltpyts/1 7b7148a0 (divergent) (empty) (no description set)
+feature: ../workspaces/feature qnwklotn/1 521e4f42 feature?? feature@git main?? main@git | (divergent) Variant A
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/repo && jj log -r 'qnwklotn/1|qnwklotn/0')
+○  qnwklotn/0 test@example.com 2026-10-11 18:13:00 feature?? main?? 9987588d (divergent)
+│  Variant B
+~
+
+○  qnwklotn/1 test@example.com 2026-10-11 18:12:59 feature?? feature@git main?? main@git feature@ 521e4f42 (divergent)
+│  Variant A
+~
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/repo && jj bookmark set main -r qnwklotn/1)
+Moved 1 bookmarks to qnwklotn/1 521e4f42 feature?? feature@git main | (divergent) Variant A
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/repo && jj bookmark set feature -r qnwklotn/1)
+Moved 1 bookmarks to qnwklotn/1 521e4f42 feature main | (divergent) Variant A
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/repo && jj bookmark list)
+feature: qnwklotn/1 521e4f42 (divergent) Variant A
+main: qnwklotn/1 521e4f42 (divergent) Variant A
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/repo && jj log -r '(::feature@ ~ ::main) ~ empty()')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/repo && jj log -r 'divergent()')
+@  swltpyts/1 test@example.com 2026-10-11 18:12:59 default@ 7b7148a0 (divergent)
+│  (empty) (no description set)
+○  qnwklotn/1 test@example.com 2026-10-11 18:12:59 feature main feature@ 521e4f42 (divergent)
+│  Variant A
+~
+
+○  swltpyts/0 test@example.com 2026-10-11 18:13:00 c0dbc087 (divergent)
+│  (empty) (no description set)
+○  qnwklotn/0 test@example.com 2026-10-11 18:13:00 9987588d (divergent)
+│  Variant B
+~
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/repo && jj workspace list)
+default: . swltpyts/1 7b7148a0 (divergent) (empty) (no description set)
+feature: ../workspaces/feature qnwklotn/1 521e4f42 feature main | (divergent) Variant A
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/workspaces/feature && jj status)
+Working copy changes:
+A feature.txt
+Working copy  (@) : qnwklotn/1 521e4f42 feature main | (divergent) Variant A
+Parent commit (@-): kwxynryq 19b6c15e Add base
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/repo && jj diff --from qnwklotn/1 --to qnwklotn/0)
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/repo && jj log -r 'main|feature|feature@|divergent()')
+@  swltpyts/1 test@example.com 2026-10-11 18:12:59 default@ 7b7148a0 (divergent)
+│  (empty) (no description set)
+○  qnwklotn/1 test@example.com 2026-10-11 18:12:59 feature main feature@ 521e4f42 (divergent)
+│  Variant A
+~
+
+○  swltpyts/0 test@example.com 2026-10-11 18:13:00 c0dbc087 (divergent)
+│  (empty) (no description set)
+○  qnwklotn/0 test@example.com 2026-10-11 18:13:00 9987588d (divergent)
+│  Variant B
+~
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/workspaces/feature && git status --short --ignored)
+ A feature.txt
+!! .jj/
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-10-6z54t5d4/workspaces/feature && find . -maxdepth 2 -type f -not -path './.git/*' -not -path './.jj/*' -print)
+./.git
+./README.md
+./feature.txt
+[exit 0]
+

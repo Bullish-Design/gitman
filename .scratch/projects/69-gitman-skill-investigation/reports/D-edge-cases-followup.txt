@@ -1,0 +1,213 @@
+
+================ independent bookmark @- spot check ================
+$ write /tmp/gitman-d-bookmark-check-vn3zae7b/jj.toml: '[user]\nname = "Test"\nemail = "test@example.com"\n'
+$ (cd /tmp/gitman-d-bookmark-check-vn3zae7b && jj git init --colocate /tmp/gitman-d-bookmark-check-vn3zae7b/main)
+Initialized repo in "main"
+[exit=0]
+$ write /tmp/gitman-d-bookmark-check-vn3zae7b/main/a.txt: 'base\n'
+$ (cd /tmp/gitman-d-bookmark-check-vn3zae7b/main && jj describe -m base)
+Working copy  (@) now at: nlxmvnnm 61a8825f base
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+[exit=0]
+$ (cd /tmp/gitman-d-bookmark-check-vn3zae7b/main && jj bookmark create main -r @)
+Created 1 bookmarks pointing to nlxmvnnm 61a8825f main | base
+[exit=0]
+$ (cd /tmp/gitman-d-bookmark-check-vn3zae7b && jj git init --no-colocate /tmp/gitman-d-bookmark-check-vn3zae7b/origin)
+Initialized repo in "origin"
+[exit=0]
+$ (cd /tmp/gitman-d-bookmark-check-vn3zae7b/main && jj git remote add origin /tmp/gitman-d-bookmark-check-vn3zae7b/origin/.jj/repo/store/git)
+
+[exit=0]
+$ (cd /tmp/gitman-d-bookmark-check-vn3zae7b/main && jj git push --bookmark main)
+Changes to push to origin:
+  bookmark: main [add to 61a8825fe835]
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: myvnunwn 9342dc84 (empty) (no description set)
+Parent commit (@-)      : nlxmvnnm 61a8825f main | base
+[exit=0]
+$ (cd /tmp/gitman-d-bookmark-check-vn3zae7b/main && jj new main)
+Working copy  (@) now at: kzkssvyk 447637fe (empty) (no description set)
+Parent commit (@-)      : nlxmvnnm 61a8825f main | base
+[exit=0]
+# sandbox=/tmp/gitman-d-bookmark-check-vn3zae7b origin=/tmp/gitman-d-bookmark-check-vn3zae7b/origin/.jj/repo/store/git
+$ (cd /tmp/gitman-d-bookmark-check-vn3zae7b/main && gitman work task)
+workspace: task
+path: /tmp/gitman-d-bookmark-check-vn3zae7b/workspaces/task
+base: 61a8825fe835b1e84c8fc285a31dc30bb7139e49 (trunk())
+enter it with: cd /tmp/gitman-d-bookmark-check-vn3zae7b/workspaces/task
+[exit=0]
+$ write /tmp/gitman-d-bookmark-check-vn3zae7b/workspaces/task/feature.txt: 'new content\n'
+$ (cd /tmp/gitman-d-bookmark-check-vn3zae7b/workspaces/task && jj describe -m 'new feature')
+Working copy  (@) now at: swvyxout 39a33b2c new feature
+Parent commit (@-)      : nlxmvnnm 61a8825f main | base
+[exit=0]
+$ (cd /tmp/gitman-d-bookmark-check-vn3zae7b/workspaces/task && jj bookmark create task -r @-)
+Created 1 bookmarks pointing to nlxmvnnm 61a8825f main task | base
+[exit=0]
+$ (cd /tmp/gitman-d-bookmark-check-vn3zae7b/workspaces/task && jj log -r 'task | @' --no-graph -T 'bookmarks ++ " | " ++ description ++ " | " ++ commit_id.short() ++ "\n"')
+ | new feature
+ | 39a33b2ca8c7
+main task | base
+ | 61a8825fe835
+[exit=0]
+$ (cd /tmp/gitman-d-bookmark-check-vn3zae7b/workspaces/task && jj git push --bookmark task)
+Changes to push to origin:
+  bookmark: task [add to 61a8825fe835]
+[exit=0]
+$ (cd /tmp/gitman-d-bookmark-check-vn3zae7b/workspaces/task && jj git fetch)
+Nothing changed.
+[exit=0]
+$ (cd /tmp/gitman-d-bookmark-check-vn3zae7b/workspaces/task && jj log -r task@origin --no-graph -T 'description ++ " | " ++ commit_id.short() ++ "\n"')
+base
+ | 61a8825fe835
+[exit=0]
+$ (cd /tmp/gitman-d-bookmark-check-vn3zae7b/workspaces/task && jj file list -r task@origin)
+a.txt
+[exit=0]
+
+================ protected main actual update ================
+$ (cd /tmp/gitman-d-protected-q7f59vxs/workspaces/pr && jj bookmark set main -r pr)
+Moved 1 bookmarks to krwwknoz 065b1042 main* pr | feature
+[exit=0]
+$ (cd /tmp/gitman-d-protected-q7f59vxs/workspaces/pr && jj git push --bookmark main)
+Changes to push to origin:
+  bookmark: main [move forward from 211d0a3b2bb6 to 065b1042a43f]
+remote: main is protected        
+Warning: The remote rejected the following updates:
+  refs/heads/main (reason: pre-receive hook declined)
+Hint: Try checking if you have permission to push to all the bookmarks.
+Error: Failed to push some bookmarks
+[exit=1]
+$ (cd /tmp/gitman-d-protected-q7f59vxs/workspaces/pr && jj bookmark list)
+main: krwwknoz 065b1042 feature
+  @origin (behind by 1 commits): krkyluxu 211d0a3b base
+pr: krwwknoz 065b1042 feature
+[exit=0]
+
+================ stale workspace removal path ================
+$ write /tmp/gitman-d-stale-removal-tx_5pmg3/jj.toml: '[user]\nname = "Test"\nemail = "test@example.com"\n'
+$ (cd /tmp/gitman-d-stale-removal-tx_5pmg3 && jj git init --colocate /tmp/gitman-d-stale-removal-tx_5pmg3/main)
+Initialized repo in "main"
+[exit=0]
+$ write /tmp/gitman-d-stale-removal-tx_5pmg3/main/a.txt: 'base\n'
+$ (cd /tmp/gitman-d-stale-removal-tx_5pmg3/main && jj describe -m base)
+Working copy  (@) now at: kxrozzqp 88061923 base
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+[exit=0]
+$ (cd /tmp/gitman-d-stale-removal-tx_5pmg3/main && jj bookmark create main -r @)
+Created 1 bookmarks pointing to kxrozzqp 88061923 main | base
+[exit=0]
+$ (cd /tmp/gitman-d-stale-removal-tx_5pmg3 && jj git init --no-colocate /tmp/gitman-d-stale-removal-tx_5pmg3/origin)
+Initialized repo in "origin"
+[exit=0]
+$ (cd /tmp/gitman-d-stale-removal-tx_5pmg3/main && jj git remote add origin /tmp/gitman-d-stale-removal-tx_5pmg3/origin/.jj/repo/store/git)
+
+[exit=0]
+$ (cd /tmp/gitman-d-stale-removal-tx_5pmg3/main && jj git push --bookmark main)
+Changes to push to origin:
+  bookmark: main [add to 880619237c5f]
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: ruqpxrpy a5375357 (empty) (no description set)
+Parent commit (@-)      : kxrozzqp 88061923 main | base
+[exit=0]
+$ (cd /tmp/gitman-d-stale-removal-tx_5pmg3/main && jj new main)
+Working copy  (@) now at: unssnysu 0150aab1 (empty) (no description set)
+Parent commit (@-)      : kxrozzqp 88061923 main | base
+[exit=0]
+# sandbox=/tmp/gitman-d-stale-removal-tx_5pmg3 origin=/tmp/gitman-d-stale-removal-tx_5pmg3/origin/.jj/repo/store/git
+$ (cd /tmp/gitman-d-stale-removal-tx_5pmg3/main && gitman work stale)
+workspace: stale
+path: /tmp/gitman-d-stale-removal-tx_5pmg3/workspaces/stale
+base: 880619237c5fabbfff5ba78b62b9e363efdeadcd (trunk())
+enter it with: cd /tmp/gitman-d-stale-removal-tx_5pmg3/workspaces/stale
+[exit=0]
+$ shutil.rmtree(/tmp/gitman-d-stale-removal-tx_5pmg3/workspaces/stale) [exit=0]
+$ (cd /tmp/gitman-d-stale-removal-tx_5pmg3/main && jj workspace remove stale)
+Error: Cannot access workspace 'stale' directory
+Caused by: No such file or directory (os error 2)
+Hint: Use `jj workspace forget` to stop tracking a workspace without deleting files.
+[exit=1]
+$ (cd /tmp/gitman-d-stale-removal-tx_5pmg3/main && jj workspace list)
+default: . unssnysu 0150aab1 (empty) (no description set)
+stale: ../workspaces/stale kqlqtrtv 9dcf767c (empty) (no description set)
+[exit=0]
+$ (cd /tmp/gitman-d-stale-removal-tx_5pmg3/main && gitman work stale)
+gitman: workspace 'stale' already exists: see `jj workspace list`
+[exit=1]
+
+================ concurrent rewrite causes divergent change ================
+$ write /tmp/gitman-d-divergent-ops-wmixeh21/jj.toml: '[user]\nname = "Test"\nemail = "test@example.com"\n'
+$ (cd /tmp/gitman-d-divergent-ops-wmixeh21 && jj git init --colocate /tmp/gitman-d-divergent-ops-wmixeh21/main)
+Initialized repo in "main"
+[exit=0]
+$ write /tmp/gitman-d-divergent-ops-wmixeh21/main/a.txt: 'base\n'
+$ (cd /tmp/gitman-d-divergent-ops-wmixeh21/main && jj describe -m base)
+Working copy  (@) now at: msswlqnx d205eb6c base
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+[exit=0]
+$ (cd /tmp/gitman-d-divergent-ops-wmixeh21/main && jj bookmark create main -r @)
+Created 1 bookmarks pointing to msswlqnx d205eb6c main | base
+[exit=0]
+$ (cd /tmp/gitman-d-divergent-ops-wmixeh21 && jj git init --no-colocate /tmp/gitman-d-divergent-ops-wmixeh21/origin)
+Initialized repo in "origin"
+[exit=0]
+$ (cd /tmp/gitman-d-divergent-ops-wmixeh21/main && jj git remote add origin /tmp/gitman-d-divergent-ops-wmixeh21/origin/.jj/repo/store/git)
+
+[exit=0]
+$ (cd /tmp/gitman-d-divergent-ops-wmixeh21/main && jj git push --bookmark main)
+Changes to push to origin:
+  bookmark: main [add to d205eb6c55e5]
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: lkyxoxqt 40e3d224 (empty) (no description set)
+Parent commit (@-)      : msswlqnx d205eb6c main | base
+[exit=0]
+$ (cd /tmp/gitman-d-divergent-ops-wmixeh21/main && jj new main)
+Working copy  (@) now at: unwznutu 916adbfc (empty) (no description set)
+Parent commit (@-)      : msswlqnx d205eb6c main | base
+[exit=0]
+# sandbox=/tmp/gitman-d-divergent-ops-wmixeh21 origin=/tmp/gitman-d-divergent-ops-wmixeh21/origin/.jj/repo/store/git
+$ (cd /tmp/gitman-d-divergent-ops-wmixeh21/main && gitman work task)
+workspace: task
+path: /tmp/gitman-d-divergent-ops-wmixeh21/workspaces/task
+base: d205eb6c55e54b88fb13cc1c941a68e1675aac35 (trunk())
+enter it with: cd /tmp/gitman-d-divergent-ops-wmixeh21/workspaces/task
+[exit=0]
+$ write /tmp/gitman-d-divergent-ops-wmixeh21/workspaces/task/a.txt: 'first\n'
+$ (cd /tmp/gitman-d-divergent-ops-wmixeh21/workspaces/task && jj describe -m 'first variant')
+Working copy  (@) now at: znomrzmx cba08f1d first variant
+Parent commit (@-)      : msswlqnx d205eb6c main | base
+[exit=0]
+$ (cd /tmp/gitman-d-divergent-ops-wmixeh21/workspaces/task && jj op log --limit 1 --no-graph -T 'id ++ "\n"')
+35305c9843fead6bcac613345e19b6015d5cc70426a478334cf077b571bda6610a0963695c91eeb7252020dbb12f0d17c50529de01480158eaa13aefa551fb41
+[exit=0]
+$ write /tmp/gitman-d-divergent-ops-wmixeh21/workspaces/task/a.txt: 'second\n'
+$ (cd /tmp/gitman-d-divergent-ops-wmixeh21/workspaces/task && jj status)
+Working copy changes:
+M a.txt
+Working copy  (@) : znomrzmx ad3f6006 first variant
+Parent commit (@-): msswlqnx d205eb6c main | base
+[exit=0]
+$ (cd /tmp/gitman-d-divergent-ops-wmixeh21/main && jj --at-op 35305c9843fead6bcac613345e19b6015d5cc70426a478334cf077b571bda6610a0963695c91eeb7252020dbb12f0d17c50529de01480158eaa13aefa551fb41 describe -r task@ -m 'alternate variant')
+
+[exit=0]
+$ (cd /tmp/gitman-d-divergent-ops-wmixeh21/main && jj log -r 'all()' --no-graph -T 'change_id.short() ++ " | " ++ commit_id.short() ++ " | " ++ description ++ "\n"')
+Concurrent modification detected, resolving automatically.
+znomrzmxpszl | b176ef31c3c5 | alternate variant
+
+znomrzmxpszl | ad3f60067582 | first variant
+
+unwznuturzum | 916adbfc2175 | 
+msswlqnxyuwn | d205eb6c55e5 | base
+
+zzzzzzzzzzzz | 000000000000 |
+[exit=0]
+$ (cd /tmp/gitman-d-divergent-ops-wmixeh21/workspaces/task && jj status)
+Working copy changes:
+M a.txt
+Working copy  (@) : znomrzmx/1 ad3f6006 (divergent) first variant
+Parent commit (@-): msswlqnx d205eb6c main | base
+[exit=0]
+$ (cd /tmp/gitman-d-divergent-ops-wmixeh21/workspaces/task && jj rebase -b @ -d 'trunk()')
+Skipped rebase of 1 commits that were already in place.
+Nothing changed.
+[exit=0]

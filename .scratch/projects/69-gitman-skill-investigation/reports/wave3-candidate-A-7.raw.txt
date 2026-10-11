@@ -1,0 +1,182 @@
+CASE_ROOT=/tmp/tmp.wETKnVfA4e
+
+$ jj git init --no-colocate /tmp/tmp.wETKnVfA4e/origin
+Initialized repo in "../../tmp.wETKnVfA4e/origin"
+[exit 0]
+
+$ jj git init --colocate /tmp/tmp.wETKnVfA4e/repo
+Initialized repo in "../../tmp.wETKnVfA4e/repo"
+[exit 0]
+
+$ bash -c printf\ \"base\\n\"\ \>\ \"\$1\" _ /tmp/tmp.wETKnVfA4e/repo/README.md
+[exit 0]
+
+$ jj -R /tmp/tmp.wETKnVfA4e/repo describe -m base
+Working copy  (@) now at: yuwnnmsz 39ea1dd0 base
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+[exit 0]
+
+$ jj -R /tmp/tmp.wETKnVfA4e/repo bookmark create main -r @
+Created 1 bookmarks pointing to yuwnnmsz 39ea1dd0 main | base
+[exit 0]
+
+$ jj -R /tmp/tmp.wETKnVfA4e/repo git remote add origin /tmp/tmp.wETKnVfA4e/origin/.jj/repo/store/git
+[exit 0]
+
+$ jj -R /tmp/tmp.wETKnVfA4e/repo git push -b main
+Changes to push to origin:
+  bookmark: main [add to 39ea1dd04116]
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: zlmzzxou 6ce8ba56 (empty) (no description set)
+Parent commit (@-)      : yuwnnmsz 39ea1dd0 main | base
+[exit 0]
+
+$ bash -c printf\ \"%s\\n\"\ \"#\!/bin/sh\"\ \"test\ \\\"\\\$1\\\"\ \!=\ refs/heads/main\"\ \>\ \"\$1\"\;\ chmod\ +x\ \"\$1\" _ /tmp/tmp.wETKnVfA4e/origin/.jj/repo/store/git/hooks/update
+[exit 0]
+
+$ cat /tmp/tmp.wETKnVfA4e/origin/.jj/repo/store/git/hooks/update
+#!/bin/sh
+test "$1" != refs/heads/main
+[exit 0]
+
+$ jj -R /tmp/tmp.wETKnVfA4e/repo status
+The working copy has no changes.
+Working copy  (@) : zlmzzxou 6ce8ba56 (empty) (no description set)
+Parent commit (@-): yuwnnmsz 39ea1dd0 main | base
+[exit 0]
+
+$ jj -R /tmp/tmp.wETKnVfA4e/repo workspace list
+default: ../../tmp.wETKnVfA4e/repo zlmzzxou 6ce8ba56 (empty) (no description set)
+[exit 0]
+
+$ jj -R /tmp/tmp.wETKnVfA4e/repo log -r \(::working_copies\(\)\ ~\ ::main\)\ ~\ empty\(\)
+[exit 0]
+
+$ jj -R /tmp/tmp.wETKnVfA4e/repo bookmark list
+main: yuwnnmsz 39ea1dd0 base
+[exit 0]
+
+$ jj -R /tmp/tmp.wETKnVfA4e/repo log -r trunk\(\)
+◆  yuwnnmsz tester@example.test 2026-10-11 18:11:06 main 39ea1dd0
+│  base
+~
+[exit 0]
+
+$ jj -R /tmp/tmp.wETKnVfA4e/repo git remote list
+origin /tmp/tmp.wETKnVfA4e/origin/.jj/repo/store/git
+[exit 0]
+
+$ pwd
+/tmp/tmp.wETKnVfA4e/repo
+[exit 0]
+
+$ jj git fetch
+Nothing changed.
+[exit 0]
+
+$ gitman work pr-a --from main
+workspace: pr-a
+path: /tmp/tmp.wETKnVfA4e/workspaces/pr-a
+base: 39ea1dd04116ee686e4d69c4bedc727960e7ff49 (main)
+enter it with: cd /tmp/tmp.wETKnVfA4e/workspaces/pr-a
+[exit 0]
+
+$ bash -c printf\ \"pull\ request\ feature\\n\"\ \>\ \"\$1\" _ /tmp/tmp.wETKnVfA4e/workspaces/pr-a/feature.txt
+[exit 0]
+
+$ bash -c test\ \"\$\(cat\ \"\$1\"\)\"\ =\ \"pull\ request\ feature\" _ /tmp/tmp.wETKnVfA4e/workspaces/pr-a/feature.txt
+[exit 0]
+
+$ jj -R /tmp/tmp.wETKnVfA4e/workspaces/pr-a status
+Working copy changes:
+A ../workspaces/pr-a/feature.txt
+Working copy  (@) : ptnkvtor 11fa77b3 (no description set)
+Parent commit (@-): yuwnnmsz 39ea1dd0 main | base
+[exit 0]
+
+$ jj -R /tmp/tmp.wETKnVfA4e/workspaces/pr-a diff
+Added regular file ../workspaces/pr-a/feature.txt:
+        1: pull request feature
+[exit 0]
+
+$ jj -R /tmp/tmp.wETKnVfA4e/workspaces/pr-a log -r @\ \|\ @-
+@  ptnkvtor tester@example.test 2026-10-11 18:11:13 pr-a@ 11fa77b3
+│  (no description set)
+◆  yuwnnmsz tester@example.test 2026-10-11 18:11:06 main 39ea1dd0
+│  base
+~
+[exit 0]
+
+$ jj -R /tmp/tmp.wETKnVfA4e/workspaces/pr-a describe -r @ -m Add\ pull\ request\ feature
+Working copy  (@) now at: ptnkvtor 705ffb6d Add pull request feature
+Parent commit (@-)      : yuwnnmsz 39ea1dd0 main | base
+[exit 0]
+
+$ jj -R /tmp/tmp.wETKnVfA4e/workspaces/pr-a log -r @\ \|\ @-
+@  ptnkvtor tester@example.test 2026-10-11 18:11:13 pr-a@ 705ffb6d
+│  Add pull request feature
+◆  yuwnnmsz tester@example.test 2026-10-11 18:11:06 main 39ea1dd0
+│  base
+~
+[exit 0]
+
+$ jj -R /tmp/tmp.wETKnVfA4e/workspaces/pr-a bookmark create pr-a -r @
+Created 1 bookmarks pointing to ptnkvtor 705ffb6d pr-a | Add pull request feature
+[exit 0]
+
+$ jj -R /tmp/tmp.wETKnVfA4e/workspaces/pr-a git fetch
+Nothing changed.
+[exit 0]
+
+$ jj -R /tmp/tmp.wETKnVfA4e/workspaces/pr-a log -r main\ \|\ main@origin\ \|\ pr-a\ \|\ pr-a@
+@  ptnkvtor tester@example.test 2026-10-11 18:11:13 pr-a pr-a@ 705ffb6d
+│  Add pull request feature
+◆  yuwnnmsz tester@example.test 2026-10-11 18:11:06 main 39ea1dd0
+│  base
+~
+[exit 0]
+
+$ jj -R /tmp/tmp.wETKnVfA4e/workspaces/pr-a log -r conflicts\(\)
+[exit 0]
+
+$ jj -R /tmp/tmp.wETKnVfA4e/workspaces/pr-a log -r divergent\(\)
+[exit 0]
+
+$ jj -R /tmp/tmp.wETKnVfA4e/workspaces/pr-a git push -b pr-a
+Changes to push to origin:
+  bookmark: pr-a [add to 705ffb6d3bec]
+[exit 0]
+
+$ jj -R /tmp/tmp.wETKnVfA4e/workspaces/pr-a bookmark list --all-remotes
+main: yuwnnmsz 39ea1dd0 base
+  @git: yuwnnmsz 39ea1dd0 base
+  @origin: yuwnnmsz 39ea1dd0 base
+pr-a: ptnkvtor 705ffb6d Add pull request feature
+  @git: ptnkvtor 705ffb6d Add pull request feature
+  @origin: ptnkvtor 705ffb6d Add pull request feature
+[exit 0]
+
+$ jj -R /tmp/tmp.wETKnVfA4e/workspaces/pr-a log -r main\ \|\ main@origin\ \|\ pr-a\ \|\ pr-a@
+@  ptnkvtor tester@example.test 2026-10-11 18:11:13 pr-a pr-a@ 705ffb6d
+│  Add pull request feature
+◆  yuwnnmsz tester@example.test 2026-10-11 18:11:06 main 39ea1dd0
+│  base
+~
+[exit 0]
+
+$ jj -R /tmp/tmp.wETKnVfA4e/workspaces/pr-a workspace list
+default: . zlmzzxou 6ce8ba56 (empty) (no description set)
+pr-a: ../workspaces/pr-a ptnkvtor 705ffb6d pr-a | Add pull request feature
+[exit 0]
+
+$ jj -R /tmp/tmp.wETKnVfA4e/repo status
+The working copy has no changes.
+Working copy  (@) : zlmzzxou 6ce8ba56 (empty) (no description set)
+Parent commit (@-): yuwnnmsz 39ea1dd0 main | base
+[exit 0]
+
+$ sh /tmp/tmp.wETKnVfA4e/origin/.jj/repo/store/git/hooks/update refs/heads/main old new
+[exit 1]
+
+$ sh /tmp/tmp.wETKnVfA4e/origin/.jj/repo/store/git/hooks/update refs/heads/pr-a old new
+[exit 0]

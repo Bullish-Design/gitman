@@ -1,0 +1,617 @@
+$ nl -ba /home/andrew/.config/devman/skills/gitman/SKILL.md
+     1	---
+     2	name: gitman
+     3	description: Open jj workspaces with `gitman work`, and land every workspace back on main. Use native jj and `gh` for all other version control.
+     4	---
+     5	
+     6	# Gitman — workspace paths
+     7	
+     8	Read the repository's `AGENTS.md` for its version control rules. It wins when this
+     9	skill disagrees. Run project commands inside the repository's devenv shell.
+    10	
+    11	**The goal of every workspace is to land on `main`.** A workspace is temporary. Work is done
+    12	only when it is on `main`, pushed when the repository has a remote, visible in the main checkout,
+    13	and the workspace is removed. Never leave work in a workspace where nobody sees it.
+    14	
+    15	Gitman has one command. Do not run `gitman status`, `gitman land` or any other v1
+    16	verb. They no longer exist.
+    17	
+    18	```sh
+    19	gitman work NAME [--from REVSET] [--path DIRECTORY]
+    20	```
+    21	
+    22	The default path is `$GITMAN_WORKSPACE_ROOT/NAME`. Set the same absolute root in
+    23	every workspace. The default base is `trunk()`. Use `--from` to select exactly one
+    24	other revision. Use `--path` when the root does not fit. Gitman refuses an occupied
+    25	path and an existing workspace name. It creates no bookmark. It does not change your
+    26	directory. It stores no state.
+    27	
+    28	Gitman needs jj 0.46.0 or later and a colocated Git-backed repository. Its advisory
+    29	lock coordinates `gitman work` callers only. Native jj writers do not take it.
+    30	
+    31	## Shell entry and lock files
+    32	
+    33	Entering a devenv shell can change the tracked `devenv.lock` or `uv.lock`. After you
+    34	enter the shell, run `jj status`. Review any lock change. If the change is stable,
+    35	save it as its own change before unrelated work. When you change `devenv.yaml` or
+    36	`pyproject.toml`, put the new lock file in the same change.
+    37	
+    38	## Before you open a workspace
+    39	
+    40	List the workspaces and any work in them that `main` does not hold:
+    41	
+    42	```sh
+    43	jj workspace list
+    44	jj log -r '(::working_copies() ~ ::trunk()) ~ empty()'
+    45	```
+    46	
+    47	Report each result to the user. Land it, or ask what to do with it. Do not open a second
+    48	workspace for work that already has one.
+    49	
+    50	## Lifecycle with native jj
+    51	
+    52	The `repoman` skill owns the lifecycle order. This skill only gives the commands.
+    53	
+    54	| Step | Command |
+    55	|---|---|
+    56	| Status | `jj status` (it snapshots the working copy) |
+    57	| Describe | `jj describe -m "message"` |
+    58	| Bookmark | `jj bookmark create NAME -r @-` |
+    59	| Sync | `jj git fetch`, then `jj rebase -b @ -d 'trunk()'` |
+    60	| Push | `jj git push --bookmark NAME` |
+    61	| Pull request | `gh pr create` |
+    62	| Merge | `gh pr merge` |
+    63	| Undo | `jj undo` |
+    64	| List workspaces | `jj workspace list` |
+    65	| Remove a workspace | `jj workspace remove NAME` |
+    66	| Keep files, drop registration | `jj workspace forget NAME` |
+    67	
+    68	Use `jj rebase -b @`, not `jj rebase -r @-`. The `-r` form moves only that change and leaves
+    69	the working copy on the old base.
+    70	
+    71	Two laws:
+    72	
+    73	1. Verify before you integrate.
+    74	2. Never integrate on red.
+    75	
+    76	Create a bookmark before you push. A workspace name is not a bookmark.
+    77	
+    78	## Land a workspace on main
+    79	
+    80	Do every step. A workspace that stops before step 6 is unfinished work.
+    81	
+    82	1. Verify the change. It must be green.
+    83	2. `jj git fetch`, then `jj rebase -b @ -d 'trunk()'`. If the tree changed, verify again.
+    84	3. Move `main` to the change: `jj bookmark set main -r <change>`. Use a pull request instead
+    85	   when the repository requires one.
+    86	4. Push: `jj git push --bookmark main`, when the repository has a remote.
+    87	5. Update the main checkout: in the default workspace, run `jj new main` when its working copy
+    88	   is empty. If it holds other work, do not touch it; tell the user.
+    89	6. Remove the workspace (see below).
+    90	
+    91	Stop and ask the user before step 3 when verify fails or was skipped, when a conflict appears,
+    92	when the change touches secrets, CI, or release branches, or when the user wants to review it.
+    93	Then report the workspace path, its bookmark, and the reason it did not land. Never end a
+    94	session with work in a workspace that the user does not know about.
+    95	
+    96	## Remove a workspace
+    97	
+    98	`jj workspace remove NAME` deletes the workspace and its directory. Inspect the
+    99	directory first, including ignored and untracked files. Gitman does not scan or warn
+   100	before removal. Check that the work is on `main` first:
+   101	`jj log -r '(::NAME@ ~ ::trunk()) ~ empty()'` must print nothing.
+[exit 0]
+
+$ nl -ba /home/andrew/.claude/CLAUDE.md | sed -n "32,48p"
+    32	## Version control lanes
+    33	
+    34	In repos that use gitman (or an equivalent lane-based VC skill), land and push
+    35	a lane by default once its verify step passes — do not stop to ask first. Run
+    36	the full loop: verify, save, land into trunk, push to origin.
+    37	
+    38	The goal of every workspace is to land on `main`. Work is finished only when it
+    39	is on `main`, the main checkout shows it (`jj new main` there when its working
+    40	copy is empty), and the workspace is removed. Before you open a workspace, list
+    41	the existing ones and any work in them that `main` lacks; report it. Never end a
+    42	session with work left in a workspace that the user does not know about.
+    43	
+    44	Still stop and ask before landing or pushing when something is unusual: verify
+    45	fails or is skipped, the lane touches shared or risky files (secrets, CI
+    46	config, release branches), a merge conflict appears, or the user gave
+    47	instructions that suggest they want to review the change first.
+[exit 0]
+
+$ nl -ba AGENTS.md | sed -n "1,32p"
+     1	# Working on Gitman
+     2	
+     3	Gitman opens jj workspaces at stable paths. The authority is
+     4	`docs/GITMAN_CONCEPT.md`. Gitman has one command: `gitman work NAME [--from REVSET]
+     5	[--path DIRECTORY]`. It stores no state and creates no bookmark.
+     6	
+     7	## Version control
+     8	
+     9	Use native `jj` for all version control. Gitman does not wrap it.
+    10	Use the linked `gitman` skill for the work-only interface. This file takes
+    11	precedence when the skill and repository instructions disagree.
+    12	
+    13	- Run `jj status`, `jj log`, `jj diff`, `jj new`, `jj describe`, `jj bookmark`, `jj git fetch`,
+    14	  `jj git push`, and `jj undo` directly.
+    15	- Open a task directory with `gitman work NAME`. List workspaces with `jj workspace list`.
+    16	- Delete a workspace and its directory with native `jj workspace remove NAME`. Keep the files
+    17	  and drop only the registration with native `jj workspace forget NAME`. Gitman does not scan
+    18	  or warn about files before native removal. Inspect the target directory yourself.
+    19	- Create a bookmark before you push. A workspace name is not a bookmark.
+    20	- Do not use raw `git` to change the repository. Read-only `git` is fine.
+    21	
+    22	## Development workflow
+    23	
+    24	- Run project commands inside devenv: `devenv shell -- bash -c '...'`. Batch commands in one
+    25	  call, because each launch re-evaluates the environment.
+    26	- Verify with `devenv shell -- bash -c 'ruff check src tests && pytest -q'`, or `devenv test`.
+    27	- jj is pinned in `nix/jj.nix` (0.46.0 or later). `work` needs
+    28	  `jj workspace add --colocate`. The example uses native `jj workspace remove`.
+    29	- The tests build disposable colocated repositories and isolate jj and Git configuration.
+    30	  Add no mock of jj.
+    31	- Keep the package standard-library only. Add a command only if native jj, a jj alias, or a
+    32	  short devenv script cannot do the job clearly (feature test in the concept, section 1).
+[exit 0]
+
+$ nl -ba docs/GITMAN_CONCEPT.md | sed -n "11,53p;117,126p"
+    11	## 1. Purpose
+    12	
+    13	Gitman opens an isolated jj workspace at a stable path. Native jj manages
+    14	revisions, bookmarks, history, conflicts, remotes, recovery, and workspace
+    15	removal. Gitman stores no repository state and creates no bookmark.
+    16	
+    17	**Feature test:** Add a Gitman operation only when it provides a useful workflow
+    18	that native jj, a jj alias, or a short devenv script cannot provide clearly.
+    19	Reconsider a close helper after a real-use pilot identifies repeated friction.
+    20	
+    21	## 2. Boundaries
+    22	
+    23	| Concern | Owner |
+    24	|---|---|
+    25	| Revisions, bookmarks, workspace registration, operation history, Git interop | jj |
+    26	| Stable workspace path and base selection during creation | Gitman |
+    27	| Tool versions, environment variables, build and test tasks | devenv |
+    28	| Task selection and command composition | Atuin skills or the developer |
+    29	| Remote hosting and pull requests | Native jj and hosting tools |
+    30	
+    31	The native `jj` command remains available to developers and agents. A workspace
+    32	name is a jj workspace name. It is not a branch, bookmark, lane, task hierarchy,
+    33	review state, or publication state. The jj repository and operation log remain
+    34	the source of truth.
+    35	
+    36	The current implementation targets Linux and colocated, Git-backed jj
+    37	repositories entered through devenv. It uses an advisory lock in the shared Git
+    38	directory during creation. The lock coordinates Gitman callers, not native jj
+    39	writers.
+    40	
+    41	## 3. Interface
+    42	
+    43	| Need | Interface | Result |
+    44	|---|---|---|
+    45	| Open a workspace | `gitman work NAME [--from REVSET] [--path DIRECTORY]` | Creates a jj workspace at a stable path. |
+    46	| See workspaces | `jj workspace list` | Shows jj workspace registrations. |
+    47	| Delete a workspace | `jj workspace remove NAME` | Removes the registration and its directory. |
+    48	| Keep files, drop registration | `jj workspace forget NAME` | Leaves the directory and its files in place. |
+    49	
+    50	Gitman does not scan files or warn before native workspace removal. Inspect
+    51	the target directory yourself before `jj workspace remove NAME`, including
+    52	ignored and untracked files. Gitman does not decide whether work is merged,
+    53	bookmarked, or pushed.
+   117	## 6. Pilot and migration
+   118	
+   119	Use `work` in real projects before deciding whether Gitman needs another
+   120	command. Record how often you create, revisit, remove, and forget workspaces.
+   121	Record path or base failures and the steps needed before native removal. A
+   122	disposable example validates the commands; it does not complete this pilot.
+   123	
+   124	Version control is native jj and `gh`. The Devman `gitman` skill describes the
+   125	work-only interface and gives the native commands for each lifecycle step.
+   126	This repository's `AGENTS.md` takes precedence here.
+[exit 0]
+
+$ nl -ba docs/USING_GITMAN.md | sed -n "32,36p;38,49p;62,107p"
+    32	## Agent guidance
+    33	
+    34	Link the `gitman` skill from the shared Devman pool. It describes `gitman work`
+    35	and the native jj and `gh` commands. The repository's `AGENTS.md` remains the
+    36	local authority. RepoMan's `repoman` skill owns the lifecycle order.
+    38	## Open a workspace
+    39	
+    40	```
+    41	gitman work api                       # base: trunk()
+    42	gitman work api-tests --from api@     # stack on another workspace's current change
+    43	gitman work scratch --path ../scratch
+    44	cd "$GITMAN_WORKSPACE_ROOT/api"
+    45	```
+    46	
+    47	`--from` must resolve to exactly one revision. A fresh repository has no trunk, so `trunk()`
+    48	resolves to `root()` and `work` accepts that. `work` refuses an existing name, an occupied
+    49	path, and a path inside another working copy. It never adopts a directory.
+    62	## Finish work with native jj
+    63	
+    64	Gitman has one command. Use these native commands for the other lifecycle steps:
+    65	
+    66	| Step | Command |
+    67	|---|---|
+    68	| Status | `jj status` |
+    69	| Describe | `jj describe -m "message"` |
+    70	| Bookmark | `jj bookmark create NAME -r @-` |
+    71	| Sync | `jj git fetch`, then `jj rebase -d trunk()` |
+    72	| Push | `jj git push --bookmark NAME` |
+    73	| Pull request | `gh pr create` |
+    74	| Merge | `gh pr merge` |
+    75	| Undo | `jj undo` |
+    76	| Remove a workspace | `jj workspace remove NAME` |
+    77	
+    78	`jj status` snapshots the working copy. Run the project's verify step before you
+    79	integrate. Never push or merge on red.
+    80	
+    81	## Remove a workspace with jj
+    82	
+    83	```
+    84	jj workspace list
+    85	jj workspace remove api
+    86	```
+    87	
+    88	Inspect the target directory before removal, including ignored and untracked
+    89	files. `jj workspace remove NAME` deletes the workspace and its directory.
+    90	Run it from another workspace. Gitman does not scan or warn about files before
+    91	native removal. Check whether you need the work or a bookmark before you remove
+    92	the directory.
+    93	
+    94	To keep the files, drop only the registration:
+    95	
+    96	```
+    97	jj workspace forget api
+    98	```
+    99	
+   100	If the directory is already gone, use `jj workspace forget NAME` to drop its
+   101	stale registration.
+   102	
+   103	## Limits
+   104	
+   105	- Gitman's advisory lock covers concurrent `work` calls only. Native jj writers
+   106	  do not take that lock.
+   107	- Gitman does not decide whether a workspace's work is merged or pushed.
+[exit 0]
+
+$ nl -ba /home/andrew/Documents/Projects/repoman/.agents/skills/repoman/SKILL.md
+     1	---
+     2	name: repoman
+     3	description: Start here for any work in this repo. Routes to the right manager and owns the lifecycle order (verify before you integrate, never integrate on red).
+     4	auto_trigger:
+     5	  keywords: ["this repo", "lifecycle", "verify and land", "ship it", "release", "what's the state of the repo"]
+     6	---
+     7	
+     8	# RepoMan — repo front door
+     9	
+    10	This repo is managed by **RepoMan**. Managers wired in: **test git copy doc**.
+    11	
+    12	Run everything inside `devenv shell`. Exit codes: `0` ok · `1` decision · `2` infra/config · `3` usage.
+    13	Never invoke pytest / ruff / git / copier directly. Go through the manager (or `repoman`).
+    14	
+    15	## The loop
+    16	
+    17	Run these phases in this order.
+    18	
+    19	```
+    20	change → verify → integrate
+    21	```
+    22	
+    23	## Activities
+    24	
+    25	These activities have no order. Run each one when you need it.
+    26	
+    27	```
+    28	birth / converge · docs
+    29	```
+    30	
+    31	## Routing — which manager owns what
+    32	
+    33	| When you want to… | Manager | Skill | Command |
+    34	|---|---|---|---|
+    35	| verify code health, fix lint/format, or rerun failures | test | `testee` | `testee` |
+    36	| start, describe, sync, publish, land, push, undo, repair, or release a change | git | `gitman` | `gitman` |
+    37	| scaffold a repo, pull template updates, or check template drift | copy | `copyroom` | `copyroom` |
+    38	| build or check the docs | doc | `docman` | `docman` |
+    39	
+    40	For domain detail, open that manager's own skill under `.agents/skills/`.
+    41	
+    42	## Laws
+    43	
+    44	- **Verify before you integrate.** Run `verify` first. Then run `land`.
+    45	- **Never integrate on red.** Never run `land` or `push` while `verify` fails.
+    46	- **One front door.** Route domain work through the manager. Cross-phase ordering lives here.
+    47	- **Health is per manager.** `repoman doctor` checks RepoMan's own wiring only. To check a manager, run that manager's own `doctor`. `repoman managers` lists what is wired.
+[exit 0]
+
+$ nl -ba /home/andrew/Documents/Projects/repoman/src/repoman/templates/entrypoint.SKILL.md.j2 | sed -n "10,53p"
+    10	This repo is managed by **RepoMan**. Managers wired in: **{{ managers }}**.
+    11	
+    12	Run everything inside `devenv shell`. Exit codes: `0` clean · `1` act on findings · `2` the tool could not run.
+    13	Never invoke pytest / ruff / copier directly. Use native `jj` for version control. Go through the manager (or `repoman`).
+    14	
+    15	## The loop
+    16	
+    17	Run these phases in this order.
+    18	
+    19	```
+    20	{{ spine }}
+    21	```
+    22	
+    23	{% if activities %}
+    24	## Activities
+    25	
+    26	These activities have no order. Run each one when you need it.
+    27	
+    28	```
+    29	{{ activities }}
+    30	```
+    31	
+    32	{% endif %}
+    33	## Routing — which manager owns what
+    34	
+    35	| When you want to… | Manager | Skill | Command |
+    36	|---|---|---|---|
+    37	{% for r in rows %}
+    38	| {{ r.when }} | {{ r.key }} | `{{ r.skill }}` | `{{ r.command }}` |
+    39	{% endfor %}
+    40	
+    41	{% if rows %}
+    42	For domain detail, open that manager's own skill under `{{ skills_dir }}/`.
+    43	
+    44	{% endif %}
+    45	## Laws
+    46	
+    47	- **Verify before you integrate.** Run `verify` first. Then run `integrate`.
+    48	- **Never integrate on red.** Never merge or push while `verify` fails.
+    49	{% if verdict %}
+    50	- **Ask for the verdict.** Run `testee status -r <rev>` before you integrate. Integrate only on exit 0. Exit 1 means red: fix the failure. Exit 2 means no verdict: run `testee verify -r <rev>`.
+    51	{% endif %}
+    52	- **One front door.** Route domain work through the manager. Cross-phase ordering lives here.
+    53	- **Health is per manager.** `repoman doctor` checks RepoMan's own wiring only. To check a manager, run that manager's own `doctor`. `repoman managers` lists what is wired.
+[exit 0]
+
+$ nl -ba /home/andrew/Documents/Projects/repoman/src/repoman/registry.py | sed -n "59,82p"
+    59	REGISTRY: dict[str, Manager] = {
+    60	    "copy": Manager(
+    61	        "copy",
+    62	        "copyroom",
+    63	        "core",
+    64	        "Templating / scaffolding / convergence (Copier)",
+    65	        route_when="scaffold a repo, pull template updates, or check template drift",
+    66	    ),
+    67	    "git": Manager(
+    68	        "git",
+    69	        "gitman",
+    70	        "core",
+    71	        "Version control (native jj and gh; gitman opens workspaces)",
+    72	        route_when="open a workspace with `gitman work`; use native jj and `gh` to describe, bookmark, push, and open a PR",
+    73	    ),
+    74	    "test": Manager(
+    75	        "test",
+    76	        "testee",
+    77	        "core",
+    78	        "Verification (a verdict per commit)",
+    79	        route_when="verify a commit and read its verdict",
+    80	        min_version="0.6.0",  # `testee verify` is a full gate; `testee status -r` reads the verdict
+    81	    ),
+    82	}
+[exit 0]
+
+$ nl -ba /home/andrew/Documents/Projects/repoman/tests/test_skills.py | sed -n "49,62p"
+    49	def test_laws_name_integrate_and_never_save():
+    50	    out = render_entrypoint([REGISTRY["test"]], ".agents/skills", "/nonexistent")
+    51	    laws = out.split("## Laws")[1]
+    52	    assert "Verify before you integrate" in laws
+    53	    assert "Never integrate on red" in laws
+    54	    assert "land" not in laws  # gitman 0.12 has no `land`
+    55	    assert "save" not in out
+    56	
+    57	
+    58	def test_laws_ask_for_the_testee_verdict_before_integrate():
+    59	    out = render_entrypoint([REGISTRY["test"], REGISTRY["git"]], ".agents/skills", "/nonexistent")
+    60	    laws = out.split("## Laws")[1]
+    61	    assert "Run `testee status -r <rev>` before you integrate. Integrate only on exit 0." in laws
+    62	    assert "testee verify -r <rev>" in laws
+[exit 0]
+
+$ nl -ba /home/andrew/Documents/Projects/repoman/docs/SKILLS.md | sed -n "22,53p;97,108p"
+    22	## The principle: separate *narrative* from *detail*
+    23	
+    24	Don't merge the files (that breaks pass-through and couples managers). Add one layer
+    25	above them and assign ownership:
+    26	
+    27	| Layer | Owns | Written by |
+    28	|---|---|---|
+    29	| **RepoMan entrypoint skill** | the *narrative* — lifecycle order, routing, shared law | RepoMan (generated) |
+    30	| **Manager skills** (unchanged) | the *detail* — how each domain works | each manager |
+    31	
+    32	This is the `allium-entrypoint` pattern ("Start here… routes to the right skill"),
+    33	promoted from one tool's internal router to the **repo's single front door**.
+    34	
+    35	## The entrypoint skill — what it contains
+    36	
+    37	Generated by `repoman install-skills` (run from `repoman-sync`) into
+    38	`.agents/skills/repoman/SKILL.md`. The meta-module sets `REPOMAN_SKILLS_DIR` to
+    39	`.agents/skills` and offers no option to change it. Four things, nothing more:
+    40	
+    41	1. **The lifecycle spine** — three ordered phases, `change → verify → integrate`, plus
+    42	   one unordered activity, `birth / converge` (copyroom). The
+    43	   router names only the enabled managers. `change` (the human/agent edit) is always
+    44	   present. `integrate` is native jj: `jj describe`, a bookmark, `jj git push`, then a `gh` pull request. `scaffold` is
+    45	   not a phase, because it happens before the repository exists.
+    46	2. **A routing table** — task → manager → sub-skill → command. A manager gets a row
+    47	   only if it is enabled **and** its `<skills_dir>/<skill>/SKILL.md` exists on disk.
+    48	   The registry supplies `route_when`; `src/repoman/skills.py` checks the file. Rows and
+    49	   the managers line follow the spine first, then the activities.
+    50	3. **The law** — the few cross-cutting rules that belong to no single manager: run in
+    51	   `devenv shell`; the `0/1/2` contract; *verify before you integrate*; never
+    52	   integrate on red; never invoke pytest/ruff/git/copier directly.
+    53	4. **Pointers, not copies** — "for detail, open that manager's own skill." Depth stays
+    97	## The contract that makes sub-skills composable
+    98	
+    99	For the merge to hold, manager skills need three small, uniform disciplines (RepoMan
+   100	can lint these in `repoman doctor`):
+   101	
+   102	1. **Declare a domain boundary** — "route all *verification* through me." (Most already do.)
+   103	2. **Defer cross-domain ordering upward** — a one-line footer: *"For when to verify vs.
+   104	   integrate, see the `repoman` skill."* This single edit turns N standalone
+   105	   skills into a hierarchy.
+   106	3. **Trigger discipline** — sub-skills trigger on *domain* keywords ("test failed",
+   107	   "rebase"); the entrypoint triggers on *lifecycle* keywords ("ship it", "what's the
+   108	   state of the repo").
+[exit 0]
+
+$ nl -ba /home/andrew/.config/devman/projects/devman/workflows/gitman-commit-message.yaml | sed -n "1,24p;38,55p;62,75p"
+     1	# devman/gitman-commit-message — draft a commit message from the staged diff,
+     2	# and leave it behind as a file gitman can read.
+     3	#
+     4	# ---------------------------------------------------------------------------
+     5	# WHY IT IS THIS REPOSITORY'S OWN FILE AND NOT A GROUP
+     6	#
+     7	# `agent-review.yaml`'s own reasoning applies unchanged (§16's promotion rule):
+     8	# one repository pairs gitman with an agent CLI today. It becomes a group the
+     9	# day a second repository wants this file, unmodified — the task names the
+    10	# tool and the workflow names the task (§7.1), so promotion costs nothing.
+    11	#
+    12	# ---------------------------------------------------------------------------
+    13	# WHERE THE MESSAGE GOES, AND WHY IT IS NOT `.devman/.runs/reports/`
+    14	#
+    15	# `.runs/reports/` holds run REPORTS — headers, run ids, verdict lines — read
+    16	# by a person after the fact. A commit message is consumed by a command
+    17	# (`gitman save -m "$(cat ...)"`), so it lives in its own subdirectory under
+    18	# `.devman/` and holds nothing but the message: no header, no run id, no
+    19	# timestamp line. Mixing the two would make every message need trimming
+    20	# before use.
+    21	#
+    22	# `.devman/gitman/messages/<run id>.md` — created on first run, git-ignored
+    23	# the same way `.runs/` is (a machine-drafted message is not something a repo
+    24	# commits to tracking).
+    38	# ---------------------------------------------------------------------------
+    39	# HOW THIS IS MEANT TO BE USED
+    40	#
+    41	#     # start any OpenAI-compatible server on $GPU_LLM_BASE_URL first
+    42	#     GPU_LLM_MODEL=<name> devman run gitman-commit-message
+    43	#     gitman save -m "$(cat .devman/gitman/messages/<run id>.md)"
+    44	#
+    45	# This workflow never calls `gitman save` itself. It drafts; a caller decides
+    46	# what to do with the draft.
+    47	#
+    48	# ITS ORIGINAL JUSTIFICATION IS RETRACTED AND MUST NOT BE RESTORED. This
+    49	# comment used to argue that an automatic trigger which also saved would be a
+    50	# "successful run that did the wrong thing". That argument rested on the
+    51	# pre-015 rule refusing every unattended write to tracked source, and 015
+    52	# replaced that rule with the three tiers. Under the amendment a save is a
+    53	# write like any other: it lands on a lane for a person to merge (tier B), and
+    54	# only an unattended write to TRUNK is refused. Whether this workflow should
+    55	# save is now an open design question, not a settled refusal.
+    62	params:
+    63	  - DEVMAN_PROJECT_DIR: ""
+    64	
+    65	queue: gpu
+    66	type: chain
+    67	steps:
+    68	  - id: draft
+    69	    name: draft
+    70	    run: |
+    71	      set -u
+    72	      mkdir -p .devman/gitman/messages
+    73	      export MESSAGE_FILE=".devman/gitman/messages/${context.run.id}.md"
+    74	      devenv tasks run -v gitman:commit-message
+    75	      cat "$MESSAGE_FILE"
+[exit 0]
+
+$ nl -ba /home/andrew/.config/devman/projects/devman/workflows/README.md | sed -n "13,20p;46,57p"
+    13	| File | Queue | Trigger | What it is |
+    14	|---|---|---|---|
+    15	| `plane-report.yaml` | `light` | `schedule: 20 0 * * *` | `devman doctor` over the whole plane, once a night, for the machine |
+    16	| `stack-validate.yaml` | `normal` | manual | a cross-repository workflow: it triggers other projects' `check` and runs no command itself |
+    17	| `agent-review.yaml` | `exclusive` | manual | an agent reviews a commit and leaves the answer in `.runs/reports/` |
+    18	| `bench-entry.yaml` | `exclusive` | manual | a benchmark campaign over a named other project's shell-entry cost |
+    19	| `gitman-commit-message.yaml` | `gpu` | manual | drafts a commit message from the staged diff on a local OpenAI-compatible server (pydantic-ai), for `gitman save -m "$(cat …)"` |
+    20	
+    46	## Triggering
+    47	
+    48	```bash
+    49	devman run check                     # in any registered repository
+    50	devman run stack-validate            # here — the cross-repo one
+    51	devman run plane-report              # here — the machine-wide one
+    52	devman run agent-review AGENT_REF=HEAD~3
+    53	devman run bench-entry TARGET=pyjutsu RUNS=40
+    54	
+    55	# start any OpenAI-compatible server on $GPU_LLM_BASE_URL first
+    56	devman run gitman-commit-message     # then read the file it names
+    57	```
+[exit 0]
+
+$ nl -ba /home/andrew/.config/devman/projects/devman/agents/skills/devman-workflow/SKILL.md | sed -n "28,40p"
+    28	**Can this run succeed while doing nothing?** If yes, give it something that can
+    29	fail. `devenv test` exited 0 having tested nothing in 30 of 58 repositories, and
+    30	nothing noticed for a month. `pytest` already exits 5 on zero collected — let it.
+    31	A workflow whose success and whose vacuum look identical is a workflow you cannot
+    32	debug later.
+    33	
+    34	**What does it write, and where should that land?** Pick a tier and declare it in
+    35	`writes.toml` — `free` for a new file or agent surface, `lane` for an edit to
+    36	existing tracked source, `insitu` for an idempotent normalisation of a file the
+    37	trigger already watched. An unattended write to trunk is the one shape to keep
+    38	out: it appears in somebody's `git status` the next morning with nothing to
+    39	explain it. A lane carries a name and a diff instead.
+    40	
+[exit 0]
+
+$ nl -ba /home/andrew/.config/devman/projects/devman/agents/skills/devman/SKILL.md | sed -n "215,234p"
+   215	## Categorising a workflow's writes
+   216	
+   217	**Every workflow that writes falls into one of three tiers** (project 015). The
+   218	tier says where the write lands, and it is a useful thing to state even when
+   219	nothing enforces it.
+   220	
+   221	| Tier | What it covers | Where it lands |
+   222	|---|---|---|
+   223	| `free` | a file that did not exist, and agent surface — `.agents/**`, `docs/**`, notes, a tool's own hidden directory (`.devman/`, `.loci/`, `.gitman/`) | the working tree, directly |
+   224	| `lane` | an edit to an existing tracked source file — dependency updates, code generation, autofix | a `gitman` lane, for a person to merge when they choose |
+   225	| `insitu` | an idempotent normalisation of a file the workflow's own trigger watched. `format` is the only holder | the working tree, directly |
+   226	
+   227	**An unattended write to trunk has no tier**, and that is the one shape to keep
+   228	out of a workflow: the change appears in somebody's `git status` the next
+   229	morning with nothing to explain it. A lane carries a name and a diff instead.
+   230	
+   231	**`insitu` is narrow on purpose.** It adds no content and a second run changes
+   232	nothing. Its three bounds are its entry price: its own opt-in group, a content
+   233	hash, and a fixpoint. Code generation, dependency updates and autofix beyond
+   234	formatting are none of those things — they are `lane`.
+[exit 0]
+
+$ rg -n "(gitman|jj |git |version control|workspace|bookmark|land|commit|push|pull request)" /home/andrew/.config/devman/projects/devman/workflows/*.yaml /home/andrew/.config/devman/projects/devman/workflows/README.md
+/home/andrew/.config/devman/projects/devman/workflows/README.md:17:| `agent-review.yaml` | `exclusive` | manual | an agent reviews a commit and leaves the answer in `.runs/reports/` |
+/home/andrew/.config/devman/projects/devman/workflows/README.md:19:| `gitman-commit-message.yaml` | `gpu` | manual | drafts a commit message from the staged diff on a local OpenAI-compatible server (pydantic-ai), for `gitman save -m "$(cat …)"` |
+/home/andrew/.config/devman/projects/devman/workflows/README.md:31:- `agent-review` and `gitman-commit-message` are **not yet** groups: one
+/home/andrew/.config/devman/projects/devman/workflows/README.md:41:reads a tree another run may be rewriting. `gitman-commit-message` says `gpu`:
+/home/andrew/.config/devman/projects/devman/workflows/README.md:56:devman run gitman-commit-message     # then read the file it names
+/home/andrew/.config/devman/projects/devman/workflows/README.md:76:directory this repository committed once (`STAGE_2_LOG.md`, S15).
+/home/andrew/.config/devman/projects/devman/workflows/README.md:111:right; check where the logs landed.
+/home/andrew/.config/devman/projects/devman/workflows/agent-review.yaml:1:# devman/agent-review — an agent reviews a commit, and leaves its answer behind
+/home/andrew/.config/devman/projects/devman/workflows/agent-review.yaml:49:# `.devman/.runs/reports/`, which the watcher ignores and git ignores (§8, §9.2).
+/home/andrew/.config/devman/projects/devman/workflows/agent-review.yaml:83:        echo "- reviewed: \`$AGENT_REF\` = \`$(git rev-parse --short "$AGENT_REF")\`"
+/home/andrew/.config/devman/projects/devman/workflows/gitman-commit-message.yaml:1:# devman/gitman-commit-message — draft a commit message from the staged diff,
+/home/andrew/.config/devman/projects/devman/workflows/gitman-commit-message.yaml:2:# and leave it behind as a file gitman can read.
+/home/andrew/.config/devman/projects/devman/workflows/gitman-commit-message.yaml:8:# one repository pairs gitman with an agent CLI today. It becomes a group the
+/home/andrew/.config/devman/projects/devman/workflows/gitman-commit-message.yaml:16:# by a person after the fact. A commit message is consumed by a command
+/home/andrew/.config/devman/projects/devman/workflows/gitman-commit-message.yaml:17:# (`gitman save -m "$(cat ...)"`), so it lives in its own subdirectory under
+/home/andrew/.config/devman/projects/devman/workflows/gitman-commit-message.yaml:22:# `.devman/gitman/messages/<run id>.md` — created on first run, git-ignored
+/home/andrew/.config/devman/projects/devman/workflows/gitman-commit-message.yaml:24:# commits to tracking).
+/home/andrew/.config/devman/projects/devman/workflows/gitman-commit-message.yaml:42:#     GPU_LLM_MODEL=<name> devman run gitman-commit-message
+/home/andrew/.config/devman/projects/devman/workflows/gitman-commit-message.yaml:43:#     gitman save -m "$(cat .devman/gitman/messages/<run id>.md)"
+/home/andrew/.config/devman/projects/devman/workflows/gitman-commit-message.yaml:45:# This workflow never calls `gitman save` itself. It drafts; a caller decides
+/home/andrew/.config/devman/projects/devman/workflows/gitman-commit-message.yaml:53:# write like any other: it lands on a lane for a person to merge (tier B), and
+/home/andrew/.config/devman/projects/devman/workflows/gitman-commit-message.yaml:72:      mkdir -p .devman/gitman/messages
+/home/andrew/.config/devman/projects/devman/workflows/gitman-commit-message.yaml:73:      export MESSAGE_FILE=".devman/gitman/messages/${context.run.id}.md"
+/home/andrew/.config/devman/projects/devman/workflows/gitman-commit-message.yaml:74:      devenv tasks run -v gitman:commit-message
+/home/andrew/.config/devman/projects/devman/workflows/bench-entry.yaml:79:# which lands inside the measured interval as a roughly constant bias of about a
+[exit 0]
+

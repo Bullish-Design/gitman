@@ -1,0 +1,170 @@
+ROOT /tmp/gitman-wave3-b-7-iw8a9dnj
+$ (cd /tmp/gitman-wave3-b-7-iw8a9dnj && jj git init --colocate repo)
+Initialized repo in "repo"
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-7-iw8a9dnj/repo && bash -c 'printf "base\n" > README.md')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-7-iw8a9dnj/repo && jj describe -m 'Add base')
+Working copy  (@) now at: vnywrtvn 8328955a Add base
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-7-iw8a9dnj/repo && jj bookmark create main -r @)
+Created 1 bookmarks pointing to vnywrtvn 8328955a main | Add base
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-7-iw8a9dnj/repo && jj new main)
+Working copy  (@) now at: wrwttplk 133e159f (empty) (no description set)
+Parent commit (@-)      : vnywrtvn 8328955a main | Add base
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-7-iw8a9dnj && jj git init --no-colocate origin)
+Initialized repo in "origin"
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-7-iw8a9dnj/repo && jj git remote add origin /tmp/gitman-wave3-b-7-iw8a9dnj/origin/.jj/repo/store/git)
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-7-iw8a9dnj/repo && jj git push --remote origin --bookmark main)
+Changes to push to origin:
+  bookmark: main [add to 8328955a9197]
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-7-iw8a9dnj/origin/.jj/repo/store/git && bash -c 'printf "#!/bin/sh\ncase \"$1\" in refs/heads/main) echo protected-main >&2; exit 1;; esac\nexit 0\n" > hooks/update && chmod +x hooks/update')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-7-iw8a9dnj/origin/.jj/repo/store/git && cat hooks/update)
+#!/bin/sh
+case "" in refs/heads/main) echo protected-main >&2; exit 1;; esac
+exit 0
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-7-iw8a9dnj/repo && jj status)
+The working copy has no changes.
+Working copy  (@) : wrwttplk 133e159f (empty) (no description set)
+Parent commit (@-): vnywrtvn 8328955a main | Add base
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-7-iw8a9dnj/repo && jj workspace list)
+default: . wrwttplk 133e159f (empty) (no description set)
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-7-iw8a9dnj/repo && jj log -r '(::working_copies() ~ ::main) ~ empty()')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-7-iw8a9dnj/repo && jj bookmark list)
+main: vnywrtvn 8328955a Add base
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-7-iw8a9dnj/repo && jj log -r 'trunk()')
+◆  vnywrtvn test@example.com 2026-10-11 18:10:21 main 8328955a
+│  Add base
+~
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-7-iw8a9dnj/origin/.jj/repo/store/git && python -c 'from pathlib import Path; Path("hooks/update").write_text("#!/bin/sh\ncase \"$1\" in refs/heads/main) echo protected-main >&2; exit 1;; esac\nexit 0\n")')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-7-iw8a9dnj/origin/.jj/repo/store/git && cat hooks/update)
+#!/bin/sh
+case "$1" in refs/heads/main) echo protected-main >&2; exit 1;; esac
+exit 0
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-7-iw8a9dnj/origin/.jj/repo/store/git && test -x hooks/update)
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-7-iw8a9dnj/repo && jj git fetch --remote origin)
+Nothing changed.
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-7-iw8a9dnj/repo && gitman work feature)
+workspace: feature
+path: /tmp/gitman-wave3-b-7-iw8a9dnj/workspaces/feature
+base: 8328955a9197d2538ae6753888e659fbd3994e7f (trunk())
+enter it with: cd /tmp/gitman-wave3-b-7-iw8a9dnj/workspaces/feature
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-7-iw8a9dnj/workspaces/feature && bash -c 'printf "feature\n" > feature.txt')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-7-iw8a9dnj/workspaces/feature && bash -c 'test "$(cat feature.txt)" = feature')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-7-iw8a9dnj/workspaces/feature && jj status)
+Working copy changes:
+A feature.txt
+Working copy  (@) : pmqztnot b4e9c129 (no description set)
+Parent commit (@-): vnywrtvn 8328955a main | Add base
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-7-iw8a9dnj/workspaces/feature && jj diff)
+Added regular file feature.txt:
+        1: feature
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-7-iw8a9dnj/workspaces/feature && jj log -r '@|@-')
+@  pmqztnot test@example.com 2026-10-11 18:10:47 feature@ b4e9c129
+│  (no description set)
+◆  vnywrtvn test@example.com 2026-10-11 18:10:21 main 8328955a
+│  Add base
+~
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-7-iw8a9dnj/workspaces/feature && jj describe -r @ -m 'Add feature marker')
+Working copy  (@) now at: pmqztnot 4920818a Add feature marker
+Parent commit (@-)      : vnywrtvn 8328955a main | Add base
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-7-iw8a9dnj/workspaces/feature && jj log -r '@|@-')
+@  pmqztnot test@example.com 2026-10-11 18:10:48 feature@ 4920818a
+│  Add feature marker
+◆  vnywrtvn test@example.com 2026-10-11 18:10:21 main 8328955a
+│  Add base
+~
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-7-iw8a9dnj/workspaces/feature && jj bookmark create feature -r @)
+Created 1 bookmarks pointing to pmqztnot 4920818a feature | Add feature marker
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-7-iw8a9dnj/workspaces/feature && jj git fetch --remote origin)
+Nothing changed.
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-7-iw8a9dnj/workspaces/feature && jj log -r 'conflicts()')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-7-iw8a9dnj/workspaces/feature && jj log -r 'divergent()')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-7-iw8a9dnj/workspaces/feature && jj git push --remote origin --bookmark feature)
+Changes to push to origin:
+  bookmark: feature [add to 4920818ae87c]
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-7-iw8a9dnj/workspaces/feature && jj bookmark list)
+feature: pmqztnot 4920818a Add feature marker
+main: vnywrtvn 8328955a Add base
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-7-iw8a9dnj/repo && jj workspace list)
+default: . wrwttplk 133e159f (empty) (no description set)
+feature: ../workspaces/feature pmqztnot 4920818a feature | Add feature marker
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-7-iw8a9dnj/repo && jj status)
+The working copy has no changes.
+Working copy  (@) : wrwttplk 133e159f (empty) (no description set)
+Parent commit (@-): vnywrtvn 8328955a main | Add base
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-7-iw8a9dnj/origin/.jj/repo/store/git && sh hooks/update refs/heads/main old new)
+protected-main
+[exit 1]
+
+$ (cd /tmp/gitman-wave3-b-7-iw8a9dnj/origin/.jj/repo/store/git && sh hooks/update refs/heads/feature old new)
+[exit 0]
+

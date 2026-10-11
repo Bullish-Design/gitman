@@ -1,0 +1,175 @@
+$ mktemp -d /tmp/gitman-old-C-1.XXXXXX
+/tmp/gitman-old-C-1.LrGl0t
+[exit 0]
+$ mkdir "$sandbox/repo"
+[exit 0]
+$ cat > "$sandbox/jjconfig.toml" <<'EOF'
+user.name = "Scenario User"
+user.email = "scenario@example.invalid"
+EOF
+[exit 0]
+$ export JJ_CONFIG="$sandbox/jjconfig.toml" GIT_CONFIG_GLOBAL=/dev/null GITMAN_WORKSPACE_ROOT="$sandbox/workspaces"
+[exit 0]
+
+$ jj git init --colocate .
+Initialized repo in "."
+[exit 0]
+
+$ printf 'base\n' > README.md
+[exit 0]
+
+$ jj status
+Working copy changes:
+A README.md
+Working copy  (@) : mrzutrur 6560951a (no description set)
+Parent commit (@-): zzzzzzzz 00000000 (empty) (no description set)
+[exit 0]
+
+$ jj describe -m 'Initialize scenario'
+Working copy  (@) now at: mrzutrur 46eebbe1 Initialize scenario
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+[exit 0]
+
+$ jj bookmark create main -r @
+Created 1 bookmarks pointing to mrzutrur 46eebbe1 main | Initialize scenario
+[exit 0]
+
+$ jj new main
+Working copy  (@) now at: kzyztzns 7e0281a9 (empty) (no description set)
+Parent commit (@-)      : mrzutrur 46eebbe1 main | Initialize scenario
+[exit 0]
+
+$ jj workspace list
+default: . kzyztzns 7e0281a9 (empty) (no description set)
+[exit 0]
+
+$ jj log -r '(::working_copies() ~ ::trunk()) ~ empty()'
+○  mrzutrur scenario@example.invalid 2026-10-11 17:58:59 main 46eebbe1
+│  Initialize scenario
+~
+[exit 0]
+
+$ jj git init --no-colocate ../origin
+Initialized repo in "../origin"
+[exit 0]
+
+$ jj git remote add origin ../origin/.jj/repo/store/git
+[exit 0]
+
+$ jj git push --bookmark main
+Changes to push to origin:
+  bookmark: main [add to 46eebbe11ee8]
+[exit 0]
+
+$ jj git fetch
+Nothing changed.
+[exit 0]
+
+$ jj log -r '(::working_copies() ~ ::trunk()) ~ empty()'
+[exit 0]
+
+$ gitman work feature
+workspace: feature
+path: /tmp/gitman-old-C-1.LrGl0t/workspaces/feature
+base: 46eebbe11ee85471c63262bb3239fcbb00b00a7d (trunk())
+enter it with: cd /tmp/gitman-old-C-1.LrGl0t/workspaces/feature
+[exit 0]
+
+$ cd ../workspaces/feature && printf 'feature\n' > feature.txt
+[exit 0]
+
+$ cd ../workspaces/feature && jj status
+Working copy changes:
+A feature.txt
+Working copy  (@) : mumptuuy 1745468a (no description set)
+Parent commit (@-): mrzutrur 46eebbe1 main | Initialize scenario
+[exit 0]
+
+$ cd ../workspaces/feature && jj describe -m 'Add small feature file'
+Working copy  (@) now at: mumptuuy cc0aaf83 Add small feature file
+Parent commit (@-)      : mrzutrur 46eebbe1 main | Initialize scenario
+[exit 0]
+
+$ cd ../workspaces/feature && test "" = feature
+[exit 1]
+
+Harness note: The outer shell expanded `$(cat feature.txt)` before the runner
+received the command. Its stderr was `cat: feature.txt: No such file or directory`.
+The actual runner command above failed with exit 1. I corrected shell quoting
+for later commands and reran verification before integration.
+
+$ cd ../workspaces/feature && test -f feature.txt
+[exit 0]
+
+$ cd ../workspaces/feature && jj git fetch
+Nothing changed.
+[exit 0]
+
+$ cd ../workspaces/feature && jj rebase -b @ -d 'trunk()'
+Skipped rebase of 1 commits that were already in place.
+Nothing changed.
+[exit 0]
+
+$ cd ../workspaces/feature && jj status
+Working copy changes:
+A feature.txt
+Working copy  (@) : mumptuuy cc0aaf83 Add small feature file
+Parent commit (@-): mrzutrur 46eebbe1 main | Initialize scenario
+[exit 0]
+
+$ cd ../workspaces/feature && jj bookmark create feature -r @
+Created 1 bookmarks pointing to mumptuuy cc0aaf83 feature | Add small feature file
+[exit 0]
+
+$ cd ../workspaces/feature && jj bookmark set main -r @
+Moved 1 bookmarks to mumptuuy cc0aaf83 feature main* | Add small feature file
+[exit 0]
+
+$ cd ../workspaces/feature && jj git push --bookmark main
+Changes to push to origin:
+  bookmark: main [move forward from 46eebbe11ee8 to cc0aaf839186]
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: mruolosq 5a226122 (empty) (no description set)
+Parent commit (@-)      : mumptuuy cc0aaf83 feature main | Add small feature file
+[exit 0]
+
+$ jj status
+The working copy has no changes.
+Working copy  (@) : kzyztzns 7e0281a9 (empty) (no description set)
+Parent commit (@-): mrzutrur 46eebbe1 Initialize scenario
+[exit 0]
+
+$ jj new main
+Working copy  (@) now at: umsvxkxy e088a21f (empty) (no description set)
+Parent commit (@-)      : mumptuuy cc0aaf83 feature main | Add small feature file
+Added 1 files, modified 0 files, removed 0 files
+[exit 0]
+
+$ jj log -r '(::feature@ ~ ::trunk()) ~ empty()'
+[exit 0]
+
+$ find ../workspaces/feature -maxdepth 2 -print
+../workspaces/feature
+../workspaces/feature/.git
+../workspaces/feature/.jj
+../workspaces/feature/.jj/repo
+../workspaces/feature/.jj/working_copy
+../workspaces/feature/.jj/.gitignore
+../workspaces/feature/README.md
+../workspaces/feature/feature.txt
+[exit 0]
+
+$ jj workspace remove feature
+Removed Git worktree for "/tmp/gitman-old-C-1.LrGl0t/workspaces/feature".
+Removed workspace directory "/tmp/gitman-old-C-1.LrGl0t/workspaces/feature".
+[exit 0]
+
+$ jj workspace list
+default: . umsvxkxy e088a21f (empty) (no description set)
+[exit 0]
+
+$ jj status
+The working copy has no changes.
+Working copy  (@) : umsvxkxy e088a21f (empty) (no description set)
+Parent commit (@-): mumptuuy cc0aaf83 feature main | Add small feature file
+[exit 0]

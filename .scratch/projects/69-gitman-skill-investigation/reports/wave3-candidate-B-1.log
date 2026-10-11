@@ -1,0 +1,237 @@
+ROOT /tmp/gitman-wave3-b-1-4mpscx4g
+$ (cd /tmp/gitman-wave3-b-1-4mpscx4g && jj git init --colocate repo)
+Initialized repo in "repo"
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-1-4mpscx4g/repo && bash -c 'printf "base\n" > README.md')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-1-4mpscx4g/repo && jj status)
+Working copy changes:
+A README.md
+Working copy  (@) : wstswmlu 2bd04ede (no description set)
+Parent commit (@-): zzzzzzzz 00000000 (empty) (no description set)
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-1-4mpscx4g/repo && jj describe -m 'Add base')
+Working copy  (@) now at: wstswmlu bd79e527 Add base
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-1-4mpscx4g/repo && jj bookmark create main -r @)
+Created 1 bookmarks pointing to wstswmlu bd79e527 main | Add base
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-1-4mpscx4g/repo && jj new main)
+Working copy  (@) now at: zrprvklt 5f1ff3f3 (empty) (no description set)
+Parent commit (@-)      : wstswmlu bd79e527 main | Add base
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-1-4mpscx4g && jj git init --no-colocate origin)
+Initialized repo in "origin"
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-1-4mpscx4g/repo && jj git remote add origin /tmp/gitman-wave3-b-1-4mpscx4g/origin/.jj/repo/store/git)
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-1-4mpscx4g/repo && jj git push --remote origin --bookmark main)
+Changes to push to origin:
+  bookmark: main [add to bd79e527e707]
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-1-4mpscx4g/repo && jj status)
+The working copy has no changes.
+Working copy  (@) : zrprvklt 5f1ff3f3 (empty) (no description set)
+Parent commit (@-): wstswmlu bd79e527 main | Add base
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-1-4mpscx4g/repo && jj workspace list)
+default: . zrprvklt 5f1ff3f3 (empty) (no description set)
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-1-4mpscx4g/repo && jj log -r '(::working_copies() ~ ::main) ~ empty()')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-1-4mpscx4g/repo && jj bookmark list)
+main: wstswmlu bd79e527 Add base
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-1-4mpscx4g/repo && jj log -r 'trunk()')
+◆  wstswmlu test@example.com 2026-10-11 18:07:50 main bd79e527
+│  Add base
+~
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-1-4mpscx4g/repo && jj git fetch --remote origin)
+Nothing changed.
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-1-4mpscx4g/repo && gitman work feature)
+workspace: feature
+path: /tmp/gitman-wave3-b-1-4mpscx4g/workspaces/feature
+base: bd79e527e707d07d7363e9e1656f878a606ad586 (trunk())
+enter it with: cd /tmp/gitman-wave3-b-1-4mpscx4g/workspaces/feature
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-1-4mpscx4g/workspaces/feature && bash -c 'printf "def double(value):\n    return value * 2\n" > feature.py')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-1-4mpscx4g/workspaces/feature && python -c 'import feature; assert feature.double(3) == 6')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-1-4mpscx4g/workspaces/feature && jj status)
+Working copy changes:
+A __pycache__/feature.cpython-313.pyc
+A feature.py
+Working copy  (@) : uwpzwprq c441b175 (no description set)
+Parent commit (@-): wstswmlu bd79e527 main | Add base
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-1-4mpscx4g/workspaces/feature && jj diff)
+Added regular file __pycache__/feature.cpython-313.pyc:
+    (binary)
+Added regular file feature.py:
+        1: def double(value):
+        2:     return value * 2
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-1-4mpscx4g/workspaces/feature && jj log -r '@|@-')
+@  uwpzwprq test@example.com 2026-10-11 18:08:15 feature@ c441b175
+│  (no description set)
+◆  wstswmlu test@example.com 2026-10-11 18:07:50 main bd79e527
+│  Add base
+~
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-1-4mpscx4g/workspaces/feature && rm -r __pycache__)
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-1-4mpscx4g/workspaces/feature && jj status)
+Working copy changes:
+A feature.py
+Working copy  (@) : uwpzwprq 8d6cd0e8 (no description set)
+Parent commit (@-): wstswmlu bd79e527 main | Add base
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-1-4mpscx4g/workspaces/feature && jj diff)
+Added regular file feature.py:
+        1: def double(value):
+        2:     return value * 2
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-1-4mpscx4g/workspaces/feature && jj describe -r @ -m 'Add doubling function')
+Working copy  (@) now at: uwpzwprq 94e8e612 Add doubling function
+Parent commit (@-)      : wstswmlu bd79e527 main | Add base
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-1-4mpscx4g/workspaces/feature && jj log -r '@|@-')
+@  uwpzwprq test@example.com 2026-10-11 18:08:22 feature@ 94e8e612
+│  Add doubling function
+◆  wstswmlu test@example.com 2026-10-11 18:07:50 main bd79e527
+│  Add base
+~
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-1-4mpscx4g/workspaces/feature && jj bookmark create feature -r @)
+Created 1 bookmarks pointing to uwpzwprq 94e8e612 feature | Add doubling function
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-1-4mpscx4g/workspaces/feature && jj git fetch --remote origin)
+Nothing changed.
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-1-4mpscx4g/workspaces/feature && jj log -r 'conflicts()')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-1-4mpscx4g/workspaces/feature && jj log -r 'divergent()')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-1-4mpscx4g/workspaces/feature && jj bookmark list)
+feature: uwpzwprq 94e8e612 Add doubling function
+main: wstswmlu bd79e527 Add base
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-1-4mpscx4g/workspaces/feature && jj log -r 'main|@|main@origin')
+@  uwpzwprq test@example.com 2026-10-11 18:08:22 feature feature@ 94e8e612
+│  Add doubling function
+◆  wstswmlu test@example.com 2026-10-11 18:07:50 main bd79e527
+│  Add base
+~
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-1-4mpscx4g/workspaces/feature && jj bookmark set main -r @)
+Moved 1 bookmarks to uwpzwprq 94e8e612 feature main* | Add doubling function
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-1-4mpscx4g/workspaces/feature && jj git push --remote origin --bookmark main)
+Changes to push to origin:
+  bookmark: main [move forward from bd79e527e707 to 94e8e612cdcd]
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: zqwrmpkm 3750d141 (empty) (no description set)
+Parent commit (@-)      : uwpzwprq 94e8e612 feature main | Add doubling function
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-1-4mpscx4g/repo && jj status)
+The working copy has no changes.
+Working copy  (@) : zrprvklt 5f1ff3f3 (empty) (no description set)
+Parent commit (@-): wstswmlu bd79e527 Add base
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-1-4mpscx4g/repo && jj new main)
+Working copy  (@) now at: otnmkqxl a2d21c08 (empty) (no description set)
+Parent commit (@-)      : uwpzwprq 94e8e612 feature main | Add doubling function
+Added 1 files, modified 0 files, removed 0 files
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-1-4mpscx4g/repo && jj workspace list)
+default: . otnmkqxl a2d21c08 (empty) (no description set)
+feature: ../workspaces/feature zqwrmpkm 3750d141 (empty) (no description set)
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-1-4mpscx4g/repo && jj bookmark list)
+feature: uwpzwprq 94e8e612 Add doubling function
+main: uwpzwprq 94e8e612 Add doubling function
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-1-4mpscx4g/repo && jj log -r 'main|feature|feature@|divergent()')
+○  zqwrmpkm test@example.com 2026-10-11 18:08:38 feature@ 3750d141
+│  (empty) (no description set)
+◆  uwpzwprq test@example.com 2026-10-11 18:08:22 feature main 94e8e612
+│  Add doubling function
+~
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-1-4mpscx4g/repo && jj log -r '(::feature@ ~ ::main) ~ empty()')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-1-4mpscx4g/workspaces/feature && jj status)
+The working copy has no changes.
+Working copy  (@) : zqwrmpkm 3750d141 (empty) (no description set)
+Parent commit (@-): uwpzwprq 94e8e612 feature main | Add doubling function
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-1-4mpscx4g/workspaces/feature && git status --short --ignored)
+!! .jj/
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-1-4mpscx4g/workspaces/feature && find . -maxdepth 2 -type f -not -path './.git/*' -not -path './.jj/*' -print)
+./.git
+./README.md
+./feature.py
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-1-4mpscx4g/repo && jj workspace remove feature)
+Removed Git worktree for "/tmp/gitman-wave3-b-1-4mpscx4g/workspaces/feature".
+Removed workspace directory "/tmp/gitman-wave3-b-1-4mpscx4g/workspaces/feature".
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-1-4mpscx4g/repo && jj workspace list)
+default: . otnmkqxl a2d21c08 (empty) (no description set)
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-1-4mpscx4g/repo && jj status)
+The working copy has no changes.
+Working copy  (@) : otnmkqxl a2d21c08 (empty) (no description set)
+Parent commit (@-): uwpzwprq 94e8e612 feature main | Add doubling function
+[exit 0]
+

@@ -1,0 +1,126 @@
+DECISION: SCENARIO 2; sandbox /tmp/gitman-old-a-2-e_o4t77j
+$ write /tmp/gitman-old-a-2-e_o4t77j/jjconfig.toml '[user]\nname = "Test User"\nemail = "test@example.invalid"\n'
+[exit 0; output empty]
+$ (cd /tmp/gitman-old-a-2-e_o4t77j && jj git init --no-colocate /tmp/gitman-old-a-2-e_o4t77j/origin)
+exit=0
+stdout:
+stderr:
+Initialized repo in "origin"
+
+$ (cd /tmp/gitman-old-a-2-e_o4t77j && jj git init --colocate /tmp/gitman-old-a-2-e_o4t77j/main)
+exit=0
+stdout:
+stderr:
+Initialized repo in "main"
+
+$ write /tmp/gitman-old-a-2-e_o4t77j/main/file.txt 'base\n'
+[exit 0; output empty]
+$ (cd /tmp/gitman-old-a-2-e_o4t77j/main && jj status)
+exit=0
+stdout:
+Working copy changes:
+A file.txt
+Working copy  (@) : lkypsvko fb659b12 (no description set)
+Parent commit (@-): zzzzzzzz 00000000 (empty) (no description set)
+stderr:
+
+$ (cd /tmp/gitman-old-a-2-e_o4t77j/main && jj describe -m Initial)
+exit=0
+stdout:
+stderr:
+Working copy  (@) now at: lkypsvko 5817d994 Initial
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+
+$ (cd /tmp/gitman-old-a-2-e_o4t77j/main && jj bookmark create main -r @)
+exit=0
+stdout:
+stderr:
+Created 1 bookmarks pointing to lkypsvko 5817d994 main | Initial
+
+$ (cd /tmp/gitman-old-a-2-e_o4t77j/main && jj git remote add origin /tmp/gitman-old-a-2-e_o4t77j/origin/.jj/repo/store/git)
+exit=0
+stdout:
+stderr:
+
+$ (cd /tmp/gitman-old-a-2-e_o4t77j/main && jj git push --bookmark main)
+exit=0
+stdout:
+stderr:
+Changes to push to origin:
+  bookmark: main [add to 5817d99412cb]
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: mtpkwnwk e78b9a8e (empty) (no description set)
+Parent commit (@-)      : lkypsvko 5817d994 main | Initial
+
+$ (cd /tmp/gitman-old-a-2-e_o4t77j/main && jj new main)
+exit=0
+stdout:
+stderr:
+Working copy  (@) now at: yyoxkuru e1f8ea86 (empty) (no description set)
+Parent commit (@-)      : lkypsvko 5817d994 main | Initial
+
+DECISION: Check workspaces and described work before opening another workspace.
+$ (cd /tmp/gitman-old-a-2-e_o4t77j/main && jj workspace list)
+exit=0
+stdout:
+default: . yyoxkuru e1f8ea86 (empty) (no description set)
+stderr:
+
+$ (cd /tmp/gitman-old-a-2-e_o4t77j/main && jj log -r '(::working_copies() ~ ::trunk()) ~ empty()')
+exit=0
+stdout:
+stderr:
+
+DECISION: Open first task workspace to simulate earlier unlanded work.
+$ (cd /tmp/gitman-old-a-2-e_o4t77j/main && gitman work prior)
+exit=0
+stdout:
+workspace: prior
+path: /tmp/gitman-old-a-2-e_o4t77j/workspaces/prior
+base: 5817d99412cbeb1018b3affb7f3ab48eac0c1824 (trunk())
+enter it with: cd /tmp/gitman-old-a-2-e_o4t77j/workspaces/prior
+stderr:
+
+$ write /tmp/gitman-old-a-2-e_o4t77j/workspaces/prior/prior.txt 'prior\n'
+[exit 0; output empty]
+$ (cd /tmp/gitman-old-a-2-e_o4t77j/workspaces/prior && jj status)
+exit=0
+stdout:
+Working copy changes:
+A prior.txt
+Working copy  (@) : kkrkxpou 945a8736 (no description set)
+Parent commit (@-): lkypsvko 5817d994 main | Initial
+stderr:
+
+$ (cd /tmp/gitman-old-a-2-e_o4t77j/workspaces/prior && jj describe -m 'Earlier task')
+exit=0
+stdout:
+stderr:
+Working copy  (@) now at: kkrkxpou c5b6755c Earlier task
+Parent commit (@-)      : lkypsvko 5817d994 main | Initial
+
+DECISION: New, different task arrives. Repeat prerequisite checks.
+DECISION: Check workspaces and described work before opening another workspace.
+$ (cd /tmp/gitman-old-a-2-e_o4t77j/main && jj workspace list)
+exit=0
+stdout:
+default: . yyoxkuru e1f8ea86 (empty) (no description set)
+prior: ../workspaces/prior kkrkxpou c5b6755c Earlier task
+stderr:
+
+$ (cd /tmp/gitman-old-a-2-e_o4t77j/main && jj log -r '(::working_copies() ~ ::trunk()) ~ empty()')
+exit=0
+stdout:
+○  kkrkxpou test@example.invalid 2026-10-11 17:56:37 prior@ c5b6755c
+│  Earlier task
+~
+stderr:
+
+DECISION: Prior described work is unlanded. Report it and ask user what to do. Do not open another workspace until disposition is known.
+$ (cd /tmp/gitman-old-a-2-e_o4t77j/main && jj workspace list)
+exit=0
+stdout:
+default: . yyoxkuru e1f8ea86 (empty) (no description set)
+prior: ../workspaces/prior kkrkxpou c5b6755c Earlier task
+stderr:
+

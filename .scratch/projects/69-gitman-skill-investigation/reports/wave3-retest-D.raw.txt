@@ -1,0 +1,199 @@
+$ mktemp -d -t gitman-wave3-retest-D.XXXXXXXX
+/tmp/gitman-wave3-retest-D.s5IZOkXM
+[exit=0]
+$ write /tmp/gitman-wave3-retest-D.s5IZOkXM/jj.toml: '[user]\nname = "Test"\nemail = "test@example.com"\n'
+Decision: Use a local bare origin and one colocated main checkout.
+$ (cd /tmp/gitman-wave3-retest-D.s5IZOkXM && jj --version)
+jj 0.46.0-7d382314f9420b4b8d932245b49c99492c812b9f
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.s5IZOkXM && jj git init --colocate /tmp/gitman-wave3-retest-D.s5IZOkXM/main)
+Initialized repo in "main"
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.s5IZOkXM && jj git init --no-colocate /tmp/gitman-wave3-retest-D.s5IZOkXM/origin-holder)
+Initialized repo in "origin-holder"
+[exit=0]
+$ write /tmp/gitman-wave3-retest-D.s5IZOkXM/main/.gitignore: '__pycache__/\n.pytest_cache/\n*.pyc\n'
+$ write /tmp/gitman-wave3-retest-D.s5IZOkXM/main/src/__init__.py: ''
+$ write /tmp/gitman-wave3-retest-D.s5IZOkXM/main/src/feature.py: 'def value() -> str:\n    return "base"\n'
+$ write /tmp/gitman-wave3-retest-D.s5IZOkXM/main/tests/test_feature.py: 'from src.feature import value\n\n\ndef test_value() -> None:\n    assert value() == "base"\n'
+$ (cd /tmp/gitman-wave3-retest-D.s5IZOkXM/main && jj status)
+Working copy changes:
+A .gitignore
+A src/__init__.py
+A src/feature.py
+A tests/test_feature.py
+Working copy  (@) : vpzqnvlr f7d072e9 (no description set)
+Parent commit (@-): zzzzzzzz 00000000 (empty) (no description set)
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.s5IZOkXM/main && jj describe -m 'Base project')
+Working copy  (@) now at: vpzqnvlr 54e62588 Base project
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.s5IZOkXM/main && jj bookmark create main -r @)
+Created 1 bookmarks pointing to vpzqnvlr 54e62588 main | Base project
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.s5IZOkXM/main && jj git remote add origin /tmp/gitman-wave3-retest-D.s5IZOkXM/origin-holder/.jj/repo/store/git)
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.s5IZOkXM/main && jj git push --bookmark main)
+Changes to push to origin:
+  bookmark: main [add to 54e62588acdd]
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: mklrurmz d343e51e (empty) (no description set)
+Parent commit (@-)      : vpzqnvlr 54e62588 main | Base project
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.s5IZOkXM/main && jj new main)
+Working copy  (@) now at: xvsozmsn f2b62e1a (empty) (no description set)
+Parent commit (@-)      : vpzqnvlr 54e62588 main | Base project
+[exit=0]
+Decision: Check workspaces and compare trunk() with the landing bookmark before opening task.
+$ (cd /tmp/gitman-wave3-retest-D.s5IZOkXM/main && jj status)
+The working copy has no changes.
+Working copy  (@) : xvsozmsn f2b62e1a (empty) (no description set)
+Parent commit (@-): vpzqnvlr 54e62588 main | Base project
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.s5IZOkXM/main && jj workspace list)
+default: . xvsozmsn f2b62e1a (empty) (no description set)
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.s5IZOkXM/main && jj log -r '(::working_copies() ~ ::main) ~ empty()')
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.s5IZOkXM/main && jj bookmark list)
+main: vpzqnvlr 54e62588 Base project
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.s5IZOkXM/main && jj log -r 'trunk()' --no-graph -T 'commit_id ++ " " ++ description ++ "\n"')
+54e62588acddbbdd8934d045c41b25c9dfe72bb9 Base project
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.s5IZOkXM/main && jj log -r main --no-graph -T 'commit_id ++ " " ++ description ++ "\n"')
+54e62588acddbbdd8934d045c41b25c9dfe72bb9 Base project
+[exit=0]
+Decision: trunk() and main match. Confirm command directory before gitman work.
+$ (cd /tmp/gitman-wave3-retest-D.s5IZOkXM/main && pwd)
+/tmp/gitman-wave3-retest-D.s5IZOkXM/main
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.s5IZOkXM/main && jj root)
+/tmp/gitman-wave3-retest-D.s5IZOkXM/main
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.s5IZOkXM/main && gitman work task)
+workspace: task
+path: /tmp/gitman-wave3-retest-D.s5IZOkXM/workspaces/task
+base: 54e62588acddbbdd8934d045c41b25c9dfe72bb9 (trunk())
+enter it with: cd /tmp/gitman-wave3-retest-D.s5IZOkXM/workspaces/task
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.s5IZOkXM/workspaces/task && pwd)
+/tmp/gitman-wave3-retest-D.s5IZOkXM/workspaces/task
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.s5IZOkXM/workspaces/task && jj root)
+/tmp/gitman-wave3-retest-D.s5IZOkXM/workspaces/task
+[exit=0]
+Decision: Implement and verify a small feature in task.
+$ write /tmp/gitman-wave3-retest-D.s5IZOkXM/workspaces/task/src/feature.py: 'def value() -> str:\n    return "new"\n'
+$ write /tmp/gitman-wave3-retest-D.s5IZOkXM/workspaces/task/tests/test_feature.py: 'from src.feature import value\n\n\ndef test_value() -> None:\n    assert value() == "new"\n'
+$ (cd /tmp/gitman-wave3-retest-D.s5IZOkXM/workspaces/task && ruff check src tests)
+All checks passed!
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.s5IZOkXM/workspaces/task && python -m pytest -q)
+.                                                                        [100%]
+1 passed in 0.01s
+[exit=0]
+Decision: Verification passed. Now add unrelated uncommitted work to default checkout before landing.
+$ write /tmp/gitman-wave3-retest-D.s5IZOkXM/main/local.txt: 'unrelated default work\n'
+$ (cd /tmp/gitman-wave3-retest-D.s5IZOkXM/main && jj status)
+Working copy changes:
+A local.txt
+Working copy  (@) : xvsozmsn e4c4fc95 (no description set)
+Parent commit (@-): vpzqnvlr 54e62588 main | Base project
+[exit=0]
+Decision: Identify and describe the exact task revision.
+$ (cd /tmp/gitman-wave3-retest-D.s5IZOkXM/workspaces/task && jj status)
+Working copy changes:
+M src/feature.py
+M tests/test_feature.py
+Working copy  (@) : pzyyrkqs 4db2cf78 (no description set)
+Parent commit (@-): vpzqnvlr 54e62588 main | Base project
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.s5IZOkXM/workspaces/task && jj diff)
+Modified regular file src/feature.py:
+   1    1: def value() -> str:
+   2     :     return "base"
+        2:     return "new"
+Modified regular file tests/test_feature.py:
+   1    1: from src.feature import value
+   2    2: 
+   3    3: 
+   4    4: def test_value() -> None:
+   5     :     assert value() == "base"
+        5:     assert value() == "new"
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.s5IZOkXM/workspaces/task && jj log -r '@ | @-' --no-graph -T 'change_id.short() ++ " " ++ commit_id.short() ++ " " ++ description ++ "\n"')
+pzyyrkqslunt 4db2cf787fad 
+vpzqnvlrsxrm 54e62588acdd Base project
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.s5IZOkXM/workspaces/task && jj describe -r @ -m 'Add new feature')
+Working copy  (@) now at: pzyyrkqs 4dcf5475 Add new feature
+Parent commit (@-)      : vpzqnvlr 54e62588 main | Base project
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.s5IZOkXM/workspaces/task && jj status)
+Working copy changes:
+M src/feature.py
+M tests/test_feature.py
+Working copy  (@) : pzyyrkqs 4dcf5475 Add new feature
+Parent commit (@-): vpzqnvlr 54e62588 main | Base project
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.s5IZOkXM/workspaces/task && jj bookmark create task -r @)
+Created 1 bookmarks pointing to pzyyrkqs 4dcf5475 task | Add new feature
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.s5IZOkXM/workspaces/task && jj git fetch)
+Nothing changed.
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.s5IZOkXM/workspaces/task && jj log -r '@- | main@origin' --no-graph -T 'commit_id.short() ++ " " ++ description ++ "\n"')
+54e62588acdd Base project
+[exit=0]
+Decision: TASK parent already equals current main@origin. No rebase is needed.
+$ (cd /tmp/gitman-wave3-retest-D.s5IZOkXM/workspaces/task && jj log -r 'conflicts()' --no-graph)
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.s5IZOkXM/workspaces/task && jj log -r 'divergent()' --no-graph)
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.s5IZOkXM/workspaces/task && jj bookmark set main -r task)
+Moved 1 bookmarks to pzyyrkqs 4dcf5475 main* task | Add new feature
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.s5IZOkXM/workspaces/task && jj git push --bookmark main)
+Changes to push to origin:
+  bookmark: main [move forward from 54e62588acdd to 4dcf5475f472]
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: omwrtowy 7c2eb148 (empty) (no description set)
+Parent commit (@-)      : pzyyrkqs 4dcf5475 main task | Add new feature
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.s5IZOkXM/workspaces/task && jj bookmark list)
+main: pzyyrkqs 4dcf5475 Add new feature
+task: pzyyrkqs 4dcf5475 Add new feature
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.s5IZOkXM/workspaces/task && jj file show -r main@origin src/feature.py)
+def value() -> str:
+    return "new"
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.s5IZOkXM/workspaces/task && jj file show -r main@origin tests/test_feature.py)
+from src.feature import value
+
+
+def test_value() -> None:
+    assert value() == "new"
+[exit=0]
+Decision: Check default work and task workspace after push. Retain task because default is not empty.
+$ (cd /tmp/gitman-wave3-retest-D.s5IZOkXM/main && jj status)
+Working copy changes:
+A local.txt
+Working copy  (@) : xvsozmsn e4c4fc95 (no description set)
+Parent commit (@-): vpzqnvlr 54e62588 Base project
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.s5IZOkXM/main && jj diff)
+Added regular file local.txt:
+        1: unrelated default work
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.s5IZOkXM/main && jj workspace list)
+default: . xvsozmsn e4c4fc95 (no description set)
+task: ../workspaces/task omwrtowy 7c2eb148 (empty) (no description set)
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.s5IZOkXM/workspaces/task && jj log -r '(::task@ ~ ::main) ~ empty()')
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.s5IZOkXM/workspaces/task && jj log -r 'divergent()' --no-graph)
+[exit=0]
+Decision: Leave /tmp/gitman-wave3-retest-D.s5IZOkXM/workspaces/task registered. Do not run jj new main or jj workspace remove task. Report pending default checkout update.

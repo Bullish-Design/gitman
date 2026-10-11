@@ -1,0 +1,173 @@
+DECISION SANDBOX /tmp/gitman-wave2-old-b-6-gy1tohr7
+DECISION ENV JJ_CONFIG=/tmp/gitman-wave2-old-b-6-gy1tohr7/jjconfig.toml XDG_CONFIG_HOME=/tmp/gitman-wave2-old-b-6-gy1tohr7/xdg GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null GIT_CONFIG_NOSYSTEM=1 GITMAN_WORKSPACE_ROOT=/tmp/gitman-wave2-old-b-6-gy1tohr7/workspaces
+DECISION Default workspace will hold an unrelated uncommitted file when feature is ready to land.
+$ (cd /tmp/gitman-wave2-old-b-6-gy1tohr7 && jj git init --colocate /tmp/gitman-wave2-old-b-6-gy1tohr7/repo)
+[stdout]
+[stderr]
+Initialized repo in "repo"
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-6-gy1tohr7/repo && jj config list user.name)
+[stdout]
+user.name = "Experiment User"
+[stderr]
+[exit 0]
+WRITE /tmp/gitman-wave2-old-b-6-gy1tohr7/repo/line.txt (b'base\n')
+$ (cd /tmp/gitman-wave2-old-b-6-gy1tohr7/repo && jj status)
+[stdout]
+Working copy changes:
+A line.txt
+Working copy  (@) : unyxsvpn 9a6779de (no description set)
+Parent commit (@-): zzzzzzzz 00000000 (empty) (no description set)
+[stderr]
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-6-gy1tohr7/repo && jj describe -m Base)
+[stdout]
+[stderr]
+Working copy  (@) now at: unyxsvpn 753f7975 Base
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-6-gy1tohr7/repo && jj bookmark create main -r @)
+[stdout]
+[stderr]
+Created 1 bookmarks pointing to unyxsvpn 753f7975 main | Base
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-6-gy1tohr7/repo && jj new main)
+[stdout]
+[stderr]
+Working copy  (@) now at: klmysqsx b43d649d (empty) (no description set)
+Parent commit (@-)      : unyxsvpn 753f7975 main | Base
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-6-gy1tohr7 && jj git init --no-colocate /tmp/gitman-wave2-old-b-6-gy1tohr7/origin)
+[stdout]
+[stderr]
+Initialized repo in "origin"
+[exit 0]
+DECISION Local bare Git backing store exists: True at /tmp/gitman-wave2-old-b-6-gy1tohr7/origin/.jj/repo/store/git
+$ (cd /tmp/gitman-wave2-old-b-6-gy1tohr7/repo && jj git remote add origin /tmp/gitman-wave2-old-b-6-gy1tohr7/origin/.jj/repo/store/git)
+[stdout]
+[stderr]
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-6-gy1tohr7/repo && jj git push --bookmark main)
+[stdout]
+[stderr]
+Changes to push to origin:
+  bookmark: main [add to 753f7975ff60]
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-6-gy1tohr7/repo && jj workspace list)
+[stdout]
+default: . klmysqsx b43d649d (empty) (no description set)
+[stderr]
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-6-gy1tohr7/repo && jj log -r '(::working_copies() ~ ::trunk()) ~ empty()')
+[stdout]
+[stderr]
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-6-gy1tohr7/repo && gitman work feature)
+[stdout]
+workspace: feature
+path: /tmp/gitman-wave2-old-b-6-gy1tohr7/workspaces/feature
+base: 753f7975ff604603203a2eb1bd328be06260328d (trunk())
+enter it with: cd /tmp/gitman-wave2-old-b-6-gy1tohr7/workspaces/feature
+[stderr]
+[exit 0]
+WRITE /tmp/gitman-wave2-old-b-6-gy1tohr7/workspaces/feature/feature.txt (b'feature\n')
+$ (cd /tmp/gitman-wave2-old-b-6-gy1tohr7/workspaces/feature && jj status)
+[stdout]
+Working copy changes:
+A feature.txt
+Working copy  (@) : ksyswvvp 1eeb5a9a (no description set)
+Parent commit (@-): unyxsvpn 753f7975 main | Base
+[stderr]
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-6-gy1tohr7/workspaces/feature && jj describe -m 'Add feature')
+[stdout]
+[stderr]
+Working copy  (@) now at: ksyswvvp 623e9aa0 Add feature
+Parent commit (@-)      : unyxsvpn 753f7975 main | Base
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-6-gy1tohr7/workspaces/feature && jj new)
+[stdout]
+[stderr]
+Working copy  (@) now at: kvtrvxou ea619c27 (empty) (no description set)
+Parent commit (@-)      : ksyswvvp 623e9aa0 Add feature
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-6-gy1tohr7/workspaces/feature && jj bookmark create feature -r @-)
+[stdout]
+[stderr]
+Created 1 bookmarks pointing to ksyswvvp 623e9aa0 feature | Add feature
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-6-gy1tohr7/workspaces/feature && jj status)
+[stdout]
+The working copy has no changes.
+Working copy  (@) : kvtrvxou ea619c27 (empty) (no description set)
+Parent commit (@-): ksyswvvp 623e9aa0 feature | Add feature
+[stderr]
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-6-gy1tohr7/workspaces/feature && python3 -c 'from pathlib import Path; assert Path('"'"'feature.txt'"'"').read_text() == '"'"'feature\n'"'"'')
+[stdout]
+[stderr]
+[exit 0]
+WRITE /tmp/gitman-wave2-old-b-6-gy1tohr7/repo/other.txt (b'default workspace work\n')
+$ (cd /tmp/gitman-wave2-old-b-6-gy1tohr7/repo && jj status)
+[stdout]
+Working copy changes:
+A other.txt
+Working copy  (@) : klmysqsx 3af6d146 (no description set)
+Parent commit (@-): unyxsvpn 753f7975 main | Base
+[stderr]
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-6-gy1tohr7/workspaces/feature && jj git fetch)
+[stdout]
+[stderr]
+Nothing changed.
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-6-gy1tohr7/workspaces/feature && jj rebase -b @ -d 'trunk()')
+[stdout]
+[stderr]
+Skipped rebase of 2 commits that were already in place.
+Nothing changed.
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-6-gy1tohr7/workspaces/feature && jj bookmark set main -r feature)
+[stdout]
+[stderr]
+Moved 1 bookmarks to ksyswvvp 623e9aa0 feature main* | Add feature
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-6-gy1tohr7/workspaces/feature && jj git push --bookmark main)
+[stdout]
+[stderr]
+Changes to push to origin:
+  bookmark: main [move forward from 753f7975ff60 to 623e9aa09ab4]
+[exit 0]
+DECISION Do not run jj new main in default workspace because its working copy holds other work.
+$ (cd /tmp/gitman-wave2-old-b-6-gy1tohr7/repo && jj status)
+[stdout]
+Working copy changes:
+A other.txt
+Working copy  (@) : klmysqsx 3af6d146 (no description set)
+Parent commit (@-): unyxsvpn 753f7975 Base
+[stderr]
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-6-gy1tohr7/repo && jj log -r '(::feature@ ~ ::trunk()) ~ empty()')
+[stdout]
+[stderr]
+[exit 0]
+DECISION Workspace directory files before removal: ['feature.txt', 'line.txt']
+$ (cd /tmp/gitman-wave2-old-b-6-gy1tohr7/repo && jj workspace remove feature)
+[stdout]
+[stderr]
+Removed Git worktree for "/tmp/gitman-wave2-old-b-6-gy1tohr7/workspaces/feature".
+Removed workspace directory "/tmp/gitman-wave2-old-b-6-gy1tohr7/workspaces/feature".
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-6-gy1tohr7/repo && jj workspace list)
+[stdout]
+default: . klmysqsx 3af6d146 (no description set)
+[stderr]
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-6-gy1tohr7/repo && jj status)
+[stdout]
+Working copy changes:
+A other.txt
+Working copy  (@) : klmysqsx 3af6d146 (no description set)
+Parent commit (@-): unyxsvpn 753f7975 Base
+[stderr]
+[exit 0]

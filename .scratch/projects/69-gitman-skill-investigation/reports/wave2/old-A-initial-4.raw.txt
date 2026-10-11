@@ -1,0 +1,186 @@
+DECISION: SCENARIO 4; sandbox /tmp/gitman-old-a-4-zf5fn2yt
+$ write /tmp/gitman-old-a-4-zf5fn2yt/jjconfig.toml '[user]\nname = "Test User"\nemail = "test@example.invalid"\n'
+[exit 0; output empty]
+$ (cd /tmp/gitman-old-a-4-zf5fn2yt && jj git init --no-colocate /tmp/gitman-old-a-4-zf5fn2yt/origin)
+exit=0
+stdout:
+stderr:
+Initialized repo in "origin"
+
+$ (cd /tmp/gitman-old-a-4-zf5fn2yt && jj git init --colocate /tmp/gitman-old-a-4-zf5fn2yt/main)
+exit=0
+stdout:
+stderr:
+Initialized repo in "main"
+
+$ write /tmp/gitman-old-a-4-zf5fn2yt/main/file.txt 'base\n'
+[exit 0; output empty]
+$ (cd /tmp/gitman-old-a-4-zf5fn2yt/main && jj status)
+exit=0
+stdout:
+Working copy changes:
+A file.txt
+Working copy  (@) : xkwnzlnw 09620cfe (no description set)
+Parent commit (@-): zzzzzzzz 00000000 (empty) (no description set)
+stderr:
+
+$ (cd /tmp/gitman-old-a-4-zf5fn2yt/main && jj describe -m Initial)
+exit=0
+stdout:
+stderr:
+Working copy  (@) now at: xkwnzlnw 1b177c01 Initial
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+
+$ (cd /tmp/gitman-old-a-4-zf5fn2yt/main && jj bookmark create main -r @)
+exit=0
+stdout:
+stderr:
+Created 1 bookmarks pointing to xkwnzlnw 1b177c01 main | Initial
+
+$ (cd /tmp/gitman-old-a-4-zf5fn2yt/main && jj git remote add origin /tmp/gitman-old-a-4-zf5fn2yt/origin/.jj/repo/store/git)
+exit=0
+stdout:
+stderr:
+
+$ (cd /tmp/gitman-old-a-4-zf5fn2yt/main && jj git push --bookmark main)
+exit=0
+stdout:
+stderr:
+Changes to push to origin:
+  bookmark: main [add to 1b177c010d67]
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: tuzqpnxn 995680eb (empty) (no description set)
+Parent commit (@-)      : xkwnzlnw 1b177c01 main | Initial
+
+$ (cd /tmp/gitman-old-a-4-zf5fn2yt/main && jj new main)
+exit=0
+stdout:
+stderr:
+Working copy  (@) now at: ymnkzvrn 1a0fd5a3 (empty) (no description set)
+Parent commit (@-)      : xkwnzlnw 1b177c01 main | Initial
+
+DECISION: Check workspaces and described work before opening another workspace.
+$ (cd /tmp/gitman-old-a-4-zf5fn2yt/main && jj workspace list)
+exit=0
+stdout:
+default: . ymnkzvrn 1a0fd5a3 (empty) (no description set)
+stderr:
+
+$ (cd /tmp/gitman-old-a-4-zf5fn2yt/main && jj log -r '(::working_copies() ~ ::trunk()) ~ empty()')
+exit=0
+stdout:
+stderr:
+
+$ (cd /tmp/gitman-old-a-4-zf5fn2yt/main && gitman work conflict)
+exit=0
+stdout:
+workspace: conflict
+path: /tmp/gitman-old-a-4-zf5fn2yt/workspaces/conflict
+base: 1b177c010d67574ceae3bc611fd8ca01a45f2d9e (trunk())
+enter it with: cd /tmp/gitman-old-a-4-zf5fn2yt/workspaces/conflict
+stderr:
+
+$ write /tmp/gitman-old-a-4-zf5fn2yt/workspaces/conflict/file.txt 'task\n'
+[exit 0; output empty]
+$ (cd /tmp/gitman-old-a-4-zf5fn2yt/workspaces/conflict && jj status)
+exit=0
+stdout:
+Working copy changes:
+M file.txt
+Working copy  (@) : xkormlxl bb690455 (no description set)
+Parent commit (@-): xkwnzlnw 1b177c01 main | Initial
+stderr:
+
+$ (cd /tmp/gitman-old-a-4-zf5fn2yt/workspaces/conflict && jj describe -m 'Change line for task')
+exit=0
+stdout:
+stderr:
+Working copy  (@) now at: xkormlxl 4458d990 Change line for task
+Parent commit (@-)      : xkwnzlnw 1b177c01 main | Initial
+
+DECISION: Verify task line.
+$ (cd /tmp/gitman-old-a-4-zf5fn2yt/workspaces/conflict && bash -c 'test $(cat file.txt) = task')
+exit=0
+stdout:
+stderr:
+
+DECISION: Simulate concurrent upstream edit to the same line in the default workspace.
+$ write /tmp/gitman-old-a-4-zf5fn2yt/main/file.txt 'upstream\n'
+[exit 0; output empty]
+$ (cd /tmp/gitman-old-a-4-zf5fn2yt/main && jj status)
+exit=0
+stdout:
+Working copy changes:
+M file.txt
+Working copy  (@) : ymnkzvrn 9b54dbef (no description set)
+Parent commit (@-): xkwnzlnw 1b177c01 main | Initial
+stderr:
+
+$ (cd /tmp/gitman-old-a-4-zf5fn2yt/main && jj describe -m 'Change line upstream')
+exit=0
+stdout:
+stderr:
+Working copy  (@) now at: ymnkzvrn f5ef8a04 Change line upstream
+Parent commit (@-)      : xkwnzlnw 1b177c01 main | Initial
+
+$ (cd /tmp/gitman-old-a-4-zf5fn2yt/main && jj bookmark set main -r @)
+exit=0
+stdout:
+stderr:
+Moved 1 bookmarks to ymnkzvrn f5ef8a04 main* | Change line upstream
+
+$ (cd /tmp/gitman-old-a-4-zf5fn2yt/main && jj git push --bookmark main)
+exit=0
+stdout:
+stderr:
+Changes to push to origin:
+  bookmark: main [move forward from 1b177c010d67 to f5ef8a043493]
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: pvlqktxv 6f0aee87 (empty) (no description set)
+Parent commit (@-)      : ymnkzvrn f5ef8a04 main | Change line upstream
+
+DECISION: Fetch, then rebase the task branch onto trunk.
+$ (cd /tmp/gitman-old-a-4-zf5fn2yt/workspaces/conflict && jj git fetch)
+exit=0
+stdout:
+stderr:
+Nothing changed.
+
+$ (cd /tmp/gitman-old-a-4-zf5fn2yt/workspaces/conflict && jj rebase -b @ -d 'trunk()')
+exit=0
+stdout:
+stderr:
+Rebased 1 commits to destination.
+Working copy  (@) now at: xkormlxl 7cf3e1db (conflict) Change line for task
+Parent commit (@-)      : ymnkzvrn f5ef8a04 main | Change line upstream
+Added 0 files, modified 1 files, removed 0 files
+Warning: There are unresolved conflicts at these paths:
+file.txt    2-sided conflict
+New conflicts appeared in 1 commits:
+  xkormlxl 7cf3e1db (conflict) Change line for task
+Hint: To resolve the conflicts, start by creating a commit on top of
+the conflicted commit:
+  jj new xkormlxl
+Then use `jj resolve`, or edit the conflict markers in the file directly.
+Once the conflicts are resolved, you can inspect the result with `jj diff`.
+Then run `jj squash` to move the resolution into the conflicted commit.
+
+$ (cd /tmp/gitman-old-a-4-zf5fn2yt/workspaces/conflict && jj status)
+exit=0
+stdout:
+Working copy changes:
+M file.txt
+Working copy  (@) : xkormlxl 7cf3e1db (conflict) Change line for task
+Parent commit (@-): ymnkzvrn f5ef8a04 main | Change line upstream
+Warning: There are unresolved conflicts at these paths:
+file.txt    2-sided conflict
+stderr:
+
+DECISION: Rebase exit 0; conflict in task tree. Stop before moving main; ask user to resolve or choose outcome. Leave workspace.
+$ (cd /tmp/gitman-old-a-4-zf5fn2yt/main && jj workspace list)
+exit=0
+stdout:
+conflict: ../workspaces/conflict xkormlxl 7cf3e1db (conflict) Change line for task
+default: . pvlqktxv 6f0aee87 (empty) (no description set)
+stderr:
+

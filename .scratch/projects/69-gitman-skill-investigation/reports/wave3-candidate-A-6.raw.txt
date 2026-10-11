@@ -1,0 +1,238 @@
+CASE_ROOT=/tmp/tmp.uk1n1bTAaS
+
+$ jj git init --no-colocate /tmp/tmp.uk1n1bTAaS/origin
+Initialized repo in "../../tmp.uk1n1bTAaS/origin"
+[exit 0]
+
+$ jj git init --colocate /tmp/tmp.uk1n1bTAaS/repo
+Initialized repo in "../../tmp.uk1n1bTAaS/repo"
+[exit 0]
+
+$ bash -c printf\ \"base\\n\"\ \>\ \"\$1\" _ /tmp/tmp.uk1n1bTAaS/repo/README.md
+[exit 0]
+
+$ jj -R /tmp/tmp.uk1n1bTAaS/repo describe -m base
+Working copy  (@) now at: vrnkyvlx 4006cb92 base
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+[exit 0]
+
+$ jj -R /tmp/tmp.uk1n1bTAaS/repo bookmark create main -r @
+Created 1 bookmarks pointing to vrnkyvlx 4006cb92 main | base
+[exit 0]
+
+$ jj -R /tmp/tmp.uk1n1bTAaS/repo git remote add origin /tmp/tmp.uk1n1bTAaS/origin/.jj/repo/store/git
+[exit 0]
+
+$ jj -R /tmp/tmp.uk1n1bTAaS/repo git push -b main
+Changes to push to origin:
+  bookmark: main [add to 4006cb92fdba]
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: zuquzuwt f15b94e9 (empty) (no description set)
+Parent commit (@-)      : vrnkyvlx 4006cb92 main | base
+[exit 0]
+
+$ jj -R /tmp/tmp.uk1n1bTAaS/repo status
+The working copy has no changes.
+Working copy  (@) : zuquzuwt f15b94e9 (empty) (no description set)
+Parent commit (@-): vrnkyvlx 4006cb92 main | base
+[exit 0]
+
+$ jj -R /tmp/tmp.uk1n1bTAaS/repo workspace list
+default: ../../tmp.uk1n1bTAaS/repo zuquzuwt f15b94e9 (empty) (no description set)
+[exit 0]
+
+$ jj -R /tmp/tmp.uk1n1bTAaS/repo log -r \(::working_copies\(\)\ ~\ ::main\)\ ~\ empty\(\)
+[exit 0]
+
+$ jj -R /tmp/tmp.uk1n1bTAaS/repo bookmark list
+main: vrnkyvlx 4006cb92 base
+[exit 0]
+
+$ jj -R /tmp/tmp.uk1n1bTAaS/repo log -r trunk\(\)
+◆  vrnkyvlx tester@example.test 2026-10-11 18:10:25 main 4006cb92
+│  base
+~
+[exit 0]
+
+$ jj -R /tmp/tmp.uk1n1bTAaS/repo git remote list
+origin /tmp/tmp.uk1n1bTAaS/origin/.jj/repo/store/git
+[exit 0]
+
+$ pwd
+/tmp/tmp.uk1n1bTAaS/repo
+[exit 0]
+
+$ jj git fetch
+Nothing changed.
+[exit 0]
+
+$ gitman work dirty-a --from main
+workspace: dirty-a
+path: /tmp/tmp.uk1n1bTAaS/workspaces/dirty-a
+base: 4006cb92fdbaa31dc682a47bbb764757af26a1b6 (main)
+enter it with: cd /tmp/tmp.uk1n1bTAaS/workspaces/dirty-a
+[exit 0]
+
+$ bash -c printf\ \"task\ feature\\n\"\ \>\ \"\$1\" _ /tmp/tmp.uk1n1bTAaS/workspaces/dirty-a/feature.txt
+[exit 0]
+
+$ bash -c test\ \"\$\(cat\ \"\$1\"\)\"\ =\ \"task\ feature\" _ /tmp/tmp.uk1n1bTAaS/workspaces/dirty-a/feature.txt
+[exit 0]
+
+$ jj -R /tmp/tmp.uk1n1bTAaS/workspaces/dirty-a status
+Working copy changes:
+A ../workspaces/dirty-a/feature.txt
+Working copy  (@) : zutrlmkm d567d67d (no description set)
+Parent commit (@-): vrnkyvlx 4006cb92 main | base
+[exit 0]
+
+$ jj -R /tmp/tmp.uk1n1bTAaS/workspaces/dirty-a diff
+Added regular file ../workspaces/dirty-a/feature.txt:
+        1: task feature
+[exit 0]
+
+$ jj -R /tmp/tmp.uk1n1bTAaS/workspaces/dirty-a log -r @\ \|\ @-
+@  zutrlmkm tester@example.test 2026-10-11 18:10:33 dirty-a@ d567d67d
+│  (no description set)
+◆  vrnkyvlx tester@example.test 2026-10-11 18:10:25 main 4006cb92
+│  base
+~
+[exit 0]
+
+$ jj -R /tmp/tmp.uk1n1bTAaS/workspaces/dirty-a describe -r @ -m Add\ task\ feature
+Working copy  (@) now at: zutrlmkm 623140ec Add task feature
+Parent commit (@-)      : vrnkyvlx 4006cb92 main | base
+[exit 0]
+
+$ jj -R /tmp/tmp.uk1n1bTAaS/workspaces/dirty-a log -r @\ \|\ @-
+@  zutrlmkm tester@example.test 2026-10-11 18:10:33 dirty-a@ 623140ec
+│  Add task feature
+◆  vrnkyvlx tester@example.test 2026-10-11 18:10:25 main 4006cb92
+│  base
+~
+[exit 0]
+
+$ jj -R /tmp/tmp.uk1n1bTAaS/workspaces/dirty-a bookmark create dirty-a -r @
+Created 1 bookmarks pointing to zutrlmkm 623140ec dirty-a | Add task feature
+[exit 0]
+
+$ bash -c printf\ \"other\ work\\n\"\ \>\ \"\$1\" _ /tmp/tmp.uk1n1bTAaS/repo/other.txt
+[exit 0]
+
+$ jj -R /tmp/tmp.uk1n1bTAaS/repo status
+Working copy changes:
+A other.txt
+Working copy  (@) : zuquzuwt 967a2556 (no description set)
+Parent commit (@-): vrnkyvlx 4006cb92 main | base
+[exit 0]
+
+$ jj -R /tmp/tmp.uk1n1bTAaS/workspaces/dirty-a git fetch
+Nothing changed.
+[exit 0]
+
+$ jj -R /tmp/tmp.uk1n1bTAaS/workspaces/dirty-a log -r main\ \|\ main@origin\ \|\ dirty-a\ \|\ dirty-a@
+@  zutrlmkm tester@example.test 2026-10-11 18:10:33 dirty-a dirty-a@ 623140ec
+│  Add task feature
+◆  vrnkyvlx tester@example.test 2026-10-11 18:10:25 main 4006cb92
+│  base
+~
+[exit 0]
+
+$ jj -R /tmp/tmp.uk1n1bTAaS/workspaces/dirty-a log -r conflicts\(\)
+[exit 0]
+
+$ jj -R /tmp/tmp.uk1n1bTAaS/workspaces/dirty-a log -r divergent\(\)
+[exit 0]
+
+$ jj -R /tmp/tmp.uk1n1bTAaS/workspaces/dirty-a bookmark set main -r dirty-a
+Moved 1 bookmarks to zutrlmkm 623140ec dirty-a main* | Add task feature
+[exit 0]
+
+$ jj -R /tmp/tmp.uk1n1bTAaS/workspaces/dirty-a git push -b main
+Changes to push to origin:
+  bookmark: main [move forward from 4006cb92fdba to 623140ece583]
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: qmxqxmmq afb10fe7 (empty) (no description set)
+Parent commit (@-)      : zutrlmkm 623140ec dirty-a main | Add task feature
+[exit 0]
+
+$ jj -R /tmp/tmp.uk1n1bTAaS/repo status
+Working copy changes:
+A other.txt
+Working copy  (@) : zuquzuwt 967a2556 (no description set)
+Parent commit (@-): vrnkyvlx 4006cb92 base
+[exit 0]
+
+$ jj -R /tmp/tmp.uk1n1bTAaS/repo log -r default@\ \|\ main\ \|\ dirty-a@
+@  zuquzuwt tester@example.test 2026-10-11 18:10:33 default@ 967a2556
+│  (no description set)
+~
+
+○  qmxqxmmq tester@example.test 2026-10-11 18:10:40 dirty-a@ afb10fe7
+│  (empty) (no description set)
+◆  zutrlmkm tester@example.test 2026-10-11 18:10:33 dirty-a main 623140ec
+│  Add task feature
+~
+[exit 0]
+
+$ jj -R /tmp/tmp.uk1n1bTAaS/repo workspace list
+default: . zuquzuwt 967a2556 (no description set)
+dirty-a: ../workspaces/dirty-a qmxqxmmq afb10fe7 (empty) (no description set)
+[exit 0]
+
+$ jj -R /tmp/tmp.uk1n1bTAaS/repo bookmark list
+dirty-a: zutrlmkm 623140ec Add task feature
+main: zutrlmkm 623140ec Add task feature
+[exit 0]
+
+$ jj -R /tmp/tmp.uk1n1bTAaS/repo log -r main\ \|\ dirty-a\ \|\ dirty-a@\ \|\ default@
+@  zuquzuwt tester@example.test 2026-10-11 18:10:33 default@ 967a2556
+│  (no description set)
+~
+
+○  qmxqxmmq tester@example.test 2026-10-11 18:10:40 dirty-a@ afb10fe7
+│  (empty) (no description set)
+◆  zutrlmkm tester@example.test 2026-10-11 18:10:33 dirty-a main 623140ec
+│  Add task feature
+~
+[exit 0]
+
+$ jj -R /tmp/tmp.uk1n1bTAaS/repo log -r \(::dirty-a@\ ~\ ::main\)\ ~\ empty\(\)
+[exit 0]
+
+$ jj -R /tmp/tmp.uk1n1bTAaS/repo log -r divergent\(\)
+[exit 0]
+
+$ jj -R /tmp/tmp.uk1n1bTAaS/workspaces/dirty-a status
+The working copy has no changes.
+Working copy  (@) : qmxqxmmq afb10fe7 (empty) (no description set)
+Parent commit (@-): zutrlmkm 623140ec dirty-a main | Add task feature
+[exit 0]
+
+$ jj -R /tmp/tmp.uk1n1bTAaS/workspaces/dirty-a file list
+../workspaces/dirty-a/README.md
+../workspaces/dirty-a/feature.txt
+[exit 0]
+
+$ find /tmp/tmp.uk1n1bTAaS/workspaces/dirty-a -maxdepth 1 -mindepth 1 -print
+/tmp/tmp.uk1n1bTAaS/workspaces/dirty-a/.git
+/tmp/tmp.uk1n1bTAaS/workspaces/dirty-a/.jj
+/tmp/tmp.uk1n1bTAaS/workspaces/dirty-a/README.md
+/tmp/tmp.uk1n1bTAaS/workspaces/dirty-a/feature.txt
+[exit 0]
+
+$ jj -R /tmp/tmp.uk1n1bTAaS/repo workspace remove dirty-a
+Removed Git worktree for "/tmp/tmp.uk1n1bTAaS/workspaces/dirty-a".
+Removed workspace directory "/tmp/tmp.uk1n1bTAaS/workspaces/dirty-a".
+[exit 0]
+
+$ jj -R /tmp/tmp.uk1n1bTAaS/repo workspace list
+default: . zuquzuwt 967a2556 (no description set)
+[exit 0]
+
+$ jj -R /tmp/tmp.uk1n1bTAaS/repo status
+Working copy changes:
+A other.txt
+Working copy  (@) : zuquzuwt 967a2556 (no description set)
+Parent commit (@-): vrnkyvlx 4006cb92 base
+[exit 0]

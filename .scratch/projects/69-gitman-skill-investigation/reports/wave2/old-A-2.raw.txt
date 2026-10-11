@@ -1,0 +1,118 @@
+DECISION: SCENARIO 2; sandbox /tmp/gitman-old-a-2-4fi2fgq0
+$ write /tmp/gitman-old-a-2-4fi2fgq0/jjconfig.toml '[user]\nname = "Test User"\nemail = "test@example.invalid"\n'
+[exit 0; output empty]
+$ (cd /tmp/gitman-old-a-2-4fi2fgq0 && jj git init --no-colocate /tmp/gitman-old-a-2-4fi2fgq0/origin)
+exit=0
+stdout:
+stderr:
+Initialized repo in "origin"
+
+$ (cd /tmp/gitman-old-a-2-4fi2fgq0 && jj git init --colocate /tmp/gitman-old-a-2-4fi2fgq0/main)
+exit=0
+stdout:
+stderr:
+Initialized repo in "main"
+
+$ write /tmp/gitman-old-a-2-4fi2fgq0/main/file.txt 'base\n'
+[exit 0; output empty]
+$ (cd /tmp/gitman-old-a-2-4fi2fgq0/main && jj status)
+exit=0
+stdout:
+Working copy changes:
+A file.txt
+Working copy  (@) : zrxyplnu adc7eed3 (no description set)
+Parent commit (@-): zzzzzzzz 00000000 (empty) (no description set)
+stderr:
+
+$ (cd /tmp/gitman-old-a-2-4fi2fgq0/main && jj describe -m Initial)
+exit=0
+stdout:
+stderr:
+Working copy  (@) now at: zrxyplnu 90efc39b Initial
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+
+$ (cd /tmp/gitman-old-a-2-4fi2fgq0/main && jj bookmark create main -r @)
+exit=0
+stdout:
+stderr:
+Created 1 bookmarks pointing to zrxyplnu 90efc39b main | Initial
+
+$ (cd /tmp/gitman-old-a-2-4fi2fgq0/main && jj git remote add origin /tmp/gitman-old-a-2-4fi2fgq0/origin/.jj/repo/store/git)
+exit=0
+stdout:
+stderr:
+
+$ (cd /tmp/gitman-old-a-2-4fi2fgq0/main && jj git push --bookmark main)
+exit=0
+stdout:
+stderr:
+Changes to push to origin:
+  bookmark: main [add to 90efc39ba98c]
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: wvklyovl 41c22551 (empty) (no description set)
+Parent commit (@-)      : zrxyplnu 90efc39b main | Initial
+
+$ (cd /tmp/gitman-old-a-2-4fi2fgq0/main && jj new main)
+exit=0
+stdout:
+stderr:
+Working copy  (@) now at: lrrkyyxv e2ca5cbf (empty) (no description set)
+Parent commit (@-)      : zrxyplnu 90efc39b main | Initial
+
+DECISION: Check workspaces and described work before opening another workspace.
+$ (cd /tmp/gitman-old-a-2-4fi2fgq0/main && jj workspace list)
+exit=0
+stdout:
+default: . lrrkyyxv e2ca5cbf (empty) (no description set)
+stderr:
+
+$ (cd /tmp/gitman-old-a-2-4fi2fgq0/main && jj log -r '(::working_copies() ~ ::trunk()) ~ empty()')
+exit=0
+stdout:
+stderr:
+
+DECISION: No prior unlanded work; open first task workspace.
+$ (cd /tmp/gitman-old-a-2-4fi2fgq0/main && gitman work prior)
+exit=0
+stdout:
+workspace: prior
+path: /tmp/gitman-old-a-2-4fi2fgq0/workspaces/prior
+base: 90efc39ba98c46aa6624f66ea9a457dd97f3f3e2 (trunk())
+enter it with: cd /tmp/gitman-old-a-2-4fi2fgq0/workspaces/prior
+stderr:
+
+$ write /tmp/gitman-old-a-2-4fi2fgq0/workspaces/prior/prior.txt 'prior\n'
+[exit 0; output empty]
+$ (cd /tmp/gitman-old-a-2-4fi2fgq0/workspaces/prior && jj status)
+exit=0
+stdout:
+Working copy changes:
+A prior.txt
+Working copy  (@) : yykpwnxv f1723efa (no description set)
+Parent commit (@-): zrxyplnu 90efc39b main | Initial
+stderr:
+
+$ (cd /tmp/gitman-old-a-2-4fi2fgq0/workspaces/prior && jj describe -m 'Earlier task')
+exit=0
+stdout:
+stderr:
+Working copy  (@) now at: yykpwnxv fcb545d9 Earlier task
+Parent commit (@-)      : zrxyplnu 90efc39b main | Initial
+
+DECISION: Different task arrives; inspect existing work before opening a workspace.
+$ (cd /tmp/gitman-old-a-2-4fi2fgq0/main && jj workspace list)
+exit=0
+stdout:
+default: . lrrkyyxv e2ca5cbf (empty) (no description set)
+prior: ../workspaces/prior yykpwnxv fcb545d9 Earlier task
+stderr:
+
+$ (cd /tmp/gitman-old-a-2-4fi2fgq0/main && jj log -r '(::working_copies() ~ ::trunk()) ~ empty()')
+exit=0
+stdout:
+○  yykpwnxv test@example.invalid 2026-10-11 17:58:21 prior@ fcb545d9
+│  Earlier task
+~
+stderr:
+
+DECISION: Report prior workspace and described unlanded change. Ask user whether to land or defer it before opening the different task. Stop here; prior remains.

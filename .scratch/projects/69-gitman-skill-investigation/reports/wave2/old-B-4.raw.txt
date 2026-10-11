@@ -1,0 +1,189 @@
+DECISION SANDBOX /tmp/gitman-wave2-old-b-4-sxph6h66
+DECISION ENV JJ_CONFIG=/tmp/gitman-wave2-old-b-4-sxph6h66/jjconfig.toml XDG_CONFIG_HOME=/tmp/gitman-wave2-old-b-4-sxph6h66/xdg GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null GIT_CONFIG_NOSYSTEM=1 GITMAN_WORKSPACE_ROOT=/tmp/gitman-wave2-old-b-4-sxph6h66/workspaces
+DECISION Upstream will edit the same line after the feature is verified. A rebase conflict requires a stop before moving main.
+$ (cd /tmp/gitman-wave2-old-b-4-sxph6h66 && jj git init --colocate /tmp/gitman-wave2-old-b-4-sxph6h66/repo)
+[stdout]
+[stderr]
+Initialized repo in "repo"
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-4-sxph6h66/repo && jj config list user.name)
+[stdout]
+user.name = "Experiment User"
+[stderr]
+[exit 0]
+WRITE /tmp/gitman-wave2-old-b-4-sxph6h66/repo/line.txt (b'base\n')
+$ (cd /tmp/gitman-wave2-old-b-4-sxph6h66/repo && jj status)
+[stdout]
+Working copy changes:
+A line.txt
+Working copy  (@) : wosnnqss 24dd627f (no description set)
+Parent commit (@-): zzzzzzzz 00000000 (empty) (no description set)
+[stderr]
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-4-sxph6h66/repo && jj describe -m Base)
+[stdout]
+[stderr]
+Working copy  (@) now at: wosnnqss 1d71b957 Base
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-4-sxph6h66/repo && jj bookmark create main -r @)
+[stdout]
+[stderr]
+Created 1 bookmarks pointing to wosnnqss 1d71b957 main | Base
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-4-sxph6h66/repo && jj new main)
+[stdout]
+[stderr]
+Working copy  (@) now at: wxlqlnps f26b1dfb (empty) (no description set)
+Parent commit (@-)      : wosnnqss 1d71b957 main | Base
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-4-sxph6h66 && jj git init --no-colocate /tmp/gitman-wave2-old-b-4-sxph6h66/origin)
+[stdout]
+[stderr]
+Initialized repo in "origin"
+[exit 0]
+DECISION Local bare Git backing store exists: True at /tmp/gitman-wave2-old-b-4-sxph6h66/origin/.jj/repo/store/git
+$ (cd /tmp/gitman-wave2-old-b-4-sxph6h66/repo && jj git remote add origin /tmp/gitman-wave2-old-b-4-sxph6h66/origin/.jj/repo/store/git)
+[stdout]
+[stderr]
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-4-sxph6h66/repo && jj git push --bookmark main)
+[stdout]
+[stderr]
+Changes to push to origin:
+  bookmark: main [add to 1d71b9573d14]
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-4-sxph6h66/repo && jj workspace list)
+[stdout]
+default: . wxlqlnps f26b1dfb (empty) (no description set)
+[stderr]
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-4-sxph6h66/repo && jj log -r '(::working_copies() ~ ::trunk()) ~ empty()')
+[stdout]
+[stderr]
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-4-sxph6h66/repo && gitman work feature)
+[stdout]
+workspace: feature
+path: /tmp/gitman-wave2-old-b-4-sxph6h66/workspaces/feature
+base: 1d71b9573d149fed81c0602dc5b9f34e3c1384e2 (trunk())
+enter it with: cd /tmp/gitman-wave2-old-b-4-sxph6h66/workspaces/feature
+[stderr]
+[exit 0]
+WRITE /tmp/gitman-wave2-old-b-4-sxph6h66/workspaces/feature/line.txt (b'feature\n')
+$ (cd /tmp/gitman-wave2-old-b-4-sxph6h66/workspaces/feature && jj status)
+[stdout]
+Working copy changes:
+M line.txt
+Working copy  (@) : smxwsswv 56f8819f (no description set)
+Parent commit (@-): wosnnqss 1d71b957 main | Base
+[stderr]
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-4-sxph6h66/workspaces/feature && jj describe -m 'Add feature')
+[stdout]
+[stderr]
+Working copy  (@) now at: smxwsswv 0c2f4b05 Add feature
+Parent commit (@-)      : wosnnqss 1d71b957 main | Base
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-4-sxph6h66/workspaces/feature && jj new)
+[stdout]
+[stderr]
+Working copy  (@) now at: vkkvwyvw 80ffed3e (empty) (no description set)
+Parent commit (@-)      : smxwsswv 0c2f4b05 Add feature
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-4-sxph6h66/workspaces/feature && jj bookmark create feature -r @-)
+[stdout]
+[stderr]
+Created 1 bookmarks pointing to smxwsswv 0c2f4b05 feature | Add feature
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-4-sxph6h66/workspaces/feature && jj status)
+[stdout]
+The working copy has no changes.
+Working copy  (@) : vkkvwyvw 80ffed3e (empty) (no description set)
+Parent commit (@-): smxwsswv 0c2f4b05 feature | Add feature
+[stderr]
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-4-sxph6h66/workspaces/feature && python3 -c 'from pathlib import Path; assert Path('"'"'line.txt'"'"').read_text() == '"'"'feature\n'"'"'')
+[stdout]
+[stderr]
+[exit 0]
+WRITE /tmp/gitman-wave2-old-b-4-sxph6h66/repo/line.txt (b'upstream\n')
+$ (cd /tmp/gitman-wave2-old-b-4-sxph6h66/repo && jj status)
+[stdout]
+Working copy changes:
+M line.txt
+Working copy  (@) : wxlqlnps d7f12d40 (no description set)
+Parent commit (@-): wosnnqss 1d71b957 main | Base
+[stderr]
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-4-sxph6h66/repo && jj describe -m 'Upstream line edit')
+[stdout]
+[stderr]
+Working copy  (@) now at: wxlqlnps 5496e73a Upstream line edit
+Parent commit (@-)      : wosnnqss 1d71b957 main | Base
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-4-sxph6h66/repo && jj bookmark set main -r @)
+[stdout]
+[stderr]
+Moved 1 bookmarks to wxlqlnps 5496e73a main* | Upstream line edit
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-4-sxph6h66/repo && jj new main)
+[stdout]
+[stderr]
+Working copy  (@) now at: uvxvmyvn e0b3e5fb (empty) (no description set)
+Parent commit (@-)      : wxlqlnps 5496e73a main* | Upstream line edit
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-4-sxph6h66/repo && jj git push --bookmark main)
+[stdout]
+[stderr]
+Changes to push to origin:
+  bookmark: main [move forward from 1d71b9573d14 to 5496e73ac0d3]
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-4-sxph6h66/workspaces/feature && jj git fetch)
+[stdout]
+[stderr]
+Nothing changed.
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-4-sxph6h66/workspaces/feature && jj rebase -b @ -d 'trunk()')
+[stdout]
+[stderr]
+Rebased 2 commits to destination.
+Working copy  (@) now at: vkkvwyvw a9715c58 (conflict) (empty) (no description set)
+Parent commit (@-)      : smxwsswv ab3773e2 feature | (conflict) Add feature
+Added 0 files, modified 1 files, removed 0 files
+Warning: There are unresolved conflicts at these paths:
+line.txt    2-sided conflict
+New conflicts appeared in 1 commits:
+  smxwsswv ab3773e2 feature | (conflict) Add feature
+Hint: To resolve the conflicts, start by creating a commit on top of
+the conflicted commit:
+  jj new smxwsswv
+Then use `jj resolve`, or edit the conflict markers in the file directly.
+Once the conflicts are resolved, you can inspect the result with `jj diff`.
+Then run `jj squash` to move the resolution into the conflicted commit.
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-4-sxph6h66/workspaces/feature && jj status)
+[stdout]
+The working copy has no changes.
+Working copy  (@) : vkkvwyvw a9715c58 (conflict) (empty) (no description set)
+Parent commit (@-): smxwsswv ab3773e2 feature | (conflict) Add feature
+Warning: There are unresolved conflicts at these paths:
+line.txt    2-sided conflict
+Hint: To resolve the conflicts, start by creating a commit on top of
+the conflicted commit:
+  jj new smxwsswv
+Then use `jj resolve`, or edit the conflict markers in the file directly.
+Once the conflicts are resolved, you can inspect the result with `jj diff`.
+Then run `jj squash` to move the resolution into the conflicted commit.
+[stderr]
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-4-sxph6h66/workspaces/feature && jj log -r 'feature|main')
+[stdout]
+×  smxwsswv experiment@example.test 2026-10-11 17:55:56 feature ab3773e2 (conflict)
+│  Add feature
+◆  wxlqlnps experiment@example.test 2026-10-11 17:55:55 main 5496e73a
+│  Upstream line edit
+~
+[stderr]
+[exit 0]
+DECISION Stop before main integration because the rebase produced a conflict. Leave feature workspace and bookmark for resolution.

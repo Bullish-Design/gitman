@@ -1,0 +1,186 @@
+DECISION: SCENARIO 5; sandbox /tmp/gitman-old-a-5-v8r_8v2v
+$ write /tmp/gitman-old-a-5-v8r_8v2v/jjconfig.toml '[user]\nname = "Test User"\nemail = "test@example.invalid"\n'
+[exit 0; output empty]
+$ (cd /tmp/gitman-old-a-5-v8r_8v2v && jj git init --colocate /tmp/gitman-old-a-5-v8r_8v2v/main)
+exit=0
+stdout:
+stderr:
+Initialized repo in "main"
+
+$ write /tmp/gitman-old-a-5-v8r_8v2v/main/file.txt 'base\n'
+[exit 0; output empty]
+$ (cd /tmp/gitman-old-a-5-v8r_8v2v/main && jj status)
+exit=0
+stdout:
+Working copy changes:
+A file.txt
+Working copy  (@) : vqnwvmqv 38f3d528 (no description set)
+Parent commit (@-): zzzzzzzz 00000000 (empty) (no description set)
+stderr:
+
+$ (cd /tmp/gitman-old-a-5-v8r_8v2v/main && jj describe -m Initial)
+exit=0
+stdout:
+stderr:
+Working copy  (@) now at: vqnwvmqv b8be9fc0 Initial
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+
+$ (cd /tmp/gitman-old-a-5-v8r_8v2v/main && jj bookmark create main -r @)
+exit=0
+stdout:
+stderr:
+Created 1 bookmarks pointing to vqnwvmqv b8be9fc0 main | Initial
+
+$ (cd /tmp/gitman-old-a-5-v8r_8v2v/main && jj new main)
+exit=0
+stdout:
+stderr:
+Working copy  (@) now at: qkmyxnmo 404f4115 (empty) (no description set)
+Parent commit (@-)      : vqnwvmqv b8be9fc0 main | Initial
+
+DECISION: Check workspaces and described work before opening another workspace.
+$ (cd /tmp/gitman-old-a-5-v8r_8v2v/main && jj workspace list)
+exit=0
+stdout:
+default: . qkmyxnmo 404f4115 (empty) (no description set)
+stderr:
+
+$ (cd /tmp/gitman-old-a-5-v8r_8v2v/main && jj log -r '(::working_copies() ~ ::trunk()) ~ empty()')
+exit=0
+stdout:
+○  vqnwvmqv test@example.invalid 2026-10-11 17:56:40 main b8be9fc0
+│  Initial
+~
+stderr:
+
+$ (cd /tmp/gitman-old-a-5-v8r_8v2v/main && gitman work local)
+exit=0
+stdout:
+workspace: local
+path: /tmp/gitman-old-a-5-v8r_8v2v/workspaces/local
+base: 0000000000000000000000000000000000000000 (trunk())
+enter it with: cd /tmp/gitman-old-a-5-v8r_8v2v/workspaces/local
+stderr:
+
+$ write /tmp/gitman-old-a-5-v8r_8v2v/workspaces/local/feature.txt 'feature\n'
+[exit 0; output empty]
+$ (cd /tmp/gitman-old-a-5-v8r_8v2v/workspaces/local && jj status)
+exit=0
+stdout:
+Working copy changes:
+A feature.txt
+Working copy  (@) : rspsnmpp 6fe4de45 (no description set)
+Parent commit (@-): zzzzzzzz 00000000 (empty) (no description set)
+stderr:
+
+$ (cd /tmp/gitman-old-a-5-v8r_8v2v/workspaces/local && jj describe -m 'Add local feature')
+exit=0
+stdout:
+stderr:
+Working copy  (@) now at: rspsnmpp 1935006c Add local feature
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+
+DECISION: Verify task content before integration.
+$ (cd /tmp/gitman-old-a-5-v8r_8v2v/workspaces/local && bash -c 'test -f feature.txt')
+exit=0
+stdout:
+stderr:
+
+DECISION: No remote exists. Fetch attempt records the expected no-remote result.
+$ (cd /tmp/gitman-old-a-5-v8r_8v2v/workspaces/local && jj git fetch)
+exit=1
+stdout:
+stderr:
+Warning: No matching remotes for names: origin
+Error: No git remotes to fetch from
+
+DECISION: Fetch exit 1. Rebase on local trunk; push step does not apply without a remote.
+$ (cd /tmp/gitman-old-a-5-v8r_8v2v/workspaces/local && jj rebase -b @ -d 'trunk()')
+exit=0
+stdout:
+stderr:
+Skipped rebase of 1 commits that were already in place.
+Nothing changed.
+
+DECISION: Verify task content before integration.
+$ (cd /tmp/gitman-old-a-5-v8r_8v2v/workspaces/local && bash -c 'test -f feature.txt')
+exit=0
+stdout:
+stderr:
+
+DECISION: Set main to the task change after green verification and sync.
+$ (cd /tmp/gitman-old-a-5-v8r_8v2v/workspaces/local && jj bookmark set main -r @-)
+exit=1
+stdout:
+stderr:
+Error: Refusing to move bookmark backwards or sideways: main
+Hint: Use --allow-backwards to allow it.
+
+DECISION: Check default workspace before updating it.
+$ (cd /tmp/gitman-old-a-5-v8r_8v2v/main && jj status)
+exit=0
+stdout:
+The working copy has no changes.
+Working copy  (@) : qkmyxnmo 404f4115 (empty) (no description set)
+Parent commit (@-): vqnwvmqv b8be9fc0 main | Initial
+stderr:
+
+$ (cd /tmp/gitman-old-a-5-v8r_8v2v/main && jj log -r @ -T empty)
+exit=0
+stdout:
+@  true
+│
+~
+stderr:
+
+DECISION: Default workspace is empty; update it to main.
+$ (cd /tmp/gitman-old-a-5-v8r_8v2v/main && jj new main)
+exit=0
+stdout:
+stderr:
+Working copy  (@) now at: oynpmtzy 3def8fea (empty) (no description set)
+Parent commit (@-)      : vqnwvmqv b8be9fc0 main | Initial
+
+DECISION: Check that task work is on trunk before removal. Inspect directory, including metadata and ignored files.
+$ (cd /tmp/gitman-old-a-5-v8r_8v2v/main && jj log -r '(::local@ ~ ::trunk()) ~ empty()')
+exit=0
+stdout:
+○  rspsnmpp test@example.invalid 2026-10-11 17:56:41 local@ 1935006c
+│  Add local feature
+~
+stderr:
+
+$ (cd /tmp/gitman-old-a-5-v8r_8v2v/main && find /tmp/gitman-old-a-5-v8r_8v2v/workspaces/local -maxdepth 2 -print)
+exit=0
+stdout:
+/tmp/gitman-old-a-5-v8r_8v2v/workspaces/local
+/tmp/gitman-old-a-5-v8r_8v2v/workspaces/local/.git
+/tmp/gitman-old-a-5-v8r_8v2v/workspaces/local/.jj
+/tmp/gitman-old-a-5-v8r_8v2v/workspaces/local/.jj/repo
+/tmp/gitman-old-a-5-v8r_8v2v/workspaces/local/.jj/working_copy
+/tmp/gitman-old-a-5-v8r_8v2v/workspaces/local/.jj/.gitignore
+/tmp/gitman-old-a-5-v8r_8v2v/workspaces/local/feature.txt
+stderr:
+
+$ (cd /tmp/gitman-old-a-5-v8r_8v2v/workspaces/local && jj status)
+exit=0
+stdout:
+Working copy changes:
+A feature.txt
+Working copy  (@) : rspsnmpp 1935006c Add local feature
+Parent commit (@-): zzzzzzzz 00000000 (empty) (no description set)
+stderr:
+
+$ (cd /tmp/gitman-old-a-5-v8r_8v2v/main && jj workspace remove local)
+exit=0
+stdout:
+stderr:
+Removed Git worktree for "/tmp/gitman-old-a-5-v8r_8v2v/workspaces/local".
+Removed workspace directory "/tmp/gitman-old-a-5-v8r_8v2v/workspaces/local".
+
+$ (cd /tmp/gitman-old-a-5-v8r_8v2v/main && jj workspace list)
+exit=0
+stdout:
+default: . oynpmtzy 3def8fea (empty) (no description set)
+stderr:
+

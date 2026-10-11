@@ -1,0 +1,189 @@
+DECISION SANDBOX /tmp/gitman-wave2-old-b-9-xl5v4f2n
+DECISION ENV JJ_CONFIG=/tmp/gitman-wave2-old-b-9-xl5v4f2n/jjconfig.toml XDG_CONFIG_HOME=/tmp/gitman-wave2-old-b-9-xl5v4f2n/xdg GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null GIT_CONFIG_NOSYSTEM=1 GITMAN_WORKSPACE_ROOT=/tmp/gitman-wave2-old-b-9-xl5v4f2n/workspaces
+DECISION Fixture models devenv shell changing tracked devenv.lock on shell entry. The real project's shell runs outside this sandbox.
+$ (cd /tmp/gitman-wave2-old-b-9-xl5v4f2n && jj git init --colocate /tmp/gitman-wave2-old-b-9-xl5v4f2n/repo)
+[stdout]
+[stderr]
+Initialized repo in "repo"
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-9-xl5v4f2n/repo && jj config list user.name)
+[stdout]
+user.name = "Experiment User"
+[stderr]
+[exit 0]
+WRITE /tmp/gitman-wave2-old-b-9-xl5v4f2n/repo/devenv.lock (b'{"version":1}\n')
+$ (cd /tmp/gitman-wave2-old-b-9-xl5v4f2n/repo && jj status)
+[stdout]
+Working copy changes:
+A devenv.lock
+Working copy  (@) : uzrpymuk 3bc77da7 (no description set)
+Parent commit (@-): zzzzzzzz 00000000 (empty) (no description set)
+[stderr]
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-9-xl5v4f2n/repo && jj describe -m Base)
+[stdout]
+[stderr]
+Working copy  (@) now at: uzrpymuk 111b1a59 Base
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-9-xl5v4f2n/repo && jj bookmark create main -r @)
+[stdout]
+[stderr]
+Created 1 bookmarks pointing to uzrpymuk 111b1a59 main | Base
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-9-xl5v4f2n/repo && jj new main)
+[stdout]
+[stderr]
+Working copy  (@) now at: kqtllwys c4e4cce7 (empty) (no description set)
+Parent commit (@-)      : uzrpymuk 111b1a59 main | Base
+[exit 0]
+DECISION Simulated shell entry updates devenv.lock to stable version 2 before feature work.
+WRITE /tmp/gitman-wave2-old-b-9-xl5v4f2n/repo/devenv.lock (b'{"version":2}\n')
+$ (cd /tmp/gitman-wave2-old-b-9-xl5v4f2n/repo && jj status)
+[stdout]
+Working copy changes:
+M devenv.lock
+Working copy  (@) : kqtllwys 2ba6dcca (no description set)
+Parent commit (@-): uzrpymuk 111b1a59 main | Base
+[stderr]
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-9-xl5v4f2n/repo && jj diff -- devenv.lock)
+[stdout]
+Modified regular file devenv.lock:
+   1     : {"version":1}
+        1: {"version":2}
+[stderr]
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-9-xl5v4f2n/repo && jj describe -m 'Update devenv lock')
+[stdout]
+[stderr]
+Working copy  (@) now at: kqtllwys f7b70611 Update devenv lock
+Parent commit (@-)      : uzrpymuk 111b1a59 main | Base
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-9-xl5v4f2n/repo && jj new)
+[stdout]
+[stderr]
+Working copy  (@) now at: onpzktzn 6f3e9a71 (empty) (no description set)
+Parent commit (@-)      : kqtllwys f7b70611 Update devenv lock
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-9-xl5v4f2n/repo && jj bookmark set main -r @-)
+[stdout]
+[stderr]
+Moved 1 bookmarks to kqtllwys f7b70611 main* | Update devenv lock
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-9-xl5v4f2n/repo && jj status)
+[stdout]
+The working copy has no changes.
+Working copy  (@) : onpzktzn 6f3e9a71 (empty) (no description set)
+Parent commit (@-): kqtllwys f7b70611 main | Update devenv lock
+[stderr]
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-9-xl5v4f2n/repo && jj workspace list)
+[stdout]
+default: . onpzktzn 6f3e9a71 (empty) (no description set)
+[stderr]
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-9-xl5v4f2n/repo && jj log -r '(::working_copies() ~ ::trunk()) ~ empty()')
+[stdout]
+○  kqtllwys experiment@example.test 2026-10-11 17:56:58 main f7b70611
+│  Update devenv lock
+○  uzrpymuk experiment@example.test 2026-10-11 17:56:58 111b1a59
+│  Base
+~
+[stderr]
+[exit 0]
+DECISION Local main is the intended base. With no remote, trunk() resolved to root in the first run.
+$ (cd /tmp/gitman-wave2-old-b-9-xl5v4f2n/repo && gitman work feature --from main)
+[stdout]
+workspace: feature
+path: /tmp/gitman-wave2-old-b-9-xl5v4f2n/workspaces/feature
+base: f7b706114ffc9d45a5e0e0a966babc3e19902de3 (main)
+enter it with: cd /tmp/gitman-wave2-old-b-9-xl5v4f2n/workspaces/feature
+[stderr]
+[exit 0]
+WRITE /tmp/gitman-wave2-old-b-9-xl5v4f2n/workspaces/feature/feature.txt (b'feature\n')
+$ (cd /tmp/gitman-wave2-old-b-9-xl5v4f2n/workspaces/feature && jj status)
+[stdout]
+Working copy changes:
+A feature.txt
+Working copy  (@) : slsutxom 42ab2847 (no description set)
+Parent commit (@-): kqtllwys f7b70611 main | Update devenv lock
+[stderr]
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-9-xl5v4f2n/workspaces/feature && jj describe -m 'Add feature')
+[stdout]
+[stderr]
+Working copy  (@) now at: slsutxom 6bd609d2 Add feature
+Parent commit (@-)      : kqtllwys f7b70611 main | Update devenv lock
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-9-xl5v4f2n/workspaces/feature && jj new)
+[stdout]
+[stderr]
+Working copy  (@) now at: xtwwlntm a3592e69 (empty) (no description set)
+Parent commit (@-)      : slsutxom 6bd609d2 Add feature
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-9-xl5v4f2n/workspaces/feature && jj bookmark create feature -r @-)
+[stdout]
+[stderr]
+Created 1 bookmarks pointing to slsutxom 6bd609d2 feature | Add feature
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-9-xl5v4f2n/workspaces/feature && jj status)
+[stdout]
+The working copy has no changes.
+Working copy  (@) : xtwwlntm a3592e69 (empty) (no description set)
+Parent commit (@-): slsutxom 6bd609d2 feature | Add feature
+[stderr]
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-9-xl5v4f2n/workspaces/feature && python3 -c 'from pathlib import Path; assert Path('"'"'feature.txt'"'"').read_text() == '"'"'feature\n'"'"'')
+[stdout]
+[stderr]
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-9-xl5v4f2n/workspaces/feature && jj git fetch)
+[stdout]
+[stderr]
+Warning: No matching remotes for names: origin
+Error: No git remotes to fetch from
+[exit 1]
+$ (cd /tmp/gitman-wave2-old-b-9-xl5v4f2n/workspaces/feature && jj rebase -b @ -d main)
+[stdout]
+[stderr]
+Skipped rebase of 2 commits that were already in place.
+Nothing changed.
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-9-xl5v4f2n/workspaces/feature && jj bookmark set main -r feature)
+[stdout]
+[stderr]
+Moved 1 bookmarks to slsutxom 6bd609d2 feature main* | Add feature
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-9-xl5v4f2n/repo && jj new main)
+[stdout]
+[stderr]
+Working copy  (@) now at: soqrqwtv ba5371f5 (empty) (no description set)
+Parent commit (@-)      : slsutxom 6bd609d2 feature main | Add feature
+Added 1 files, modified 0 files, removed 0 files
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-9-xl5v4f2n/repo && jj log -r '(::feature@ ~ ::main) ~ empty()')
+[stdout]
+[stderr]
+[exit 0]
+DECISION Workspace directory files before removal: ['devenv.lock', 'feature.txt']
+$ (cd /tmp/gitman-wave2-old-b-9-xl5v4f2n/repo && jj workspace remove feature)
+[stdout]
+[stderr]
+Removed Git worktree for "/tmp/gitman-wave2-old-b-9-xl5v4f2n/workspaces/feature".
+Removed workspace directory "/tmp/gitman-wave2-old-b-9-xl5v4f2n/workspaces/feature".
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-9-xl5v4f2n/repo && jj workspace list)
+[stdout]
+default: . soqrqwtv ba5371f5 (empty) (no description set)
+[stderr]
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-9-xl5v4f2n/repo && jj log -r main::)
+[stdout]
+@  soqrqwtv experiment@example.test 2026-10-11 17:56:59 ba5371f5
+│  (empty) (no description set)
+○  slsutxom experiment@example.test 2026-10-11 17:56:58 feature main 6bd609d2
+│  Add feature
+~
+[stderr]
+[exit 0]

@@ -1,0 +1,65 @@
+
+================ divergent bookmark and push ================
+$ (cd /tmp/gitman-d-divergent-ops-wmixeh21/workspaces/task && jj bookmark create task -r @)
+Created 1 bookmarks pointing to znomrzmx/1 ad3f6006 task | (divergent) first variant
+[exit=0]
+$ (cd /tmp/gitman-d-divergent-ops-wmixeh21/workspaces/task && jj git push --bookmark task)
+Changes to push to origin:
+  bookmark: task [add to ad3f60067582]
+[exit=0]
+$ (cd /tmp/gitman-d-divergent-ops-wmixeh21/workspaces/task && jj log -r 'divergent()' --no-graph -T 'change_id.short() ++ " | " ++ commit_id.short() ++ " | " ++ description ++ "\n"')
+znomrzmxpszl | b176ef31c3c5 | alternate variant
+
+znomrzmxpszl | ad3f60067582 | first variant
+[exit=0]
+
+================ no remote with explicit trunk alias ================
+$ write /tmp/gitman-d-no-remote-alias-s1f91cab/jj.toml: '[user]\nname = "Test"\nemail = "test@example.com"\n'
+$ (cd /tmp/gitman-d-no-remote-alias-s1f91cab && jj git init --colocate /tmp/gitman-d-no-remote-alias-s1f91cab/main)
+Initialized repo in "main"
+[exit=0]
+$ write /tmp/gitman-d-no-remote-alias-s1f91cab/main/a.txt: 'base\n'
+$ (cd /tmp/gitman-d-no-remote-alias-s1f91cab/main && jj describe -m base)
+Working copy  (@) now at: tzkpwtol 2b0ee826 base
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+[exit=0]
+$ (cd /tmp/gitman-d-no-remote-alias-s1f91cab/main && jj bookmark create main -r @)
+Created 1 bookmarks pointing to tzkpwtol 2b0ee826 main | base
+[exit=0]
+$ (cd /tmp/gitman-d-no-remote-alias-s1f91cab/main && jj new main)
+Working copy  (@) now at: swwzuurr e4cc5eba (empty) (no description set)
+Parent commit (@-)      : tzkpwtol 2b0ee826 main | base
+[exit=0]
+# sandbox=/tmp/gitman-d-no-remote-alias-s1f91cab origin=None
+$ write /tmp/gitman-d-no-remote-alias-s1f91cab/jj.toml: '[user]\nname = "Test"\nemail = "test@example.com"\n[revset-aliases]\n"trunk()" = "main"\n'
+$ (cd /tmp/gitman-d-no-remote-alias-s1f91cab/main && jj log -r 'trunk()' --no-graph -T 'description ++ "\n"')
+base
+[exit=0]
+$ (cd /tmp/gitman-d-no-remote-alias-s1f91cab/main && gitman work task)
+workspace: task
+path: /tmp/gitman-d-no-remote-alias-s1f91cab/workspaces/task
+base: 2b0ee826657b37a6f3ade6e4b8906443fd06e405 (trunk())
+enter it with: cd /tmp/gitman-d-no-remote-alias-s1f91cab/workspaces/task
+[exit=0]
+$ write /tmp/gitman-d-no-remote-alias-s1f91cab/workspaces/task/feature.txt: 'feature\n'
+$ (cd /tmp/gitman-d-no-remote-alias-s1f91cab/workspaces/task && jj describe -m feature)
+Working copy  (@) now at: kkxwrusp ebf41ef8 feature
+Parent commit (@-)      : tzkpwtol 2b0ee826 main | base
+[exit=0]
+$ (cd /tmp/gitman-d-no-remote-alias-s1f91cab/workspaces/task && jj git fetch)
+Warning: No matching remotes for names: origin
+Error: No git remotes to fetch from
+[exit=1]
+$ (cd /tmp/gitman-d-no-remote-alias-s1f91cab/workspaces/task && jj rebase -b @ -d 'trunk()')
+Skipped rebase of 1 commits that were already in place.
+Nothing changed.
+[exit=0]
+$ (cd /tmp/gitman-d-no-remote-alias-s1f91cab/workspaces/task && jj bookmark set main -r @)
+Moved 1 bookmarks to kkxwrusp ebf41ef8 main* | feature
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: umlyylxv ceacd2a9 (empty) (no description set)
+Parent commit (@-)      : kkxwrusp ebf41ef8 main | feature
+[exit=0]
+$ (cd /tmp/gitman-d-no-remote-alias-s1f91cab/workspaces/task && jj log -r '(::task@ ~ ::trunk()) ~ empty()')
+
+[exit=0]

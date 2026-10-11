@@ -1,0 +1,115 @@
+DECISION: SCENARIO 3; sandbox /tmp/gitman-old-a-3-i68ealb7
+$ write /tmp/gitman-old-a-3-i68ealb7/jjconfig.toml '[user]\nname = "Test User"\nemail = "test@example.invalid"\n'
+[exit 0; output empty]
+$ (cd /tmp/gitman-old-a-3-i68ealb7 && jj git init --no-colocate /tmp/gitman-old-a-3-i68ealb7/origin)
+exit=0
+stdout:
+stderr:
+Initialized repo in "origin"
+
+$ (cd /tmp/gitman-old-a-3-i68ealb7 && jj git init --colocate /tmp/gitman-old-a-3-i68ealb7/main)
+exit=0
+stdout:
+stderr:
+Initialized repo in "main"
+
+$ write /tmp/gitman-old-a-3-i68ealb7/main/file.txt 'base\n'
+[exit 0; output empty]
+$ (cd /tmp/gitman-old-a-3-i68ealb7/main && jj status)
+exit=0
+stdout:
+Working copy changes:
+A file.txt
+Working copy  (@) : trlwzmwx 275776fc (no description set)
+Parent commit (@-): zzzzzzzz 00000000 (empty) (no description set)
+stderr:
+
+$ (cd /tmp/gitman-old-a-3-i68ealb7/main && jj describe -m Initial)
+exit=0
+stdout:
+stderr:
+Working copy  (@) now at: trlwzmwx 1dea1710 Initial
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+
+$ (cd /tmp/gitman-old-a-3-i68ealb7/main && jj bookmark create main -r @)
+exit=0
+stdout:
+stderr:
+Created 1 bookmarks pointing to trlwzmwx 1dea1710 main | Initial
+
+$ (cd /tmp/gitman-old-a-3-i68ealb7/main && jj git remote add origin /tmp/gitman-old-a-3-i68ealb7/origin/.jj/repo/store/git)
+exit=0
+stdout:
+stderr:
+
+$ (cd /tmp/gitman-old-a-3-i68ealb7/main && jj git push --bookmark main)
+exit=0
+stdout:
+stderr:
+Changes to push to origin:
+  bookmark: main [add to 1dea17103d1a]
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: yyrtkpkl 5aa217c2 (empty) (no description set)
+Parent commit (@-)      : trlwzmwx 1dea1710 main | Initial
+
+$ (cd /tmp/gitman-old-a-3-i68ealb7/main && jj new main)
+exit=0
+stdout:
+stderr:
+Working copy  (@) now at: syyvstwq 5c4ed44d (empty) (no description set)
+Parent commit (@-)      : trlwzmwx 1dea1710 main | Initial
+
+DECISION: Check workspaces and described work before opening another workspace.
+$ (cd /tmp/gitman-old-a-3-i68ealb7/main && jj workspace list)
+exit=0
+stdout:
+default: . syyvstwq 5c4ed44d (empty) (no description set)
+stderr:
+
+$ (cd /tmp/gitman-old-a-3-i68ealb7/main && jj log -r '(::working_copies() ~ ::trunk()) ~ empty()')
+exit=0
+stdout:
+stderr:
+
+DECISION: No unlanded work; open task workspace.
+$ (cd /tmp/gitman-old-a-3-i68ealb7/main && gitman work red)
+exit=0
+stdout:
+workspace: red
+path: /tmp/gitman-old-a-3-i68ealb7/workspaces/red
+base: 1dea17103d1a24c5162a88d31f07cd9cd6adc4fc (trunk())
+enter it with: cd /tmp/gitman-old-a-3-i68ealb7/workspaces/red
+stderr:
+
+$ write /tmp/gitman-old-a-3-i68ealb7/workspaces/red/feature.txt 'feature\n'
+[exit 0; output empty]
+$ (cd /tmp/gitman-old-a-3-i68ealb7/workspaces/red && jj status)
+exit=0
+stdout:
+Working copy changes:
+A feature.txt
+Working copy  (@) : urzyrrqr db5e1c98 (no description set)
+Parent commit (@-): trlwzmwx 1dea1710 main | Initial
+stderr:
+
+$ (cd /tmp/gitman-old-a-3-i68ealb7/workspaces/red && jj describe -m 'Add feature')
+exit=0
+stdout:
+stderr:
+Working copy  (@) now at: urzyrrqr 724b9d29 Add feature
+Parent commit (@-)      : trlwzmwx 1dea1710 main | Initial
+
+DECISION: Verify task content before integration.
+$ (cd /tmp/gitman-old-a-3-i68ealb7/workspaces/red && bash -c 'test -f missing-required.txt')
+exit=1
+stdout:
+stderr:
+
+DECISION: Verify failed with exit 1. Stop before fetch, rebase, bookmark move, or push. Report red workspace path and no bookmark; ask user for direction.
+$ (cd /tmp/gitman-old-a-3-i68ealb7/main && jj workspace list)
+exit=0
+stdout:
+default: . syyvstwq 5c4ed44d (empty) (no description set)
+red: ../workspaces/red urzyrrqr 724b9d29 Add feature
+stderr:
+

@@ -1,0 +1,170 @@
++ wc -l /home/andrew/.config/devman/skills/gitman/SKILL.md
+101 /home/andrew/.config/devman/skills/gitman/SKILL.md
++ sha256sum /home/andrew/.config/devman/skills/gitman/SKILL.md
+c7a5396d2aadb3e9fd290d9e5c36e54387efeb4a57124019b63113e0a52e359b  /home/andrew/.config/devman/skills/gitman/SKILL.md
++ realpath /home/andrew/.config/devman/skills/gitman/SKILL.md
+/home/andrew/.config/devman/skills/gitman/SKILL.md
++ nl -ba /home/andrew/.config/devman/skills/gitman/SKILL.md
+     1	---
+     2	name: gitman
+     3	description: Open jj workspaces with `gitman work`, and land every workspace back on main. Use native jj and `gh` for all other version control.
+     4	---
+     5	
+     6	# Gitman — workspace paths
+     7	
+     8	Read the repository's `AGENTS.md` for its version control rules. It wins when this
+     9	skill disagrees. Run project commands inside the repository's devenv shell.
+    10	
+    11	**The goal of every workspace is to land on `main`.** A workspace is temporary. Work is done
+    12	only when it is on `main`, pushed when the repository has a remote, visible in the main checkout,
+    13	and the workspace is removed. Never leave work in a workspace where nobody sees it.
+    14	
+    15	Gitman has one command. Do not run `gitman status`, `gitman land` or any other v1
+    16	verb. They no longer exist.
+    17	
+    18	```sh
+    19	gitman work NAME [--from REVSET] [--path DIRECTORY]
+    20	```
+    21	
+    22	The default path is `$GITMAN_WORKSPACE_ROOT/NAME`. Set the same absolute root in
+    23	every workspace. The default base is `trunk()`. Use `--from` to select exactly one
+    24	other revision. Use `--path` when the root does not fit. Gitman refuses an occupied
+    25	path and an existing workspace name. It creates no bookmark. It does not change your
+    26	directory. It stores no state.
+    27	
+    28	Gitman needs jj 0.46.0 or later and a colocated Git-backed repository. Its advisory
+    29	lock coordinates `gitman work` callers only. Native jj writers do not take it.
+    30	
+    31	## Shell entry and lock files
+    32	
+    33	Entering a devenv shell can change the tracked `devenv.lock` or `uv.lock`. After you
+    34	enter the shell, run `jj status`. Review any lock change. If the change is stable,
+    35	save it as its own change before unrelated work. When you change `devenv.yaml` or
+    36	`pyproject.toml`, put the new lock file in the same change.
+    37	
+    38	## Before you open a workspace
+    39	
+    40	List the workspaces and any work in them that `main` does not hold:
+    41	
+    42	```sh
+    43	jj workspace list
+    44	jj log -r '(::working_copies() ~ ::trunk()) ~ empty()'
+    45	```
+    46	
+    47	Report each result to the user. Land it, or ask what to do with it. Do not open a second
+    48	workspace for work that already has one.
+    49	
+    50	## Lifecycle with native jj
+    51	
+    52	The `repoman` skill owns the lifecycle order. This skill only gives the commands.
+    53	
+    54	| Step | Command |
+    55	|---|---|
+    56	| Status | `jj status` (it snapshots the working copy) |
+    57	| Describe | `jj describe -m "message"` |
+    58	| Bookmark | `jj bookmark create NAME -r @-` |
+    59	| Sync | `jj git fetch`, then `jj rebase -b @ -d 'trunk()'` |
+    60	| Push | `jj git push --bookmark NAME` |
+    61	| Pull request | `gh pr create` |
+    62	| Merge | `gh pr merge` |
+    63	| Undo | `jj undo` |
+    64	| List workspaces | `jj workspace list` |
+    65	| Remove a workspace | `jj workspace remove NAME` |
+    66	| Keep files, drop registration | `jj workspace forget NAME` |
+    67	
+    68	Use `jj rebase -b @`, not `jj rebase -r @-`. The `-r` form moves only that change and leaves
+    69	the working copy on the old base.
+    70	
+    71	Two laws:
+    72	
+    73	1. Verify before you integrate.
+    74	2. Never integrate on red.
+    75	
+    76	Create a bookmark before you push. A workspace name is not a bookmark.
+    77	
+    78	## Land a workspace on main
+    79	
+    80	Do every step. A workspace that stops before step 6 is unfinished work.
+    81	
+    82	1. Verify the change. It must be green.
+    83	2. `jj git fetch`, then `jj rebase -b @ -d 'trunk()'`. If the tree changed, verify again.
+    84	3. Move `main` to the change: `jj bookmark set main -r <change>`. Use a pull request instead
+    85	   when the repository requires one.
+    86	4. Push: `jj git push --bookmark main`, when the repository has a remote.
+    87	5. Update the main checkout: in the default workspace, run `jj new main` when its working copy
+    88	   is empty. If it holds other work, do not touch it; tell the user.
+    89	6. Remove the workspace (see below).
+    90	
+    91	Stop and ask the user before step 3 when verify fails or was skipped, when a conflict appears,
+    92	when the change touches secrets, CI, or release branches, or when the user wants to review it.
+    93	Then report the workspace path, its bookmark, and the reason it did not land. Never end a
+    94	session with work in a workspace that the user does not know about.
+    95	
+    96	## Remove a workspace
+    97	
+    98	`jj workspace remove NAME` deletes the workspace and its directory. Inspect the
+    99	directory first, including ignored and untracked files. Gitman does not scan or warn
+   100	before removal. Check that the work is on `main` first:
+   101	`jj log -r '(::NAME@ ~ ::trunk()) ~ empty()'` must print nothing.
++ awk 'length($0)>100 {print NR ":" length($0) ":" $0}' /home/andrew/.config/devman/skills/gitman/SKILL.md
+3:144:description: Open jj workspaces with `gitman work`, and land every workspace back on main. Use native jj and `gh` for all other version control.
++ nl -ba /home/andrew/.config/devman/projects/gitman/agents/skills/writing/SKILL.md
+     1	---
+     2	name: writing
+     3	description: The user's Simplified Technical English writing rules — one word per meaning, active voice, short sentences. Read this before writing docs, skills, code comments, docstrings, commit messages, CLI help, error text, or replies to the user.
+     4	auto_trigger:
+     5	  keywords: ["writing style", "simplified technical english", "STE", "ASD-STE100", "how should I write this"]
+     6	---
+     7	
+     8	# writing — Simplified Technical English style
+     9	
+    10	This skill holds the user's standing writing rules. A repository can select it
+    11	without carrying unrelated user configuration.
+    12	
+    13	Everything you write follows **Simplified Technical English
+    14	([ASD-STE100](https://www.asd-ste100.org/)) style** as closely as the context
+    15	allows. This covers docs, skills, code comments, docstrings, commit messages,
+    16	CLI help, error text, and replies to the user.
+    17	
+    18	- **One idea per sentence.** Keep sentences short: 20 words or fewer for
+    19	  descriptive text, 25 for procedures.
+    20	- **One paragraph per topic**, six sentences or fewer.
+    21	- **Use the active voice.** Name the actor: "the parser reads the marker", not
+    22	  "the marker is read".
+    23	- **Use one word for one meaning.** Pick a term and keep it. Never swap in a
+    24	  synonym for variety — a repo's domain terms are fixed vocabulary.
+    25	- **Use the imperative for instructions.** "Run the suite." Not "You should
+    26	  probably run the suite."
+    27	- **Say what to do, not only what not to do.**
+    28	- **Drop filler.** No "simply", "just", "of course", "as you know", "note
+    29	  that", or hedging that adds no information.
+    30	- **Spell out an abbreviation on first use** in each document.
+    31	- **No slang, no idioms, no metaphors** where a plain term works.
+    32	
+    33	Where STE and clarity conflict, choose clarity. Where STE and an established
+    34	domain term conflict, keep the domain term.
++ sed -n 88,105p .scratch/projects/69-gitman-skill-investigation/KICKOFF_PROMPT.md
+5. **Quality.** Is the text short, unambiguous and in Simplified Technical English? Is the
+   frontmatter `description` precise enough to trigger the skill at the right time and not
+   at the wrong time? Is it within the length budget? Does any sentence tell the agent
+   what not to do without saying what to do?
+6. **Leftovers.** Which files in the pool, the linked projects, the workflows and the
+   `common/` config still mention a retired v1 verb, `gitman-v2`, or the old lane model?
+7. **Real-world failure modes.** What went wrong in past sessions that used these skills?
+
+## Wave 1 — investigation (launch together, all in the background)
+
+Launch these as parallel Sonnet subagents. Adjust the split if the first reads show a
+better one, but keep each brief focused.
+
+| Id | Subagent job |
+|---|---|
+| A-inventory | Inventory every mention of gitman across the pool: skills, `projects/*/agents`, workflows, `common/`, router files. Classify each as current, stale v1, or ambiguous. Map which projects link which gitman skill. Report broken or missing links. |
+| B-text-audit | Audit `skills/gitman/SKILL.md` line by line against the Simplified Technical English rules and the length budget. Check the frontmatter. List ambiguous, redundant, missing and over-long passages with line numbers. Propose no rewrite yet. |
+| C-command-verify | In a sandbox with a bare `origin`, run every command in the skill, in the documented order. Record exact output and exit codes. Report each command as works, works with a caveat, or fails. Include the removal check. |
++ python -
+lines 12-13: 33 words: only when it is on `main`, pushed when the repository has a remote, visible in the main checkout, and the workspace is removed. Never leave work in a workspace where nobody sees it.
+lines 91-92: 35 words: Stop and ask the user before step 3 when verify fails or was skipped, when a conflict appears, when the change touches secrets, CI, or release branches, or when the user wants to review it.
++ python -
+26 Work is done only when it is on `main`, pushed when the repository has a remote, visible in the main checkout, and the workspace is removed.
+35 Stop and ask the user before step 3 when verify fails or was skipped, when a conflict appears, when the change touches secrets, CI, or release branches, or when the user wants to review it.

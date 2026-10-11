@@ -1,0 +1,144 @@
+DECISION SANDBOX /tmp/gitman-wave2-old-b-8-8u17ljeo
+DECISION ENV JJ_CONFIG=/tmp/gitman-wave2-old-b-8-8u17ljeo/jjconfig.toml XDG_CONFIG_HOME=/tmp/gitman-wave2-old-b-8-8u17ljeo/xdg GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null GIT_CONFIG_NOSYSTEM=1 GITMAN_WORKSPACE_ROOT=/tmp/gitman-wave2-old-b-8-8u17ljeo/workspaces
+DECISION User says 'use gitman land and gitman status'. Skill and AGENTS.md define only gitman work; use native jj lifecycle commands.
+$ (cd /tmp/gitman-wave2-old-b-8-8u17ljeo && jj git init --colocate /tmp/gitman-wave2-old-b-8-8u17ljeo/repo)
+[stdout]
+[stderr]
+Initialized repo in "repo"
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-8-8u17ljeo/repo && jj config list user.name)
+[stdout]
+user.name = "Experiment User"
+[stderr]
+[exit 0]
+WRITE /tmp/gitman-wave2-old-b-8-8u17ljeo/repo/line.txt (b'base\n')
+$ (cd /tmp/gitman-wave2-old-b-8-8u17ljeo/repo && jj status)
+[stdout]
+Working copy changes:
+A line.txt
+Working copy  (@) : qnxzyzwx d6285436 (no description set)
+Parent commit (@-): zzzzzzzz 00000000 (empty) (no description set)
+[stderr]
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-8-8u17ljeo/repo && jj describe -m Base)
+[stdout]
+[stderr]
+Working copy  (@) now at: qnxzyzwx 1b5ef263 Base
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-8-8u17ljeo/repo && jj bookmark create main -r @)
+[stdout]
+[stderr]
+Created 1 bookmarks pointing to qnxzyzwx 1b5ef263 main | Base
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-8-8u17ljeo/repo && jj new main)
+[stdout]
+[stderr]
+Working copy  (@) now at: ursvzukn e6cdd60b (empty) (no description set)
+Parent commit (@-)      : qnxzyzwx 1b5ef263 main | Base
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-8-8u17ljeo/repo && jj workspace list)
+[stdout]
+default: . ursvzukn e6cdd60b (empty) (no description set)
+[stderr]
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-8-8u17ljeo/repo && jj log -r '(::working_copies() ~ ::trunk()) ~ empty()')
+[stdout]
+○  qnxzyzwx experiment@example.test 2026-10-11 17:56:57 main 1b5ef263
+│  Base
+~
+[stderr]
+[exit 0]
+DECISION Local main is the intended base. With no remote, trunk() resolved to root in the first run.
+$ (cd /tmp/gitman-wave2-old-b-8-8u17ljeo/repo && gitman work feature --from main)
+[stdout]
+workspace: feature
+path: /tmp/gitman-wave2-old-b-8-8u17ljeo/workspaces/feature
+base: 1b5ef263f6a8ded5df483ab69644437a705964e9 (main)
+enter it with: cd /tmp/gitman-wave2-old-b-8-8u17ljeo/workspaces/feature
+[stderr]
+[exit 0]
+WRITE /tmp/gitman-wave2-old-b-8-8u17ljeo/workspaces/feature/feature.txt (b'feature\n')
+$ (cd /tmp/gitman-wave2-old-b-8-8u17ljeo/workspaces/feature && jj status)
+[stdout]
+Working copy changes:
+A feature.txt
+Working copy  (@) : rvqvxnvk 52cc7d10 (no description set)
+Parent commit (@-): qnxzyzwx 1b5ef263 main | Base
+[stderr]
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-8-8u17ljeo/workspaces/feature && jj describe -m 'Add feature')
+[stdout]
+[stderr]
+Working copy  (@) now at: rvqvxnvk 30dd9445 Add feature
+Parent commit (@-)      : qnxzyzwx 1b5ef263 main | Base
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-8-8u17ljeo/workspaces/feature && jj new)
+[stdout]
+[stderr]
+Working copy  (@) now at: osxvptvx c6455e49 (empty) (no description set)
+Parent commit (@-)      : rvqvxnvk 30dd9445 Add feature
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-8-8u17ljeo/workspaces/feature && jj bookmark create feature -r @-)
+[stdout]
+[stderr]
+Created 1 bookmarks pointing to rvqvxnvk 30dd9445 feature | Add feature
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-8-8u17ljeo/workspaces/feature && jj status)
+[stdout]
+The working copy has no changes.
+Working copy  (@) : osxvptvx c6455e49 (empty) (no description set)
+Parent commit (@-): rvqvxnvk 30dd9445 feature | Add feature
+[stderr]
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-8-8u17ljeo/workspaces/feature && python3 -c 'from pathlib import Path; assert Path('"'"'feature.txt'"'"').read_text() == '"'"'feature\n'"'"'')
+[stdout]
+[stderr]
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-8-8u17ljeo/workspaces/feature && jj git fetch)
+[stdout]
+[stderr]
+Warning: No matching remotes for names: origin
+Error: No git remotes to fetch from
+[exit 1]
+$ (cd /tmp/gitman-wave2-old-b-8-8u17ljeo/workspaces/feature && jj rebase -b @ -d main)
+[stdout]
+[stderr]
+Skipped rebase of 2 commits that were already in place.
+Nothing changed.
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-8-8u17ljeo/workspaces/feature && jj bookmark set main -r feature)
+[stdout]
+[stderr]
+Moved 1 bookmarks to rvqvxnvk 30dd9445 feature main* | Add feature
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-8-8u17ljeo/repo && jj new main)
+[stdout]
+[stderr]
+Working copy  (@) now at: zonxqtyn 4e2e636a (empty) (no description set)
+Parent commit (@-)      : rvqvxnvk 30dd9445 feature main | Add feature
+Added 1 files, modified 0 files, removed 0 files
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-8-8u17ljeo/repo && jj log -r '(::feature@ ~ ::main) ~ empty()')
+[stdout]
+[stderr]
+[exit 0]
+DECISION Workspace directory files before removal: ['feature.txt', 'line.txt']
+$ (cd /tmp/gitman-wave2-old-b-8-8u17ljeo/repo && jj workspace remove feature)
+[stdout]
+[stderr]
+Removed Git worktree for "/tmp/gitman-wave2-old-b-8-8u17ljeo/workspaces/feature".
+Removed workspace directory "/tmp/gitman-wave2-old-b-8-8u17ljeo/workspaces/feature".
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-8-8u17ljeo/repo && jj workspace list)
+[stdout]
+default: . zonxqtyn 4e2e636a (empty) (no description set)
+[stderr]
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-8-8u17ljeo/repo && jj log -r main)
+[stdout]
+○  rvqvxnvk experiment@example.test 2026-10-11 17:56:57 feature main 30dd9445
+│  Add feature
+~
+[stderr]
+[exit 0]

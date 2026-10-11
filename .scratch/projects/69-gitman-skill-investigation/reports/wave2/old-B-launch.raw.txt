@@ -1,0 +1,81 @@
+$ (cd /home/andrew/Documents/Projects/gitman && devenv shell -- bash -c 'jj --version; gitman --help')
+[combined output]
+• Running devenv:python:uv
+• Running gitman:lint
+• Running devenv:files:cleanup
+• Running gitman:test
+✓ Running devenv:files:cleanup in 20.5ms
+✓ Running gitman:lint in 31.0ms
+✓ Running devenv:python:uv in 78.7ms
+• Running devenv:enterShell
+✓ Running devenv:enterShell in 24.1ms
+✓ Running gitman:test in 17.1s
+• Running devenv:enterTest
+✓ Running devenv:enterTest in 1.54µs (no command)
+ok      gitman:.agents  /home/andrew/Documents/Projects/gitman/.agents
+ok      gitman:.claude/skills  /home/andrew/Documents/Projects/gitman/.claude/skills
+ok      gitman:.envrc  /home/andrew/Documents/Projects/gitman/.envrc
+ok      gitman:.loci  /home/andrew/Documents/Projects/gitman/.loci
+ok      gitman:devenv.local.nix  /home/andrew/Documents/Projects/gitman/devenv.local.nix
+jj 0.46.0-7d382314f9420b4b8d932245b49c99492c812b9f
+usage: gitman [-h] {work} ...
+
+Open isolated jj workspaces at stable paths.
+
+positional arguments:
+  {work}
+    work      create a workspace at a stable path
+
+options:
+  -h, --help  show this help message and exit
+[exit 0]
+
+$ (cd /home/andrew/Documents/Projects/gitman && devenv shell -- bash -c 'python3 .scratch/projects/69-gitman-skill-investigation/reports/wave2/old-B-runner.py')
+[combined output]
+• Running gitman:lint
+• Running devenv:python:uv
+• Running devenv:files:cleanup
+• Running gitman:test
+✓ Running devenv:files:cleanup in 31.2ms
+✓ Running gitman:lint in 33.0ms
+✓ Running devenv:python:uv in 58.4ms
+• Running devenv:enterShell
+✓ Running devenv:enterShell in 11.5ms
+✓ Running gitman:test in 10.1s
+• Running devenv:enterTest
+✓ Running devenv:enterTest in 2.29µs (no command)
+ok      gitman:.agents  /home/andrew/Documents/Projects/gitman/.agents
+ok      gitman:.claude/skills  /home/andrew/Documents/Projects/gitman/.claude/skills
+ok      gitman:.envrc  /home/andrew/Documents/Projects/gitman/.envrc
+ok      gitman:.loci  /home/andrew/Documents/Projects/gitman/.loci
+ok      gitman:devenv.local.nix  /home/andrew/Documents/Projects/gitman/devenv.local.nix
+Scenario 4: /tmp/gitman-wave2-old-b-4-sxph6h66
+Scenario 5: /tmp/gitman-wave2-old-b-5-iqk9ieii
+Scenario 6: /tmp/gitman-wave2-old-b-6-gy1tohr7
+Scenario 7: /tmp/gitman-wave2-old-b-7-3rkz2ee3
+Scenario 8: /tmp/gitman-wave2-old-b-8-5hst7579
+Scenario 9: /tmp/gitman-wave2-old-b-9-72r7gvvl
+[exit 0]
+
+$ (cd /home/andrew/Documents/Projects/gitman && devenv shell -- bash -c 'python3 .scratch/projects/69-gitman-skill-investigation/reports/wave2/old-B-recovery.py')
+[combined output]
+• Running devenv:python:uv
+• Running devenv:files:cleanup
+• Running gitman:test
+• Running gitman:lint
+✓ Running devenv:files:cleanup in 24.4ms
+✓ Running gitman:lint in 37.6ms
+✓ Running devenv:python:uv in 90.4ms
+• Running devenv:enterShell
+✓ Running devenv:enterShell in 18.2ms
+✓ Running gitman:test in 11.6s
+• Running devenv:enterTest
+✓ Running devenv:enterTest in 9.11µs (no command)
+ok      gitman:.agents  /home/andrew/Documents/Projects/gitman/.agents
+ok      gitman:.claude/skills  /home/andrew/Documents/Projects/gitman/.claude/skills
+ok      gitman:.envrc  /home/andrew/Documents/Projects/gitman/.envrc
+ok      gitman:devenv.local.nix  /home/andrew/Documents/Projects/gitman/devenv.local.nix
+Scenario 5: /tmp/gitman-wave2-old-b-5-giwxtnlp
+Scenario 8: /tmp/gitman-wave2-old-b-8-8u17ljeo
+Scenario 9: /tmp/gitman-wave2-old-b-9-xl5v4f2n
+[exit 0]

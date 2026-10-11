@@ -1,0 +1,148 @@
+$ mktemp -d /tmp/gitman-old-C-8.XXXXXX
+/tmp/gitman-old-C-8.1S953q
+[exit 0]
+$ mkdir "$sandbox/repo"
+[exit 0]
+$ cat > "$sandbox/jjconfig.toml" <<'EOF'
+user.name = "Scenario User"
+user.email = "scenario@example.invalid"
+EOF
+[exit 0]
+$ export JJ_CONFIG="$sandbox/jjconfig.toml" GIT_CONFIG_GLOBAL=/dev/null GITMAN_WORKSPACE_ROOT="$sandbox/workspaces"
+[exit 0]
+
+$ jj git init --colocate .
+Initialized repo in "."
+[exit 0]
+
+$ printf 'base\n' > README.md
+[exit 0]
+
+$ jj status
+Working copy changes:
+A README.md
+Working copy  (@) : txlrnsyk 5654dff3 (no description set)
+Parent commit (@-): zzzzzzzz 00000000 (empty) (no description set)
+[exit 0]
+
+$ jj describe -m 'Initialize scenario'
+Working copy  (@) now at: txlrnsyk 0f02f738 Initialize scenario
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+[exit 0]
+
+$ jj bookmark create main -r @
+Created 1 bookmarks pointing to txlrnsyk 0f02f738 main | Initialize scenario
+[exit 0]
+
+$ jj new main
+Working copy  (@) now at: mtlpmkzt d6b8dad3 (empty) (no description set)
+Parent commit (@-)      : txlrnsyk 0f02f738 main | Initialize scenario
+[exit 0]
+
+$ jj git init --no-colocate ../origin
+Initialized repo in "../origin"
+[exit 0]
+
+$ jj git remote add origin ../origin/.jj/repo/store/git
+[exit 0]
+
+$ jj git push --bookmark main
+Changes to push to origin:
+  bookmark: main [add to 0f02f7381670]
+[exit 0]
+
+$ jj git fetch
+Nothing changed.
+[exit 0]
+
+$ jj workspace list
+default: . mtlpmkzt d6b8dad3 (empty) (no description set)
+[exit 0]
+
+$ jj log -r '(::working_copies() ~ ::trunk()) ~ empty()'
+[exit 0]
+
+$ gitman work retired_request
+workspace: retired_request
+path: /tmp/gitman-old-C-8.1S953q/workspaces/retired_request
+base: 0f02f7381670ad3e93b8c89b0973deb177a12b58 (trunk())
+enter it with: cd /tmp/gitman-old-C-8.1S953q/workspaces/retired_request
+[exit 0]
+
+$ cd ../workspaces/retired_request && printf 'ready\n' > feature.txt
+[exit 0]
+
+$ cd ../workspaces/retired_request && jj status
+Working copy changes:
+A feature.txt
+Working copy  (@) : tsrqrlpp eaac19e9 (no description set)
+Parent commit (@-): txlrnsyk 0f02f738 main | Initialize scenario
+[exit 0]
+
+$ cd ../workspaces/retired_request && jj describe -m 'Add feature for retired command request'
+Working copy  (@) now at: tsrqrlpp 1486bb01 Add feature for retired command request
+Parent commit (@-)      : txlrnsyk 0f02f738 main | Initialize scenario
+[exit 0]
+
+$ cd ../workspaces/retired_request && test -f feature.txt
+[exit 0]
+
+$ cd ../workspaces/retired_request && jj git fetch
+Nothing changed.
+[exit 0]
+
+$ cd ../workspaces/retired_request && jj rebase -b @ -d 'trunk()'
+Skipped rebase of 1 commits that were already in place.
+Nothing changed.
+[exit 0]
+
+$ cd ../workspaces/retired_request && jj bookmark create retired_request -r @
+Created 1 bookmarks pointing to tsrqrlpp 1486bb01 retired_request | Add feature for retired command request
+[exit 0]
+
+$ cd ../workspaces/retired_request && jj bookmark set main -r @
+Moved 1 bookmarks to tsrqrlpp 1486bb01 main* retired_request | Add feature for retired command request
+[exit 0]
+
+$ cd ../workspaces/retired_request && jj git push --bookmark main
+Changes to push to origin:
+  bookmark: main [move forward from 0f02f7381670 to 1486bb01a13e]
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: txxkvkrt 747f69a1 (empty) (no description set)
+Parent commit (@-)      : tsrqrlpp 1486bb01 main retired_request | Add feature for retired command request
+[exit 0]
+
+$ jj status
+The working copy has no changes.
+Working copy  (@) : mtlpmkzt d6b8dad3 (empty) (no description set)
+Parent commit (@-): txlrnsyk 0f02f738 Initialize scenario
+[exit 0]
+
+$ jj new main
+Working copy  (@) now at: skolnntz e44112a5 (empty) (no description set)
+Parent commit (@-)      : tsrqrlpp 1486bb01 main retired_request | Add feature for retired command request
+Added 1 files, modified 0 files, removed 0 files
+[exit 0]
+
+$ jj log -r '(::retired_request@ ~ ::trunk()) ~ empty()'
+[exit 0]
+
+$ find ../workspaces/retired_request -maxdepth 2 -print
+../workspaces/retired_request
+../workspaces/retired_request/.git
+../workspaces/retired_request/.jj
+../workspaces/retired_request/.jj/repo
+../workspaces/retired_request/.jj/working_copy
+../workspaces/retired_request/.jj/.gitignore
+../workspaces/retired_request/README.md
+../workspaces/retired_request/feature.txt
+[exit 0]
+
+$ jj workspace remove retired_request
+Removed Git worktree for "/tmp/gitman-old-C-8.1S953q/workspaces/retired_request".
+Removed workspace directory "/tmp/gitman-old-C-8.1S953q/workspaces/retired_request".
+[exit 0]
+
+$ jj workspace list
+default: . skolnntz e44112a5 (empty) (no description set)
+[exit 0]

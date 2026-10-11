@@ -1,0 +1,132 @@
+• Running gitman:test
+• Running devenv:python:uv
+• Running devenv:files:cleanup
+• Running gitman:lint
+✓ Running devenv:files:cleanup in 37.9ms
+✓ Running gitman:lint in 48.3ms
+✓ Running devenv:python:uv in 70.5ms
+• Running devenv:enterShell
+✓ Running devenv:enterShell in 21.7ms
+✓ Running gitman:test in 15.3s
+• Running devenv:enterTest
+✓ Running devenv:enterTest in 2.45µs (no command)
+ok      gitman:.agents  /home/andrew/Documents/Projects/gitman/.agents
+ok      gitman:.claude/skills  /home/andrew/Documents/Projects/gitman/.claude/skills
+ok      gitman:.envrc  /home/andrew/Documents/Projects/gitman/.envrc
+ok      gitman:.loci  /home/andrew/Documents/Projects/gitman/.loci
+ok      gitman:devenv.local.nix  /home/andrew/Documents/Projects/gitman/devenv.local.nix
+$ mktemp -d -t gitman-wave3-retest-D.XXXXXXXX
+/tmp/gitman-wave3-retest-D.McwTYs0r
+[exit=0]
+$ write /tmp/gitman-wave3-retest-D.McwTYs0r/jj.toml: '[user]\nname = "Test"\nemail = "test@example.com"\n'
+Decision: Use a local bare origin and one colocated main checkout.
+$ (cd /tmp/gitman-wave3-retest-D.McwTYs0r && jj --version)
+jj 0.46.0-7d382314f9420b4b8d932245b49c99492c812b9f
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.McwTYs0r && jj git init --colocate /tmp/gitman-wave3-retest-D.McwTYs0r/main)
+Initialized repo in "main"
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.McwTYs0r && jj git init --no-colocate /tmp/gitman-wave3-retest-D.McwTYs0r/origin-holder)
+Initialized repo in "origin-holder"
+[exit=0]
+$ write /tmp/gitman-wave3-retest-D.McwTYs0r/main/src/__init__.py: ''
+$ write /tmp/gitman-wave3-retest-D.McwTYs0r/main/src/feature.py: 'def value() -> str:\n    return "base"\n'
+$ write /tmp/gitman-wave3-retest-D.McwTYs0r/main/tests/test_feature.py: 'from src.feature import value\n\n\ndef test_value() -> None:\n    assert value() == "base"\n'
+$ (cd /tmp/gitman-wave3-retest-D.McwTYs0r/main && jj status)
+Working copy changes:
+A src/__init__.py
+A src/feature.py
+A tests/test_feature.py
+Working copy  (@) : mrynwnmz 681cecd8 (no description set)
+Parent commit (@-): zzzzzzzz 00000000 (empty) (no description set)
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.McwTYs0r/main && jj describe -m 'Base project')
+Working copy  (@) now at: mrynwnmz e7f7e2a9 Base project
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.McwTYs0r/main && jj bookmark create main -r @)
+Created 1 bookmarks pointing to mrynwnmz e7f7e2a9 main | Base project
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.McwTYs0r/main && jj git remote add origin /tmp/gitman-wave3-retest-D.McwTYs0r/origin-holder/.jj/repo/store/git)
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.McwTYs0r/main && jj git push --bookmark main)
+Changes to push to origin:
+  bookmark: main [add to e7f7e2a9ce48]
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: osxrluvn e5e00f32 (empty) (no description set)
+Parent commit (@-)      : mrynwnmz e7f7e2a9 main | Base project
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.McwTYs0r/main && jj new main)
+Working copy  (@) now at: nxxpzuzw 6754e799 (empty) (no description set)
+Parent commit (@-)      : mrynwnmz e7f7e2a9 main | Base project
+[exit=0]
+Decision: Check workspaces and compare trunk() with the landing bookmark before opening task.
+$ (cd /tmp/gitman-wave3-retest-D.McwTYs0r/main && jj status)
+The working copy has no changes.
+Working copy  (@) : nxxpzuzw 6754e799 (empty) (no description set)
+Parent commit (@-): mrynwnmz e7f7e2a9 main | Base project
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.McwTYs0r/main && jj workspace list)
+default: . nxxpzuzw 6754e799 (empty) (no description set)
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.McwTYs0r/main && jj log -r '(::working_copies() ~ ::main) ~ empty()')
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.McwTYs0r/main && jj bookmark list)
+main: mrynwnmz e7f7e2a9 Base project
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.McwTYs0r/main && jj log -r 'trunk()' --no-graph -T 'commit_id ++ " " ++ description ++ "\n"')
+e7f7e2a9ce481572308c67652e524d4dbbd5294e Base project
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.McwTYs0r/main && jj log -r main --no-graph -T 'commit_id ++ " " ++ description ++ "\n"')
+e7f7e2a9ce481572308c67652e524d4dbbd5294e Base project
+[exit=0]
+Decision: trunk() and main match. Confirm command directory before gitman work.
+$ (cd /tmp/gitman-wave3-retest-D.McwTYs0r/main && pwd)
+/tmp/gitman-wave3-retest-D.McwTYs0r/main
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.McwTYs0r/main && jj root)
+/tmp/gitman-wave3-retest-D.McwTYs0r/main
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.McwTYs0r/main && gitman work task)
+workspace: task
+path: /tmp/gitman-wave3-retest-D.McwTYs0r/workspaces/task
+base: e7f7e2a9ce481572308c67652e524d4dbbd5294e (trunk())
+enter it with: cd /tmp/gitman-wave3-retest-D.McwTYs0r/workspaces/task
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.McwTYs0r/workspaces/task && pwd)
+/tmp/gitman-wave3-retest-D.McwTYs0r/workspaces/task
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.McwTYs0r/workspaces/task && jj root)
+/tmp/gitman-wave3-retest-D.McwTYs0r/workspaces/task
+[exit=0]
+Decision: Implement and verify a small feature in task.
+$ write /tmp/gitman-wave3-retest-D.McwTYs0r/workspaces/task/src/feature.py: 'def value() -> str:\n    return "new"\n'
+$ write /tmp/gitman-wave3-retest-D.McwTYs0r/workspaces/task/tests/test_feature.py: 'from src.feature import value\n\n\ndef test_value() -> None:\n    assert value() == "new"\n'
+$ (cd /tmp/gitman-wave3-retest-D.McwTYs0r/workspaces/task && ruff check src tests)
+All checks passed!
+[exit=0]
+$ (cd /tmp/gitman-wave3-retest-D.McwTYs0r/workspaces/task && pytest -q)
+
+==================================== ERRORS ====================================
+____________________ ERROR collecting tests/test_feature.py ____________________
+ImportError while importing test module '/tmp/gitman-wave3-retest-D.McwTYs0r/workspaces/task/tests/test_feature.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/nix/store/9bf85ing326fpy3yvd1sa8jv892ma8wv-python3-3.13.14-env/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_feature.py:1: in <module>
+    from src.feature import value
+E   ModuleNotFoundError: No module named 'src'
+=========================== short test summary info ============================
+ERROR tests/test_feature.py
+!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+1 error in 0.09s
+[exit=2]
+Traceback (most recent call last):
+  File "/tmp/gitman-wave3-retest-d.py", line 76, in <module>
+    run(['pytest','-q'],task,env)
+    ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/gitman-wave3-retest-d.py", line 22, in run
+    raise RuntimeError(f'command failed: {args}')
+RuntimeError: command failed: ['pytest', '-q']

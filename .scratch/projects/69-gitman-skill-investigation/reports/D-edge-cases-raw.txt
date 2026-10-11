@@ -1,0 +1,619 @@
+
+================ no remote ================
+$ write /tmp/gitman-d-no-remote-5tep8hg8/jj.toml: '[user]\nname = "Test"\nemail = "test@example.com"\n'
+$ (cd /tmp/gitman-d-no-remote-5tep8hg8 && jj git init --colocate /tmp/gitman-d-no-remote-5tep8hg8/main)
+Initialized repo in "main"
+[exit=0]
+$ write /tmp/gitman-d-no-remote-5tep8hg8/main/a.txt: 'base\n'
+$ (cd /tmp/gitman-d-no-remote-5tep8hg8/main && jj describe -m base)
+Working copy  (@) now at: psxuqoyy fecc12d1 base
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+[exit=0]
+$ (cd /tmp/gitman-d-no-remote-5tep8hg8/main && jj bookmark create main -r @)
+Created 1 bookmarks pointing to psxuqoyy fecc12d1 main | base
+[exit=0]
+$ (cd /tmp/gitman-d-no-remote-5tep8hg8/main && jj new main)
+Working copy  (@) now at: wrzrwlpq 36f69fb8 (empty) (no description set)
+Parent commit (@-)      : psxuqoyy fecc12d1 main | base
+[exit=0]
+# sandbox=/tmp/gitman-d-no-remote-5tep8hg8 origin=None
+$ (cd /tmp/gitman-d-no-remote-5tep8hg8/main && jj workspace list)
+default: . wrzrwlpq 36f69fb8 (empty) (no description set)
+[exit=0]
+$ (cd /tmp/gitman-d-no-remote-5tep8hg8/main && jj log -r '(::working_copies() ~ ::trunk()) ~ empty()')
+○  psxuqoyy test@example.com 2026-10-11 17:50:15 main fecc12d1
+│  base
+~
+[exit=0]
+$ (cd /tmp/gitman-d-no-remote-5tep8hg8/main && gitman work task)
+workspace: task
+path: /tmp/gitman-d-no-remote-5tep8hg8/workspaces/task
+base: 0000000000000000000000000000000000000000 (trunk())
+enter it with: cd /tmp/gitman-d-no-remote-5tep8hg8/workspaces/task
+[exit=0]
+$ write /tmp/gitman-d-no-remote-5tep8hg8/workspaces/task/feature.txt: 'feature\n'
+$ (cd /tmp/gitman-d-no-remote-5tep8hg8/workspaces/task && jj describe -m feature)
+Working copy  (@) now at: npxnywom afea008a feature
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+[exit=0]
+$ (cd /tmp/gitman-d-no-remote-5tep8hg8/workspaces/task && jj git fetch)
+Warning: No matching remotes for names: origin
+Error: No git remotes to fetch from
+[exit=1]
+$ (cd /tmp/gitman-d-no-remote-5tep8hg8/workspaces/task && jj rebase -b @ -d 'trunk()')
+Skipped rebase of 1 commits that were already in place.
+Nothing changed.
+[exit=0]
+$ (cd /tmp/gitman-d-no-remote-5tep8hg8/workspaces/task && jj bookmark set main -r @)
+Error: Refusing to move bookmark backwards or sideways: main
+Hint: Use --allow-backwards to allow it.
+[exit=1]
+$ (cd /tmp/gitman-d-no-remote-5tep8hg8/workspaces/task && jj git push --bookmark main)
+Warning: No matching remotes for names: origin
+Error: No git remotes to push to
+[exit=1]
+$ (cd /tmp/gitman-d-no-remote-5tep8hg8/workspaces/task && jj status)
+Working copy changes:
+A feature.txt
+Working copy  (@) : npxnywom afea008a feature
+Parent commit (@-): zzzzzzzz 00000000 (empty) (no description set)
+[exit=0]
+
+================ protected main / PR-only simulated ================
+$ write /tmp/gitman-d-protected-q7f59vxs/jj.toml: '[user]\nname = "Test"\nemail = "test@example.com"\n'
+$ (cd /tmp/gitman-d-protected-q7f59vxs && jj git init --colocate /tmp/gitman-d-protected-q7f59vxs/main)
+Initialized repo in "main"
+[exit=0]
+$ write /tmp/gitman-d-protected-q7f59vxs/main/a.txt: 'base\n'
+$ (cd /tmp/gitman-d-protected-q7f59vxs/main && jj describe -m base)
+Working copy  (@) now at: krkyluxu 211d0a3b base
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+[exit=0]
+$ (cd /tmp/gitman-d-protected-q7f59vxs/main && jj bookmark create main -r @)
+Created 1 bookmarks pointing to krkyluxu 211d0a3b main | base
+[exit=0]
+$ (cd /tmp/gitman-d-protected-q7f59vxs && jj git init --no-colocate /tmp/gitman-d-protected-q7f59vxs/origin)
+Initialized repo in "origin"
+[exit=0]
+$ (cd /tmp/gitman-d-protected-q7f59vxs/main && jj git remote add origin /tmp/gitman-d-protected-q7f59vxs/origin/.jj/repo/store/git)
+
+[exit=0]
+$ (cd /tmp/gitman-d-protected-q7f59vxs/main && jj git push --bookmark main)
+Changes to push to origin:
+  bookmark: main [add to 211d0a3b2bb6]
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: sxknmxlx d1f6232a (empty) (no description set)
+Parent commit (@-)      : krkyluxu 211d0a3b main | base
+[exit=0]
+$ (cd /tmp/gitman-d-protected-q7f59vxs/main && jj new main)
+Working copy  (@) now at: qzpxmrsu 89f6e947 (empty) (no description set)
+Parent commit (@-)      : krkyluxu 211d0a3b main | base
+[exit=0]
+# sandbox=/tmp/gitman-d-protected-q7f59vxs origin=/tmp/gitman-d-protected-q7f59vxs/origin/.jj/repo/store/git
+$ write /tmp/gitman-d-protected-q7f59vxs/origin/.jj/repo/store/git/hooks/pre-receive: '#!/bin/sh\nwhile read old new ref; do\n  if [ "$ref" = refs/heads/main ]; then echo "main is protected" >&2; exit 1; fi\ndone\nexit 0\n'
+$ (cd /tmp/gitman-d-protected-q7f59vxs/main && gitman work pr)
+workspace: pr
+path: /tmp/gitman-d-protected-q7f59vxs/workspaces/pr
+base: 211d0a3b2bb6ba5d0b19e24762e6ef04e1752b9f (trunk())
+enter it with: cd /tmp/gitman-d-protected-q7f59vxs/workspaces/pr
+[exit=0]
+$ write /tmp/gitman-d-protected-q7f59vxs/workspaces/pr/feature.txt: 'feature\n'
+$ (cd /tmp/gitman-d-protected-q7f59vxs/workspaces/pr && jj describe -m feature)
+Working copy  (@) now at: krwwknoz 065b1042 feature
+Parent commit (@-)      : krkyluxu 211d0a3b main | base
+[exit=0]
+$ (cd /tmp/gitman-d-protected-q7f59vxs/workspaces/pr && jj bookmark create pr -r @)
+Created 1 bookmarks pointing to krwwknoz 065b1042 pr | feature
+[exit=0]
+$ (cd /tmp/gitman-d-protected-q7f59vxs/workspaces/pr && jj git push --bookmark pr)
+Changes to push to origin:
+  bookmark: pr [add to 065b1042a43f]
+[exit=0]
+$ (cd /tmp/gitman-d-protected-q7f59vxs/workspaces/pr && jj bookmark set main -r @-)
+
+[exit=0]
+$ (cd /tmp/gitman-d-protected-q7f59vxs/workspaces/pr && jj git push --bookmark main)
+Bookmark main@origin already matches main
+Nothing changed.
+[exit=0]
+$ (cd /tmp/gitman-d-protected-q7f59vxs/workspaces/pr && jj bookmark list)
+main: krkyluxu 211d0a3b base
+pr: krwwknoz 065b1042 feature
+[exit=0]
+
+================ conflict after rebase ================
+$ write /tmp/gitman-d-conflict-cj8kgruz/jj.toml: '[user]\nname = "Test"\nemail = "test@example.com"\n'
+$ (cd /tmp/gitman-d-conflict-cj8kgruz && jj git init --colocate /tmp/gitman-d-conflict-cj8kgruz/main)
+Initialized repo in "main"
+[exit=0]
+$ write /tmp/gitman-d-conflict-cj8kgruz/main/a.txt: 'base\n'
+$ (cd /tmp/gitman-d-conflict-cj8kgruz/main && jj describe -m base)
+Working copy  (@) now at: ozymyxnr d3e62815 base
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+[exit=0]
+$ (cd /tmp/gitman-d-conflict-cj8kgruz/main && jj bookmark create main -r @)
+Created 1 bookmarks pointing to ozymyxnr d3e62815 main | base
+[exit=0]
+$ (cd /tmp/gitman-d-conflict-cj8kgruz && jj git init --no-colocate /tmp/gitman-d-conflict-cj8kgruz/origin)
+Initialized repo in "origin"
+[exit=0]
+$ (cd /tmp/gitman-d-conflict-cj8kgruz/main && jj git remote add origin /tmp/gitman-d-conflict-cj8kgruz/origin/.jj/repo/store/git)
+
+[exit=0]
+$ (cd /tmp/gitman-d-conflict-cj8kgruz/main && jj git push --bookmark main)
+Changes to push to origin:
+  bookmark: main [add to d3e62815495a]
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: sulumqpo bbcdbc5a (empty) (no description set)
+Parent commit (@-)      : ozymyxnr d3e62815 main | base
+[exit=0]
+$ (cd /tmp/gitman-d-conflict-cj8kgruz/main && jj new main)
+Working copy  (@) now at: qxosqzms b935dfa9 (empty) (no description set)
+Parent commit (@-)      : ozymyxnr d3e62815 main | base
+[exit=0]
+# sandbox=/tmp/gitman-d-conflict-cj8kgruz origin=/tmp/gitman-d-conflict-cj8kgruz/origin/.jj/repo/store/git
+$ (cd /tmp/gitman-d-conflict-cj8kgruz/main && gitman work conflict)
+workspace: conflict
+path: /tmp/gitman-d-conflict-cj8kgruz/workspaces/conflict
+base: d3e62815495a990b2a93ecb2304e33608303ff18 (trunk())
+enter it with: cd /tmp/gitman-d-conflict-cj8kgruz/workspaces/conflict
+[exit=0]
+$ write /tmp/gitman-d-conflict-cj8kgruz/workspaces/conflict/a.txt: 'task\n'
+$ (cd /tmp/gitman-d-conflict-cj8kgruz/workspaces/conflict && jj describe -m 'task edits a')
+Working copy  (@) now at: usvxktwq bcf779c4 task edits a
+Parent commit (@-)      : ozymyxnr d3e62815 main | base
+[exit=0]
+$ (cd /tmp/gitman-d-conflict-cj8kgruz/workspaces/conflict && jj new)
+Working copy  (@) now at: okryywzy 72b36c22 (empty) (no description set)
+Parent commit (@-)      : usvxktwq bcf779c4 task edits a
+[exit=0]
+$ write /tmp/gitman-d-conflict-cj8kgruz/main/a.txt: 'main\n'
+$ (cd /tmp/gitman-d-conflict-cj8kgruz/main && jj describe -m 'main edits a')
+Working copy  (@) now at: qxosqzms 05698b80 main edits a
+Parent commit (@-)      : ozymyxnr d3e62815 main | base
+[exit=0]
+$ (cd /tmp/gitman-d-conflict-cj8kgruz/main && jj bookmark set main -r @)
+Moved 1 bookmarks to qxosqzms 05698b80 main* | main edits a
+[exit=0]
+$ (cd /tmp/gitman-d-conflict-cj8kgruz/main && jj git push --bookmark main)
+Changes to push to origin:
+  bookmark: main [move forward from d3e62815495a to 05698b80a5fd]
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: pzuntvzt 06bde393 (empty) (no description set)
+Parent commit (@-)      : qxosqzms 05698b80 main | main edits a
+[exit=0]
+$ (cd /tmp/gitman-d-conflict-cj8kgruz/workspaces/conflict && jj git fetch)
+Nothing changed.
+[exit=0]
+$ (cd /tmp/gitman-d-conflict-cj8kgruz/workspaces/conflict && jj rebase -b @ -d 'trunk()')
+Rebased 2 commits to destination.
+Working copy  (@) now at: okryywzy 636ba186 (conflict) (empty) (no description set)
+Parent commit (@-)      : usvxktwq a396bc50 (conflict) task edits a
+Added 0 files, modified 1 files, removed 0 files
+Warning: There are unresolved conflicts at these paths:
+a.txt    2-sided conflict
+New conflicts appeared in 1 commits:
+  usvxktwq a396bc50 (conflict) task edits a
+Hint: To resolve the conflicts, start by creating a commit on top of
+the conflicted commit:
+  jj new usvxktwq
+Then use `jj resolve`, or edit the conflict markers in the file directly.
+Once the conflicts are resolved, you can inspect the result with `jj diff`.
+Then run `jj squash` to move the resolution into the conflicted commit.
+[exit=0]
+$ (cd /tmp/gitman-d-conflict-cj8kgruz/workspaces/conflict && jj status)
+The working copy has no changes.
+Working copy  (@) : okryywzy 636ba186 (conflict) (empty) (no description set)
+Parent commit (@-): usvxktwq a396bc50 (conflict) task edits a
+Warning: There are unresolved conflicts at these paths:
+a.txt    2-sided conflict
+Hint: To resolve the conflicts, start by creating a commit on top of
+the conflicted commit:
+  jj new usvxktwq
+Then use `jj resolve`, or edit the conflict markers in the file directly.
+Once the conflicts are resolved, you can inspect the result with `jj diff`.
+Then run `jj squash` to move the resolution into the conflicted commit.
+[exit=0]
+$ (cd /tmp/gitman-d-conflict-cj8kgruz/workspaces/conflict && jj log -r 'conflicts()')
+@  okryywzy test@example.com 2026-10-11 17:50:17 conflict@ 636ba186 (conflict)
+│  (empty) (no description set)
+×  usvxktwq test@example.com 2026-10-11 17:50:17 a396bc50 (conflict)
+│  task edits a
+~
+[exit=0]
+
+================ stacked workspaces --from ================
+$ write /tmp/gitman-d-stacked-w42s83x3/jj.toml: '[user]\nname = "Test"\nemail = "test@example.com"\n'
+$ (cd /tmp/gitman-d-stacked-w42s83x3 && jj git init --colocate /tmp/gitman-d-stacked-w42s83x3/main)
+Initialized repo in "main"
+[exit=0]
+$ write /tmp/gitman-d-stacked-w42s83x3/main/a.txt: 'base\n'
+$ (cd /tmp/gitman-d-stacked-w42s83x3/main && jj describe -m base)
+Working copy  (@) now at: wtnntzqy 2ff71fdc base
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+[exit=0]
+$ (cd /tmp/gitman-d-stacked-w42s83x3/main && jj bookmark create main -r @)
+Created 1 bookmarks pointing to wtnntzqy 2ff71fdc main | base
+[exit=0]
+$ (cd /tmp/gitman-d-stacked-w42s83x3 && jj git init --no-colocate /tmp/gitman-d-stacked-w42s83x3/origin)
+Initialized repo in "origin"
+[exit=0]
+$ (cd /tmp/gitman-d-stacked-w42s83x3/main && jj git remote add origin /tmp/gitman-d-stacked-w42s83x3/origin/.jj/repo/store/git)
+
+[exit=0]
+$ (cd /tmp/gitman-d-stacked-w42s83x3/main && jj git push --bookmark main)
+Changes to push to origin:
+  bookmark: main [add to 2ff71fdc6292]
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: mukwzlwx 3aff3df2 (empty) (no description set)
+Parent commit (@-)      : wtnntzqy 2ff71fdc main | base
+[exit=0]
+$ (cd /tmp/gitman-d-stacked-w42s83x3/main && jj new main)
+Working copy  (@) now at: klrsoxxv 97e2f1dd (empty) (no description set)
+Parent commit (@-)      : wtnntzqy 2ff71fdc main | base
+[exit=0]
+# sandbox=/tmp/gitman-d-stacked-w42s83x3 origin=/tmp/gitman-d-stacked-w42s83x3/origin/.jj/repo/store/git
+$ (cd /tmp/gitman-d-stacked-w42s83x3/main && gitman work a)
+workspace: a
+path: /tmp/gitman-d-stacked-w42s83x3/workspaces/a
+base: 2ff71fdc6292692ba0f7dc4278222632de3781c5 (trunk())
+enter it with: cd /tmp/gitman-d-stacked-w42s83x3/workspaces/a
+[exit=0]
+$ write /tmp/gitman-d-stacked-w42s83x3/workspaces/a/a-feature.txt: 'A\n'
+$ (cd /tmp/gitman-d-stacked-w42s83x3/workspaces/a && jj describe -m 'feature A')
+Working copy  (@) now at: prkolvsx fcc42338 feature A
+Parent commit (@-)      : wtnntzqy 2ff71fdc main | base
+[exit=0]
+$ (cd /tmp/gitman-d-stacked-w42s83x3/workspaces/a && jj new)
+Working copy  (@) now at: wnqrxtkz bdac0647 (empty) (no description set)
+Parent commit (@-)      : prkolvsx fcc42338 feature A
+[exit=0]
+$ (cd /tmp/gitman-d-stacked-w42s83x3/main && jj workspace list)
+a: ../workspaces/a wnqrxtkz bdac0647 (empty) (no description set)
+default: . klrsoxxv 97e2f1dd (empty) (no description set)
+[exit=0]
+$ (cd /tmp/gitman-d-stacked-w42s83x3/main && jj log -r '(::working_copies() ~ ::trunk()) ~ empty()')
+○  prkolvsx test@example.com 2026-10-11 17:50:18 fcc42338
+│  feature A
+~
+[exit=0]
+$ (cd /tmp/gitman-d-stacked-w42s83x3/main && gitman work b --from a@-)
+workspace: b
+path: /tmp/gitman-d-stacked-w42s83x3/workspaces/b
+base: fcc42338d35e62c0fb0b0ad692e75ade5f6a631a (a@-)
+enter it with: cd /tmp/gitman-d-stacked-w42s83x3/workspaces/b
+[exit=0]
+$ write /tmp/gitman-d-stacked-w42s83x3/workspaces/b/b-feature.txt: 'B\n'
+$ (cd /tmp/gitman-d-stacked-w42s83x3/workspaces/b && jj describe -m 'feature B')
+Working copy  (@) now at: kpzrvnzx c4a463b2 feature B
+Parent commit (@-)      : prkolvsx fcc42338 feature A
+[exit=0]
+$ (cd /tmp/gitman-d-stacked-w42s83x3/main && jj log -r 'b@::a@ | a@::b@' --no-graph -T 'change_id.short() ++ " " ++ description ++ "\n"')
+
+[exit=0]
+$ (cd /tmp/gitman-d-stacked-w42s83x3/main && jj bookmark set main -r a@-)
+Moved 1 bookmarks to prkolvsx fcc42338 main* | feature A
+[exit=0]
+$ (cd /tmp/gitman-d-stacked-w42s83x3/main && jj log -r '(::a@ ~ ::trunk()) ~ empty()')
+○  prkolvsx test@example.com 2026-10-11 17:50:18 main* fcc42338
+│  feature A
+~
+[exit=0]
+$ (cd /tmp/gitman-d-stacked-w42s83x3/main && jj log -r '(::b@ ~ ::trunk()) ~ empty()')
+○  kpzrvnzx test@example.com 2026-10-11 17:50:19 b@ c4a463b2
+│  feature B
+○  prkolvsx test@example.com 2026-10-11 17:50:18 main* fcc42338
+│  feature A
+~
+[exit=0]
+
+================ dirty default workspace ================
+$ write /tmp/gitman-d-dirty-default-bqbx5y7j/jj.toml: '[user]\nname = "Test"\nemail = "test@example.com"\n'
+$ (cd /tmp/gitman-d-dirty-default-bqbx5y7j && jj git init --colocate /tmp/gitman-d-dirty-default-bqbx5y7j/main)
+Initialized repo in "main"
+[exit=0]
+$ write /tmp/gitman-d-dirty-default-bqbx5y7j/main/a.txt: 'base\n'
+$ (cd /tmp/gitman-d-dirty-default-bqbx5y7j/main && jj describe -m base)
+Working copy  (@) now at: kuwpykkx 7c1a027c base
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+[exit=0]
+$ (cd /tmp/gitman-d-dirty-default-bqbx5y7j/main && jj bookmark create main -r @)
+Created 1 bookmarks pointing to kuwpykkx 7c1a027c main | base
+[exit=0]
+$ (cd /tmp/gitman-d-dirty-default-bqbx5y7j && jj git init --no-colocate /tmp/gitman-d-dirty-default-bqbx5y7j/origin)
+Initialized repo in "origin"
+[exit=0]
+$ (cd /tmp/gitman-d-dirty-default-bqbx5y7j/main && jj git remote add origin /tmp/gitman-d-dirty-default-bqbx5y7j/origin/.jj/repo/store/git)
+
+[exit=0]
+$ (cd /tmp/gitman-d-dirty-default-bqbx5y7j/main && jj git push --bookmark main)
+Changes to push to origin:
+  bookmark: main [add to 7c1a027c3eb5]
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: ukymknxz 85b8556a (empty) (no description set)
+Parent commit (@-)      : kuwpykkx 7c1a027c main | base
+[exit=0]
+$ (cd /tmp/gitman-d-dirty-default-bqbx5y7j/main && jj new main)
+Working copy  (@) now at: lrusqvvp 18207e97 (empty) (no description set)
+Parent commit (@-)      : kuwpykkx 7c1a027c main | base
+[exit=0]
+# sandbox=/tmp/gitman-d-dirty-default-bqbx5y7j origin=/tmp/gitman-d-dirty-default-bqbx5y7j/origin/.jj/repo/store/git
+$ write /tmp/gitman-d-dirty-default-bqbx5y7j/main/local.txt: 'unrelated\n'
+$ (cd /tmp/gitman-d-dirty-default-bqbx5y7j/main && jj status)
+Working copy changes:
+A local.txt
+Working copy  (@) : lrusqvvp 207ef01a (no description set)
+Parent commit (@-): kuwpykkx 7c1a027c main | base
+[exit=0]
+$ (cd /tmp/gitman-d-dirty-default-bqbx5y7j/main && jj workspace list)
+default: . lrusqvvp 207ef01a (no description set)
+[exit=0]
+$ (cd /tmp/gitman-d-dirty-default-bqbx5y7j/main && jj log -r '(::working_copies() ~ ::trunk()) ~ empty()')
+@  lrusqvvp test@example.com 2026-10-11 17:50:19 207ef01a
+│  (no description set)
+~
+[exit=0]
+$ (cd /tmp/gitman-d-dirty-default-bqbx5y7j/main && gitman work task)
+workspace: task
+path: /tmp/gitman-d-dirty-default-bqbx5y7j/workspaces/task
+base: 7c1a027c3eb5cc9e845f3db000da8a757e3d7e6b (trunk())
+enter it with: cd /tmp/gitman-d-dirty-default-bqbx5y7j/workspaces/task
+[exit=0]
+$ write /tmp/gitman-d-dirty-default-bqbx5y7j/workspaces/task/feature.txt: 'feature\n'
+$ (cd /tmp/gitman-d-dirty-default-bqbx5y7j/workspaces/task && jj describe -m feature)
+Working copy  (@) now at: vnkvwnuk 40cb9e5e feature
+Parent commit (@-)      : kuwpykkx 7c1a027c main | base
+[exit=0]
+$ (cd /tmp/gitman-d-dirty-default-bqbx5y7j/workspaces/task && jj bookmark set main -r @)
+Moved 1 bookmarks to vnkvwnuk 40cb9e5e main* | feature
+[exit=0]
+$ (cd /tmp/gitman-d-dirty-default-bqbx5y7j/main && jj status)
+Working copy changes:
+A local.txt
+Working copy  (@) : lrusqvvp 207ef01a (no description set)
+Parent commit (@-): kuwpykkx 7c1a027c main@origin | base
+[exit=0]
+$ (cd /tmp/gitman-d-dirty-default-bqbx5y7j/main && jj log -r '(::task@ ~ ::trunk()) ~ empty()')
+○  vnkvwnuk test@example.com 2026-10-11 17:50:20 main* task@ 40cb9e5e
+│  feature
+~
+[exit=0]
+
+================ stale workspace ================
+$ write /tmp/gitman-d-stale-3ffq03dl/jj.toml: '[user]\nname = "Test"\nemail = "test@example.com"\n'
+$ (cd /tmp/gitman-d-stale-3ffq03dl && jj git init --colocate /tmp/gitman-d-stale-3ffq03dl/main)
+Initialized repo in "main"
+[exit=0]
+$ write /tmp/gitman-d-stale-3ffq03dl/main/a.txt: 'base\n'
+$ (cd /tmp/gitman-d-stale-3ffq03dl/main && jj describe -m base)
+Working copy  (@) now at: qkwtookz cb0fab91 base
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+[exit=0]
+$ (cd /tmp/gitman-d-stale-3ffq03dl/main && jj bookmark create main -r @)
+Created 1 bookmarks pointing to qkwtookz cb0fab91 main | base
+[exit=0]
+$ (cd /tmp/gitman-d-stale-3ffq03dl && jj git init --no-colocate /tmp/gitman-d-stale-3ffq03dl/origin)
+Initialized repo in "origin"
+[exit=0]
+$ (cd /tmp/gitman-d-stale-3ffq03dl/main && jj git remote add origin /tmp/gitman-d-stale-3ffq03dl/origin/.jj/repo/store/git)
+
+[exit=0]
+$ (cd /tmp/gitman-d-stale-3ffq03dl/main && jj git push --bookmark main)
+Changes to push to origin:
+  bookmark: main [add to cb0fab91953d]
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: snwposnt 4509bd5f (empty) (no description set)
+Parent commit (@-)      : qkwtookz cb0fab91 main | base
+[exit=0]
+$ (cd /tmp/gitman-d-stale-3ffq03dl/main && jj new main)
+Working copy  (@) now at: oqtmpmzt 93bafe53 (empty) (no description set)
+Parent commit (@-)      : qkwtookz cb0fab91 main | base
+[exit=0]
+# sandbox=/tmp/gitman-d-stale-3ffq03dl origin=/tmp/gitman-d-stale-3ffq03dl/origin/.jj/repo/store/git
+$ (cd /tmp/gitman-d-stale-3ffq03dl/main && gitman work stale)
+workspace: stale
+path: /tmp/gitman-d-stale-3ffq03dl/workspaces/stale
+base: cb0fab91953df9b7b31e99c6c6087feab7f6dbf2 (trunk())
+enter it with: cd /tmp/gitman-d-stale-3ffq03dl/workspaces/stale
+[exit=0]
+$ shutil.rmtree(/tmp/gitman-d-stale-3ffq03dl/workspaces/stale) [exit=0]
+$ (cd /tmp/gitman-d-stale-3ffq03dl/main && jj workspace list)
+default: . oqtmpmzt 93bafe53 (empty) (no description set)
+stale: ../workspaces/stale xowntyxk 3108e084 (empty) (no description set)
+[exit=0]
+$ (cd /tmp/gitman-d-stale-3ffq03dl/main && gitman work stale)
+gitman: workspace 'stale' already exists: see `jj workspace list`
+[exit=1]
+$ (cd /tmp/gitman-d-stale-3ffq03dl/main && jj workspace forget stale)
+
+[exit=0]
+$ (cd /tmp/gitman-d-stale-3ffq03dl/main && gitman work stale)
+gitman: jj workspace add failed:
+Error: Git process failed: External git program failed:
+Preparing worktree (new branch 'jj-worktree-775644c943817a81')
+fatal: '/tmp/gitman-d-stale-3ffq03dl/workspaces/stale' is a missing but already registered worktree;
+use 'add -f' to override, or 'prune' or 'remove' to clear
+/tmp/gitman-d-stale-3ffq03dl/workspaces/stale remains; remove it by hand once you have checked it; workspace 'stale' is not registered
+[exit=1]
+
+================ lock file at shell entry simulated ================
+$ write /tmp/gitman-d-lock-r32r8by3/jj.toml: '[user]\nname = "Test"\nemail = "test@example.com"\n'
+$ (cd /tmp/gitman-d-lock-r32r8by3 && jj git init --colocate /tmp/gitman-d-lock-r32r8by3/main)
+Initialized repo in "main"
+[exit=0]
+$ write /tmp/gitman-d-lock-r32r8by3/main/a.txt: 'base\n'
+$ (cd /tmp/gitman-d-lock-r32r8by3/main && jj describe -m base)
+Working copy  (@) now at: lrtolvwz c96b1f77 base
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+[exit=0]
+$ (cd /tmp/gitman-d-lock-r32r8by3/main && jj bookmark create main -r @)
+Created 1 bookmarks pointing to lrtolvwz c96b1f77 main | base
+[exit=0]
+$ (cd /tmp/gitman-d-lock-r32r8by3 && jj git init --no-colocate /tmp/gitman-d-lock-r32r8by3/origin)
+Initialized repo in "origin"
+[exit=0]
+$ (cd /tmp/gitman-d-lock-r32r8by3/main && jj git remote add origin /tmp/gitman-d-lock-r32r8by3/origin/.jj/repo/store/git)
+
+[exit=0]
+$ (cd /tmp/gitman-d-lock-r32r8by3/main && jj git push --bookmark main)
+Changes to push to origin:
+  bookmark: main [add to c96b1f77a7c1]
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: wspkmzrv dabe0588 (empty) (no description set)
+Parent commit (@-)      : lrtolvwz c96b1f77 main | base
+[exit=0]
+$ (cd /tmp/gitman-d-lock-r32r8by3/main && jj new main)
+Working copy  (@) now at: ytwtolrs 9be84ad7 (empty) (no description set)
+Parent commit (@-)      : lrtolvwz c96b1f77 main | base
+[exit=0]
+# sandbox=/tmp/gitman-d-lock-r32r8by3 origin=/tmp/gitman-d-lock-r32r8by3/origin/.jj/repo/store/git
+$ write /tmp/gitman-d-lock-r32r8by3/main/devenv.lock: 'changed by shell\n'
+$ (cd /tmp/gitman-d-lock-r32r8by3/main && jj status)
+Working copy changes:
+A devenv.lock
+Working copy  (@) : ytwtolrs b7e6e71d (no description set)
+Parent commit (@-): lrtolvwz c96b1f77 main | base
+[exit=0]
+$ (cd /tmp/gitman-d-lock-r32r8by3/main && jj workspace list)
+default: . ytwtolrs b7e6e71d (no description set)
+[exit=0]
+$ (cd /tmp/gitman-d-lock-r32r8by3/main && jj log -r '(::working_copies() ~ ::trunk()) ~ empty()')
+@  ytwtolrs test@example.com 2026-10-11 17:50:21 b7e6e71d
+│  (no description set)
+~
+[exit=0]
+$ (cd /tmp/gitman-d-lock-r32r8by3/main && jj describe -m 'Update devenv.lock')
+Working copy  (@) now at: ytwtolrs 926616eb Update devenv.lock
+Parent commit (@-)      : lrtolvwz c96b1f77 main | base
+[exit=0]
+$ (cd /tmp/gitman-d-lock-r32r8by3/main && jj new)
+Working copy  (@) now at: xwvzultp d477c5ce (empty) (no description set)
+Parent commit (@-)      : ytwtolrs 926616eb Update devenv.lock
+[exit=0]
+$ (cd /tmp/gitman-d-lock-r32r8by3/main && jj workspace list)
+default: . xwvzultp d477c5ce (empty) (no description set)
+[exit=0]
+$ (cd /tmp/gitman-d-lock-r32r8by3/main && jj log -r '(::working_copies() ~ ::trunk()) ~ empty()')
+○  ytwtolrs test@example.com 2026-10-11 17:50:21 926616eb
+│  Update devenv.lock
+~
+[exit=0]
+
+================ no trunk bookmark / fresh repo ================
+$ write /tmp/gitman-d-no-trunk-992c1hu0/jj.toml: '[user]\nname = "Test"\nemail = "test@example.com"\n'
+$ (cd /tmp/gitman-d-no-trunk-992c1hu0 && jj git init --colocate /tmp/gitman-d-no-trunk-992c1hu0/main)
+Initialized repo in "main"
+[exit=0]
+# sandbox=/tmp/gitman-d-no-trunk-992c1hu0 origin=None
+$ (cd /tmp/gitman-d-no-trunk-992c1hu0/main && jj log -r 'trunk()' --no-graph -T 'commit_id ++ " " ++ description ++ "\n"')
+0000000000000000000000000000000000000000
+[exit=0]
+$ (cd /tmp/gitman-d-no-trunk-992c1hu0/main && jj workspace list)
+default: . uuxlkpok fa55a619 (empty) (no description set)
+[exit=0]
+$ (cd /tmp/gitman-d-no-trunk-992c1hu0/main && jj log -r '(::working_copies() ~ ::trunk()) ~ empty()')
+
+[exit=0]
+$ (cd /tmp/gitman-d-no-trunk-992c1hu0/main && gitman work task)
+workspace: task
+path: /tmp/gitman-d-no-trunk-992c1hu0/workspaces/task
+base: 0000000000000000000000000000000000000000 (trunk())
+enter it with: cd /tmp/gitman-d-no-trunk-992c1hu0/workspaces/task
+[exit=0]
+$ write /tmp/gitman-d-no-trunk-992c1hu0/workspaces/task/feature.txt: 'feature\n'
+$ (cd /tmp/gitman-d-no-trunk-992c1hu0/workspaces/task && jj describe -m 'first feature')
+Working copy  (@) now at: rrzqqntu cec6a0d7 first feature
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+[exit=0]
+$ (cd /tmp/gitman-d-no-trunk-992c1hu0/workspaces/task && jj bookmark set main -r @)
+Created 1 bookmarks pointing to rrzqqntu cec6a0d7 main | first feature
+[exit=0]
+$ (cd /tmp/gitman-d-no-trunk-992c1hu0/workspaces/task && jj bookmark create main -r @)
+Error: Bookmark already exists: main
+Hint: Use `jj bookmark set` to update it.
+[exit=1]
+$ (cd /tmp/gitman-d-no-trunk-992c1hu0/workspaces/task && jj log -r 'trunk()' --no-graph -T 'commit_id ++ " " ++ description ++ "\n"')
+0000000000000000000000000000000000000000
+[exit=0]
+
+================ divergent change attempt: same change edited in two workspaces ================
+$ write /tmp/gitman-d-divergent-w9nt5t0k/jj.toml: '[user]\nname = "Test"\nemail = "test@example.com"\n'
+$ (cd /tmp/gitman-d-divergent-w9nt5t0k && jj git init --colocate /tmp/gitman-d-divergent-w9nt5t0k/main)
+Initialized repo in "main"
+[exit=0]
+$ write /tmp/gitman-d-divergent-w9nt5t0k/main/a.txt: 'base\n'
+$ (cd /tmp/gitman-d-divergent-w9nt5t0k/main && jj describe -m base)
+Working copy  (@) now at: tkyrstvq d9b4f7b7 base
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+[exit=0]
+$ (cd /tmp/gitman-d-divergent-w9nt5t0k/main && jj bookmark create main -r @)
+Created 1 bookmarks pointing to tkyrstvq d9b4f7b7 main | base
+[exit=0]
+$ (cd /tmp/gitman-d-divergent-w9nt5t0k && jj git init --no-colocate /tmp/gitman-d-divergent-w9nt5t0k/origin)
+Initialized repo in "origin"
+[exit=0]
+$ (cd /tmp/gitman-d-divergent-w9nt5t0k/main && jj git remote add origin /tmp/gitman-d-divergent-w9nt5t0k/origin/.jj/repo/store/git)
+
+[exit=0]
+$ (cd /tmp/gitman-d-divergent-w9nt5t0k/main && jj git push --bookmark main)
+Changes to push to origin:
+  bookmark: main [add to d9b4f7b75108]
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: rovqwnxp 8e3475a3 (empty) (no description set)
+Parent commit (@-)      : tkyrstvq d9b4f7b7 main | base
+[exit=0]
+$ (cd /tmp/gitman-d-divergent-w9nt5t0k/main && jj new main)
+Working copy  (@) now at: trywzsso 12087529 (empty) (no description set)
+Parent commit (@-)      : tkyrstvq d9b4f7b7 main | base
+[exit=0]
+# sandbox=/tmp/gitman-d-divergent-w9nt5t0k origin=/tmp/gitman-d-divergent-w9nt5t0k/origin/.jj/repo/store/git
+$ (cd /tmp/gitman-d-divergent-w9nt5t0k/main && gitman work one)
+workspace: one
+path: /tmp/gitman-d-divergent-w9nt5t0k/workspaces/one
+base: d9b4f7b75108d41810f770970f6d9002f2ab5f2f (trunk())
+enter it with: cd /tmp/gitman-d-divergent-w9nt5t0k/workspaces/one
+[exit=0]
+$ write /tmp/gitman-d-divergent-w9nt5t0k/workspaces/one/a.txt: 'one\n'
+$ (cd /tmp/gitman-d-divergent-w9nt5t0k/workspaces/one && jj describe -m 'shared change')
+Working copy  (@) now at: wyvttnnv 051ca113 shared change
+Parent commit (@-)      : tkyrstvq d9b4f7b7 main | base
+[exit=0]
+$ (cd /tmp/gitman-d-divergent-w9nt5t0k/main && jj workspace add --name two --revision one@ --colocate /tmp/gitman-d-divergent-w9nt5t0k/two)
+Created Git worktree for the new workspace.
+Created workspace in "../two"
+Working copy  (@) now at: ptouqvpz 8c677ef7 (empty) (no description set)
+Parent commit (@-)      : wyvttnnv 051ca113 shared change
+Added 1 files, modified 0 files, removed 0 files
+[exit=0]
+$ (cd /tmp/gitman-d-divergent-w9nt5t0k/two && jj status)
+The working copy has no changes.
+Working copy  (@) : ptouqvpz 8c677ef7 (empty) (no description set)
+Parent commit (@-): wyvttnnv 051ca113 shared change
+[exit=0]
+$ write /tmp/gitman-d-divergent-w9nt5t0k/workspaces/one/a.txt: 'version one\n'
+$ (cd /tmp/gitman-d-divergent-w9nt5t0k/workspaces/one && jj status)
+Rebased 1 descendant commits onto updated working copy.
+Working copy changes:
+M a.txt
+Working copy  (@) : wyvttnnv 4c671825 shared change
+Parent commit (@-): tkyrstvq d9b4f7b7 main | base
+[exit=0]
+$ write /tmp/gitman-d-divergent-w9nt5t0k/two/a.txt: 'version two\n'
+$ (cd /tmp/gitman-d-divergent-w9nt5t0k/two && jj status)
+Error: The working copy is stale (not updated since operation add254bcbc80).
+Hint: Run `jj workspace update-stale` to update it.
+See https://docs.jj-vcs.dev/latest/working-copy/#stale-working-copy for more information.
+[exit=1]
+$ (cd /tmp/gitman-d-divergent-w9nt5t0k/main && jj log -r 'one@ | two@' --no-graph -T 'change_id.short() ++ " " ++ commit_id.short() ++ " " ++ description ++ "\n"')
+ptouqvpzyvyy 82cb1b52b6bf 
+wyvttnnvmmrq 4c67182552b5 shared change
+[exit=0]
+$ (cd /tmp/gitman-d-divergent-w9nt5t0k/main && jj log -r '(::working_copies() ~ ::trunk()) ~ empty()')
+○  wyvttnnv test@example.com 2026-10-11 17:50:23 one@ 4c671825
+│  shared change
+~
+[exit=0]
+$ (cd /tmp/gitman-d-divergent-w9nt5t0k/workspaces/one && jj rebase -b one@ -d 'trunk()')
+Skipped rebase of 2 commits that were already in place.
+Nothing changed.
+[exit=0]

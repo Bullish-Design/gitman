@@ -1,0 +1,180 @@
+CASE_ROOT=/tmp/tmp.EXte0jrtpF
+
+$ jj git init --colocate /tmp/tmp.EXte0jrtpF/repo
+Initialized repo in "../../tmp.EXte0jrtpF/repo"
+[exit 0]
+
+$ bash -c printf\ \"base\\n\"\ \>\ \"\$1\" _ /tmp/tmp.EXte0jrtpF/repo/README.md
+[exit 0]
+
+$ jj -R /tmp/tmp.EXte0jrtpF/repo describe -m base
+Working copy  (@) now at: xovqrtyv 9a129d19 base
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+[exit 0]
+
+$ jj -R /tmp/tmp.EXte0jrtpF/repo bookmark create main -r @
+Created 1 bookmarks pointing to xovqrtyv 9a129d19 main | base
+[exit 0]
+
+$ jj -R /tmp/tmp.EXte0jrtpF/repo new main
+Working copy  (@) now at: mnxrotlp 579f0ced (empty) (no description set)
+Parent commit (@-)      : xovqrtyv 9a129d19 main | base
+[exit 0]
+
+$ jj -R /tmp/tmp.EXte0jrtpF/repo status
+The working copy has no changes.
+Working copy  (@) : mnxrotlp 579f0ced (empty) (no description set)
+Parent commit (@-): xovqrtyv 9a129d19 main | base
+[exit 0]
+
+$ jj -R /tmp/tmp.EXte0jrtpF/repo workspace list
+default: ../../tmp.EXte0jrtpF/repo mnxrotlp 579f0ced (empty) (no description set)
+[exit 0]
+
+$ jj -R /tmp/tmp.EXte0jrtpF/repo log -r \(::working_copies\(\)\ ~\ ::main\)\ ~\ empty\(\)
+[exit 0]
+
+$ jj -R /tmp/tmp.EXte0jrtpF/repo bookmark list
+main: xovqrtyv 9a129d19 base
+[exit 0]
+
+$ jj -R /tmp/tmp.EXte0jrtpF/repo log -r trunk\(\)
+◆  zzzzzzzz root() 00000000
+[exit 0]
+
+$ jj -R /tmp/tmp.EXte0jrtpF/repo git remote list
+[exit 0]
+
+$ pwd
+/tmp/tmp.EXte0jrtpF/repo
+[exit 0]
+
+$ gitman work local-a --from main
+workspace: local-a
+path: /tmp/tmp.EXte0jrtpF/workspaces/local-a
+base: 9a129d1915e7dececcedf47428c3bef38f7604e8 (main)
+enter it with: cd /tmp/tmp.EXte0jrtpF/workspaces/local-a
+[exit 0]
+
+$ bash -c printf\ \"local\ feature\\n\"\ \>\ \"\$1\" _ /tmp/tmp.EXte0jrtpF/workspaces/local-a/feature.txt
+[exit 0]
+
+$ bash -c test\ \"\$\(cat\ \"\$1\"\)\"\ =\ \"local\ feature\" _ /tmp/tmp.EXte0jrtpF/workspaces/local-a/feature.txt
+[exit 0]
+
+$ jj -R /tmp/tmp.EXte0jrtpF/workspaces/local-a status
+Working copy changes:
+A ../workspaces/local-a/feature.txt
+Working copy  (@) : rzktzvuz 4bed6954 (no description set)
+Parent commit (@-): xovqrtyv 9a129d19 main | base
+[exit 0]
+
+$ jj -R /tmp/tmp.EXte0jrtpF/workspaces/local-a diff
+Added regular file ../workspaces/local-a/feature.txt:
+        1: local feature
+[exit 0]
+
+$ jj -R /tmp/tmp.EXte0jrtpF/workspaces/local-a log -r @\ \|\ @-
+@  rzktzvuz tester@example.test 2026-10-11 18:10:01 local-a@ 4bed6954
+│  (no description set)
+○  xovqrtyv tester@example.test 2026-10-11 18:09:53 main 9a129d19
+│  base
+~
+[exit 0]
+
+$ jj -R /tmp/tmp.EXte0jrtpF/workspaces/local-a describe -r @ -m Add\ local\ feature
+Working copy  (@) now at: rzktzvuz b0d7b40d Add local feature
+Parent commit (@-)      : xovqrtyv 9a129d19 main | base
+[exit 0]
+
+$ jj -R /tmp/tmp.EXte0jrtpF/workspaces/local-a log -r @\ \|\ @-
+@  rzktzvuz tester@example.test 2026-10-11 18:10:01 local-a@ b0d7b40d
+│  Add local feature
+○  xovqrtyv tester@example.test 2026-10-11 18:09:53 main 9a129d19
+│  base
+~
+[exit 0]
+
+$ jj -R /tmp/tmp.EXte0jrtpF/workspaces/local-a bookmark create local-a -r @
+Created 1 bookmarks pointing to rzktzvuz b0d7b40d local-a | Add local feature
+[exit 0]
+
+$ jj -R /tmp/tmp.EXte0jrtpF/workspaces/local-a log -r main\ \|\ local-a\ \|\ local-a@
+@  rzktzvuz tester@example.test 2026-10-11 18:10:01 local-a local-a@ b0d7b40d
+│  Add local feature
+○  xovqrtyv tester@example.test 2026-10-11 18:09:53 main 9a129d19
+│  base
+~
+[exit 0]
+
+$ jj -R /tmp/tmp.EXte0jrtpF/workspaces/local-a log -r conflicts\(\)
+[exit 0]
+
+$ jj -R /tmp/tmp.EXte0jrtpF/workspaces/local-a log -r divergent\(\)
+[exit 0]
+
+$ jj -R /tmp/tmp.EXte0jrtpF/workspaces/local-a bookmark set main -r @
+Moved 1 bookmarks to rzktzvuz b0d7b40d local-a main* | Add local feature
+[exit 0]
+
+$ jj -R /tmp/tmp.EXte0jrtpF/repo status
+The working copy has no changes.
+Working copy  (@) : mnxrotlp 579f0ced (empty) (no description set)
+Parent commit (@-): xovqrtyv 9a129d19 base
+[exit 0]
+
+$ jj -R /tmp/tmp.EXte0jrtpF/repo new main
+Working copy  (@) now at: qmlwnrty fb42e43f (empty) (no description set)
+Parent commit (@-)      : rzktzvuz b0d7b40d local-a main | Add local feature
+Added 1 files, modified 0 files, removed 0 files
+[exit 0]
+
+$ jj -R /tmp/tmp.EXte0jrtpF/repo workspace list
+default: . qmlwnrty fb42e43f (empty) (no description set)
+local-a: ../workspaces/local-a rzktzvuz b0d7b40d local-a main | Add local feature
+[exit 0]
+
+$ jj -R /tmp/tmp.EXte0jrtpF/repo bookmark list
+local-a: rzktzvuz b0d7b40d Add local feature
+main: rzktzvuz b0d7b40d Add local feature
+[exit 0]
+
+$ jj -R /tmp/tmp.EXte0jrtpF/repo log -r main\ \|\ local-a\ \|\ local-a@
+○  rzktzvuz tester@example.test 2026-10-11 18:10:01 local-a main local-a@ b0d7b40d
+│  Add local feature
+~
+[exit 0]
+
+$ jj -R /tmp/tmp.EXte0jrtpF/repo log -r \(::local-a@\ ~\ ::main\)\ ~\ empty\(\)
+[exit 0]
+
+$ jj -R /tmp/tmp.EXte0jrtpF/repo log -r divergent\(\)
+[exit 0]
+
+$ jj -R /tmp/tmp.EXte0jrtpF/workspaces/local-a status
+Working copy changes:
+A ../workspaces/local-a/feature.txt
+Working copy  (@) : rzktzvuz b0d7b40d local-a main | Add local feature
+Parent commit (@-): xovqrtyv 9a129d19 base
+[exit 0]
+
+$ jj -R /tmp/tmp.EXte0jrtpF/workspaces/local-a file list
+../workspaces/local-a/README.md
+../workspaces/local-a/feature.txt
+[exit 0]
+
+$ find /tmp/tmp.EXte0jrtpF/workspaces/local-a -maxdepth 1 -mindepth 1 -print
+/tmp/tmp.EXte0jrtpF/workspaces/local-a/.git
+/tmp/tmp.EXte0jrtpF/workspaces/local-a/.jj
+/tmp/tmp.EXte0jrtpF/workspaces/local-a/README.md
+/tmp/tmp.EXte0jrtpF/workspaces/local-a/feature.txt
+[exit 0]
+
+$ jj -R /tmp/tmp.EXte0jrtpF/repo workspace remove local-a
+Removed Git worktree for "/tmp/tmp.EXte0jrtpF/workspaces/local-a".
+Removed workspace directory "/tmp/tmp.EXte0jrtpF/workspaces/local-a".
+[exit 0]
+
+$ jj -R /tmp/tmp.EXte0jrtpF/repo workspace list
+default: . qmlwnrty fb42e43f (empty) (no description set)
+[exit 0]

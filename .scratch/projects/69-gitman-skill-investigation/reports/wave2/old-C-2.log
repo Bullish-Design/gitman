@@ -1,0 +1,96 @@
+$ mktemp -d /tmp/gitman-old-C-2.XXXXXX
+/tmp/gitman-old-C-2.XWaMxd
+[exit 0]
+$ mkdir "$sandbox/repo"
+[exit 0]
+$ cat > "$sandbox/jjconfig.toml" <<'EOF'
+user.name = "Scenario User"
+user.email = "scenario@example.invalid"
+EOF
+[exit 0]
+$ export JJ_CONFIG="$sandbox/jjconfig.toml" GIT_CONFIG_GLOBAL=/dev/null GITMAN_WORKSPACE_ROOT="$sandbox/workspaces"
+[exit 0]
+
+$ jj git init --colocate .
+Initialized repo in "."
+[exit 0]
+
+$ printf 'base\n' > README.md
+[exit 0]
+
+$ jj status
+Working copy changes:
+A README.md
+Working copy  (@) : xtutqyoo 1d32b54a (no description set)
+Parent commit (@-): zzzzzzzz 00000000 (empty) (no description set)
+[exit 0]
+
+$ jj describe -m 'Initialize scenario'
+Working copy  (@) now at: xtutqyoo cd64dff7 Initialize scenario
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+[exit 0]
+
+$ jj bookmark create main -r @
+Created 1 bookmarks pointing to xtutqyoo cd64dff7 main | Initialize scenario
+[exit 0]
+
+$ jj new main
+Working copy  (@) now at: lvwqtyzt d8ec7285 (empty) (no description set)
+Parent commit (@-)      : xtutqyoo cd64dff7 main | Initialize scenario
+[exit 0]
+
+$ jj git init --no-colocate ../origin
+Initialized repo in "../origin"
+[exit 0]
+
+$ jj git remote add origin ../origin/.jj/repo/store/git
+[exit 0]
+
+$ jj git push --bookmark main
+Changes to push to origin:
+  bookmark: main [add to cd64dff7b62e]
+[exit 0]
+
+$ jj git fetch
+Nothing changed.
+[exit 0]
+
+$ jj workspace list
+default: . lvwqtyzt d8ec7285 (empty) (no description set)
+[exit 0]
+
+$ jj log -r '(::working_copies() ~ ::trunk()) ~ empty()'
+[exit 0]
+
+$ gitman work existing
+workspace: existing
+path: /tmp/gitman-old-C-2.XWaMxd/workspaces/existing
+base: cd64dff7b62eec0f8f0d5a73e943c8a865adfbfc (trunk())
+enter it with: cd /tmp/gitman-old-C-2.XWaMxd/workspaces/existing
+[exit 0]
+
+$ cd ../workspaces/existing && printf 'unfinished\n' > existing.txt
+[exit 0]
+
+$ cd ../workspaces/existing && jj status
+Working copy changes:
+A existing.txt
+Working copy  (@) : rzvpqktz 44572710 (no description set)
+Parent commit (@-): xtutqyoo cd64dff7 main | Initialize scenario
+[exit 0]
+
+$ cd ../workspaces/existing && jj describe -m 'Unlanded work'
+Working copy  (@) now at: rzvpqktz 2185e53b Unlanded work
+Parent commit (@-)      : xtutqyoo cd64dff7 main | Initialize scenario
+[exit 0]
+
+$ jj workspace list
+default: . lvwqtyzt d8ec7285 (empty) (no description set)
+existing: ../workspaces/existing rzvpqktz 2185e53b Unlanded work
+[exit 0]
+
+$ jj log -r '(::working_copies() ~ ::trunk()) ~ empty()'
+○  rzvpqktz scenario@example.invalid 2026-10-11 17:59:44 existing@ 2185e53b
+│  Unlanded work
+~
+[exit 0]

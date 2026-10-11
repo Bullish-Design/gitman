@@ -1,0 +1,134 @@
+DECISION SANDBOX /tmp/gitman-wave2-old-b-7-3rkz2ee3
+DECISION ENV JJ_CONFIG=/tmp/gitman-wave2-old-b-7-3rkz2ee3/jjconfig.toml XDG_CONFIG_HOME=/tmp/gitman-wave2-old-b-7-3rkz2ee3/xdg GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null GIT_CONFIG_NOSYSTEM=1 GITMAN_WORKSPACE_ROOT=/tmp/gitman-wave2-old-b-7-3rkz2ee3/workspaces
+DECISION User requests a pull request; local origin rejects direct main updates through a hook. The test forbids gh and network access.
+$ (cd /tmp/gitman-wave2-old-b-7-3rkz2ee3 && jj git init --colocate /tmp/gitman-wave2-old-b-7-3rkz2ee3/repo)
+[stdout]
+[stderr]
+Initialized repo in "repo"
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-7-3rkz2ee3/repo && jj config list user.name)
+[stdout]
+user.name = "Experiment User"
+[stderr]
+[exit 0]
+WRITE /tmp/gitman-wave2-old-b-7-3rkz2ee3/repo/line.txt (b'base\n')
+$ (cd /tmp/gitman-wave2-old-b-7-3rkz2ee3/repo && jj status)
+[stdout]
+Working copy changes:
+A line.txt
+Working copy  (@) : zvqrouol 406e05f2 (no description set)
+Parent commit (@-): zzzzzzzz 00000000 (empty) (no description set)
+[stderr]
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-7-3rkz2ee3/repo && jj describe -m Base)
+[stdout]
+[stderr]
+Working copy  (@) now at: zvqrouol 6b80d2ec Base
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-7-3rkz2ee3/repo && jj bookmark create main -r @)
+[stdout]
+[stderr]
+Created 1 bookmarks pointing to zvqrouol 6b80d2ec main | Base
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-7-3rkz2ee3/repo && jj new main)
+[stdout]
+[stderr]
+Working copy  (@) now at: vkmskqlu 583ef28f (empty) (no description set)
+Parent commit (@-)      : zvqrouol 6b80d2ec main | Base
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-7-3rkz2ee3 && jj git init --no-colocate /tmp/gitman-wave2-old-b-7-3rkz2ee3/origin)
+[stdout]
+[stderr]
+Initialized repo in "origin"
+[exit 0]
+DECISION Local bare Git backing store exists: True at /tmp/gitman-wave2-old-b-7-3rkz2ee3/origin/.jj/repo/store/git
+$ (cd /tmp/gitman-wave2-old-b-7-3rkz2ee3/repo && jj git remote add origin /tmp/gitman-wave2-old-b-7-3rkz2ee3/origin/.jj/repo/store/git)
+[stdout]
+[stderr]
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-7-3rkz2ee3/repo && jj git push --bookmark main)
+[stdout]
+[stderr]
+Changes to push to origin:
+  bookmark: main [add to 6b80d2ec92a6]
+[exit 0]
+DECISION Installed protected-main hook at /tmp/gitman-wave2-old-b-7-3rkz2ee3/origin/.jj/repo/store/git/hooks/pre-receive; no direct main push will be attempted.
+$ (cd /tmp/gitman-wave2-old-b-7-3rkz2ee3/repo && jj workspace list)
+[stdout]
+default: . vkmskqlu 583ef28f (empty) (no description set)
+[stderr]
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-7-3rkz2ee3/repo && jj log -r '(::working_copies() ~ ::trunk()) ~ empty()')
+[stdout]
+[stderr]
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-7-3rkz2ee3/repo && gitman work feature)
+[stdout]
+workspace: feature
+path: /tmp/gitman-wave2-old-b-7-3rkz2ee3/workspaces/feature
+base: 6b80d2ec92a621c95cbaa21d1d581a7f4e28f9f6 (trunk())
+enter it with: cd /tmp/gitman-wave2-old-b-7-3rkz2ee3/workspaces/feature
+[stderr]
+[exit 0]
+WRITE /tmp/gitman-wave2-old-b-7-3rkz2ee3/workspaces/feature/feature.txt (b'feature\n')
+$ (cd /tmp/gitman-wave2-old-b-7-3rkz2ee3/workspaces/feature && jj status)
+[stdout]
+Working copy changes:
+A feature.txt
+Working copy  (@) : yokvswyy a4be5e8f (no description set)
+Parent commit (@-): zvqrouol 6b80d2ec main | Base
+[stderr]
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-7-3rkz2ee3/workspaces/feature && jj describe -m 'Add feature')
+[stdout]
+[stderr]
+Working copy  (@) now at: yokvswyy f635e948 Add feature
+Parent commit (@-)      : zvqrouol 6b80d2ec main | Base
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-7-3rkz2ee3/workspaces/feature && jj new)
+[stdout]
+[stderr]
+Working copy  (@) now at: pvupplyo ec6ae403 (empty) (no description set)
+Parent commit (@-)      : yokvswyy f635e948 Add feature
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-7-3rkz2ee3/workspaces/feature && jj bookmark create feature -r @-)
+[stdout]
+[stderr]
+Created 1 bookmarks pointing to yokvswyy f635e948 feature | Add feature
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-7-3rkz2ee3/workspaces/feature && jj status)
+[stdout]
+The working copy has no changes.
+Working copy  (@) : pvupplyo ec6ae403 (empty) (no description set)
+Parent commit (@-): yokvswyy f635e948 feature | Add feature
+[stderr]
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-7-3rkz2ee3/workspaces/feature && python3 -c 'from pathlib import Path; assert Path('"'"'feature.txt'"'"').read_text() == '"'"'feature\n'"'"'')
+[stdout]
+[stderr]
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-7-3rkz2ee3/workspaces/feature && jj git fetch)
+[stdout]
+[stderr]
+Nothing changed.
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-7-3rkz2ee3/workspaces/feature && jj rebase -b @ -d 'trunk()')
+[stdout]
+[stderr]
+Skipped rebase of 2 commits that were already in place.
+Nothing changed.
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-7-3rkz2ee3/workspaces/feature && jj git push --bookmark feature)
+[stdout]
+[stderr]
+Changes to push to origin:
+  bookmark: feature [add to f635e948f1ab]
+[exit 0]
+$ (cd /tmp/gitman-wave2-old-b-7-3rkz2ee3/workspaces/feature && jj bookmark list)
+[stdout]
+feature: yokvswyy f635e948 Add feature
+main: zvqrouol 6b80d2ec Base
+[stderr]
+[exit 0]
+DECISION Stop: opening or merging the requested pull request needs gh and network, both prohibited in this experiment. Keep workspace and feature bookmark.

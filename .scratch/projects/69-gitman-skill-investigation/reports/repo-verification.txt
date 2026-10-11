@@ -1,0 +1,24 @@
+Command: devenv shell -- bash -c 'ruff check src tests && pytest -q'
+
+• Running devenv:files:cleanup
+• Running gitman:test
+• Running gitman:lint
+• Running devenv:python:uv
+✓ Running devenv:files:cleanup in 50.6ms
+✓ Running gitman:lint in 44.7ms
+✓ Running devenv:python:uv in 135ms
+• Running devenv:enterShell
+✓ Running devenv:enterShell in 21.4ms
+✓ Running gitman:test in 16.4s
+• Running devenv:enterTest
+✓ Running devenv:enterTest in 3.52µs (no command)
+ok      gitman:.agents  /home/andrew/Documents/Projects/gitman/.agents
+ok      gitman:.claude/skills  /home/andrew/Documents/Projects/gitman/.claude/skills
+ok      gitman:.envrc  /home/andrew/Documents/Projects/gitman/.envrc
+ok      gitman:.loci  /home/andrew/Documents/Projects/gitman/.loci
+ok      gitman:devenv.local.nix  /home/andrew/Documents/Projects/gitman/devenv.local.nix
+All checks passed!
+........................................                                 [100%]
+40 passed in 17.10s
+
+Exit code: 0

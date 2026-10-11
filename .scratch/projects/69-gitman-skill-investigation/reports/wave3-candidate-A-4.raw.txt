@@ -1,0 +1,246 @@
+CASE_ROOT=/tmp/tmp.oABVqE4sfp
+
+$ jj git init --no-colocate /tmp/tmp.oABVqE4sfp/origin
+Initialized repo in "../../tmp.oABVqE4sfp/origin"
+[exit 0]
+
+$ jj git init --colocate /tmp/tmp.oABVqE4sfp/repo
+Initialized repo in "../../tmp.oABVqE4sfp/repo"
+[exit 0]
+
+$ bash -c printf\ \"color=base\\n\"\ \>\ \"\$1\" _ /tmp/tmp.oABVqE4sfp/repo/config.txt
+[exit 0]
+
+$ jj -R /tmp/tmp.oABVqE4sfp/repo describe -m base
+Working copy  (@) now at: oyvxmoys 0eb06332 base
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+[exit 0]
+
+$ jj -R /tmp/tmp.oABVqE4sfp/repo bookmark create main -r @
+Created 1 bookmarks pointing to oyvxmoys 0eb06332 main | base
+[exit 0]
+
+$ jj -R /tmp/tmp.oABVqE4sfp/repo git remote add origin /tmp/tmp.oABVqE4sfp/origin/.jj/repo/store/git
+[exit 0]
+
+$ jj -R /tmp/tmp.oABVqE4sfp/repo git push -b main
+Changes to push to origin:
+  bookmark: main [add to 0eb06332ea4a]
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: zzwvzsxl f0897be9 (empty) (no description set)
+Parent commit (@-)      : oyvxmoys 0eb06332 main | base
+[exit 0]
+
+$ jj -R /tmp/tmp.oABVqE4sfp/repo status
+The working copy has no changes.
+Working copy  (@) : zzwvzsxl f0897be9 (empty) (no description set)
+Parent commit (@-): oyvxmoys 0eb06332 main | base
+[exit 0]
+
+$ jj -R /tmp/tmp.oABVqE4sfp/repo workspace list
+default: ../../tmp.oABVqE4sfp/repo zzwvzsxl f0897be9 (empty) (no description set)
+[exit 0]
+
+$ jj -R /tmp/tmp.oABVqE4sfp/repo log -r \(::working_copies\(\)\ ~\ ::main\)\ ~\ empty\(\)
+[exit 0]
+
+$ jj -R /tmp/tmp.oABVqE4sfp/repo bookmark list
+main: oyvxmoys 0eb06332 base
+[exit 0]
+
+$ jj -R /tmp/tmp.oABVqE4sfp/repo log -r trunk\(\)
+◆  oyvxmoys tester@example.test 2026-10-11 18:09:19 main 0eb06332
+│  base
+~
+[exit 0]
+
+$ jj -R /tmp/tmp.oABVqE4sfp/repo git remote list
+origin /tmp/tmp.oABVqE4sfp/origin/.jj/repo/store/git
+[exit 0]
+
+$ pwd
+/tmp/tmp.oABVqE4sfp/repo
+[exit 0]
+
+$ jj git fetch
+Nothing changed.
+[exit 0]
+
+$ gitman work conflict-a --from main
+workspace: conflict-a
+path: /tmp/tmp.oABVqE4sfp/workspaces/conflict-a
+base: 0eb06332ea4a189dcdd5578e076792465d83349f (main)
+enter it with: cd /tmp/tmp.oABVqE4sfp/workspaces/conflict-a
+[exit 0]
+
+$ bash -c printf\ \"color=task\\n\"\ \>\ \"\$1\" _ /tmp/tmp.oABVqE4sfp/workspaces/conflict-a/config.txt
+[exit 0]
+
+$ bash -c test\ \"\$\(cat\ \"\$1\"\)\"\ =\ \"color=task\" _ /tmp/tmp.oABVqE4sfp/workspaces/conflict-a/config.txt
+[exit 0]
+
+$ jj -R /tmp/tmp.oABVqE4sfp/workspaces/conflict-a status
+Working copy changes:
+M ../workspaces/conflict-a/config.txt
+Working copy  (@) : nzuznrwy 917c60ac (no description set)
+Parent commit (@-): oyvxmoys 0eb06332 main | base
+[exit 0]
+
+$ jj -R /tmp/tmp.oABVqE4sfp/workspaces/conflict-a diff
+Modified regular file ../workspaces/conflict-a/config.txt:
+   1     : color=base
+        1: color=task
+[exit 0]
+
+$ jj -R /tmp/tmp.oABVqE4sfp/workspaces/conflict-a log -r @\ \|\ @-
+@  nzuznrwy tester@example.test 2026-10-11 18:09:26 conflict-a@ 917c60ac
+│  (no description set)
+◆  oyvxmoys tester@example.test 2026-10-11 18:09:19 main 0eb06332
+│  base
+~
+[exit 0]
+
+$ jj -R /tmp/tmp.oABVqE4sfp/workspaces/conflict-a describe -r @ -m Change\ color\ to\ task
+Working copy  (@) now at: nzuznrwy 560c3a92 Change color to task
+Parent commit (@-)      : oyvxmoys 0eb06332 main | base
+[exit 0]
+
+$ jj -R /tmp/tmp.oABVqE4sfp/workspaces/conflict-a bookmark create conflict-a -r @
+Created 1 bookmarks pointing to nzuznrwy 560c3a92 conflict-a | Change color to task
+[exit 0]
+
+$ jj git clone /tmp/tmp.oABVqE4sfp/origin/.jj/repo/store/git /tmp/tmp.oABVqE4sfp/peer
+Fetching into new repo in "/tmp/tmp.oABVqE4sfp/peer"
+bookmark: main@origin [new] tracked
+Setting the revset alias `trunk()` to `main@origin`.
+Working copy  (@) now at: yytsrpls 1947f9ca (empty) (no description set)
+Parent commit (@-)      : oyvxmoys 0eb06332 main | base
+Added 1 files, modified 0 files, removed 0 files
+[exit 0]
+
+$ jj -R /tmp/tmp.oABVqE4sfp/peer status
+The working copy has no changes.
+Working copy  (@) : yytsrpls 1947f9ca (empty) (no description set)
+Parent commit (@-): oyvxmoys 0eb06332 main | base
+[exit 0]
+
+$ jj -R /tmp/tmp.oABVqE4sfp/peer bookmark list
+main: oyvxmoys 0eb06332 base
+[exit 0]
+
+$ jj -R /tmp/tmp.oABVqE4sfp/peer log -r trunk\(\)\ \|\ @
+@  yytsrpls tester@example.test 2026-10-11 18:09:30 1947f9ca
+│  (empty) (no description set)
+◆  oyvxmoys tester@example.test 2026-10-11 18:09:19 main 0eb06332
+│  base
+~
+[exit 0]
+
+$ bash -c printf\ \"color=remote\\n\"\ \>\ \"\$1\" _ /tmp/tmp.oABVqE4sfp/peer/config.txt
+[exit 0]
+
+$ jj -R /tmp/tmp.oABVqE4sfp/peer describe -r @ -m Change\ color\ remotely
+Working copy  (@) now at: yytsrpls e8933dae Change color remotely
+Parent commit (@-)      : oyvxmoys 0eb06332 main | base
+[exit 0]
+
+$ jj -R /tmp/tmp.oABVqE4sfp/peer bookmark set main -r @
+Moved 1 bookmarks to yytsrpls e8933dae main* | Change color remotely
+[exit 0]
+
+$ jj -R /tmp/tmp.oABVqE4sfp/peer git push -b main
+Changes to push to origin:
+  bookmark: main [move forward from 0eb06332ea4a to e8933dae3b72]
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: sprmrovv c4a84abd (empty) (no description set)
+Parent commit (@-)      : yytsrpls e8933dae main | Change color remotely
+[exit 0]
+
+$ jj -R /tmp/tmp.oABVqE4sfp/workspaces/conflict-a git fetch
+bookmark: main@origin [updated] tracked
+[exit 0]
+
+$ jj -R /tmp/tmp.oABVqE4sfp/workspaces/conflict-a bookmark list
+conflict-a: nzuznrwy 560c3a92 Change color to task
+main: yytsrpls e8933dae Change color remotely
+[exit 0]
+
+$ jj -R /tmp/tmp.oABVqE4sfp/workspaces/conflict-a log -r main\ \|\ main@origin\ \|\ conflict-a\ \|\ conflict-a@
+@  nzuznrwy tester@example.test 2026-10-11 18:09:26 conflict-a conflict-a@ 560c3a92
+│  Change color to task
+~
+
+◆  yytsrpls tester@example.test 2026-10-11 18:09:36 main e8933dae
+│  Change color remotely
+~
+[exit 0]
+
+$ jj -R /tmp/tmp.oABVqE4sfp/workspaces/conflict-a log -r ::conflict-a\ \|\ conflict-a::\ \|\ ::main
+@  nzuznrwy tester@example.test 2026-10-11 18:09:26 conflict-a conflict-a@ 560c3a92
+│  Change color to task
+│ ◆  yytsrpls tester@example.test 2026-10-11 18:09:36 main e8933dae
+├─╯  Change color remotely
+◆  oyvxmoys tester@example.test 2026-10-11 18:09:19 0eb06332
+│  base
+◆  zzzzzzzz root() 00000000
+[exit 0]
+
+$ jj -R /tmp/tmp.oABVqE4sfp/workspaces/conflict-a rebase -r conflict-a -d main
+Rebased 1 commits to destination.
+Working copy  (@) now at: nzuznrwy a682dd6a conflict-a | (conflict) Change color to task
+Parent commit (@-)      : yytsrpls e8933dae main | Change color remotely
+Added 0 files, modified 1 files, removed 0 files
+Warning: There are unresolved conflicts at these paths:
+../workspaces/conflict-a/config.txt 2-sided conflict
+New conflicts appeared in 1 commits:
+  nzuznrwy a682dd6a conflict-a | (conflict) Change color to task
+Hint: To resolve the conflicts, start by creating a commit on top of
+the conflicted commit:
+  jj new nzuznrwy
+Then use `jj resolve`, or edit the conflict markers in the file directly.
+Once the conflicts are resolved, you can inspect the result with `jj diff`.
+Then run `jj squash` to move the resolution into the conflicted commit.
+[exit 0]
+
+$ jj -R /tmp/tmp.oABVqE4sfp/workspaces/conflict-a status
+Working copy changes:
+M ../workspaces/conflict-a/config.txt
+Working copy  (@) : nzuznrwy a682dd6a conflict-a | (conflict) Change color to task
+Parent commit (@-): yytsrpls e8933dae main | Change color remotely
+Warning: There are unresolved conflicts at these paths:
+../workspaces/conflict-a/config.txt 2-sided conflict
+[exit 0]
+
+$ jj -R /tmp/tmp.oABVqE4sfp/workspaces/conflict-a log -r conflicts\(\)
+@  nzuznrwy tester@example.test 2026-10-11 18:09:43 conflict-a conflict-a@ a682dd6a (conflict)
+│  Change color to task
+~
+[exit 0]
+
+$ jj -R /tmp/tmp.oABVqE4sfp/workspaces/conflict-a log -r divergent\(\)
+[exit 0]
+
+$ jj -R /tmp/tmp.oABVqE4sfp/workspaces/conflict-a log -r main\ \|\ conflict-a\ \|\ conflict-a@
+@  nzuznrwy tester@example.test 2026-10-11 18:09:43 conflict-a conflict-a@ a682dd6a (conflict)
+│  Change color to task
+◆  yytsrpls tester@example.test 2026-10-11 18:09:36 main e8933dae
+│  Change color remotely
+~
+[exit 0]
+
+$ jj -R /tmp/tmp.oABVqE4sfp/workspaces/conflict-a diff
+Created conflict in ../workspaces/conflict-a/config.txt:
+        1: <<<<<<< conflict 1 of 1
+        2: +++++++ yytsrpls e8933dae "Change color remotely" (rebase destination)
+   1    3: color=remote
+        4: %%%%%%% diff from: oyvxmoys 0eb06332 "base" (parents of rebased revision)
+        5: \\\\\\\        to: nzuznrwy 560c3a92 "Change color to task" (rebased revision)
+        6: -color=base
+        7: +color=task
+        8: >>>>>>> conflict 1 of 1 ends
+[exit 0]
+
+$ jj -R /tmp/tmp.oABVqE4sfp/workspaces/conflict-a workspace list
+conflict-a: ../workspaces/conflict-a nzuznrwy a682dd6a conflict-a | (conflict) Change color to task
+default: . zzwvzsxl f0897be9 (empty) (no description set)
+[exit 0]

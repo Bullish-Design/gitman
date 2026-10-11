@@ -1,0 +1,215 @@
+DECISION: SCENARIO 6; sandbox /tmp/gitman-old-a-6-mtnsavu3
+$ write /tmp/gitman-old-a-6-mtnsavu3/jjconfig.toml '[user]\nname = "Test User"\nemail = "test@example.invalid"\n'
+[exit 0; output empty]
+$ (cd /tmp/gitman-old-a-6-mtnsavu3 && jj git init --no-colocate /tmp/gitman-old-a-6-mtnsavu3/origin)
+exit=0
+stdout:
+stderr:
+Initialized repo in "origin"
+
+$ (cd /tmp/gitman-old-a-6-mtnsavu3 && jj git init --colocate /tmp/gitman-old-a-6-mtnsavu3/main)
+exit=0
+stdout:
+stderr:
+Initialized repo in "main"
+
+$ write /tmp/gitman-old-a-6-mtnsavu3/main/file.txt 'base\n'
+[exit 0; output empty]
+$ (cd /tmp/gitman-old-a-6-mtnsavu3/main && jj status)
+exit=0
+stdout:
+Working copy changes:
+A file.txt
+Working copy  (@) : pmtrlmuk 00c40d25 (no description set)
+Parent commit (@-): zzzzzzzz 00000000 (empty) (no description set)
+stderr:
+
+$ (cd /tmp/gitman-old-a-6-mtnsavu3/main && jj describe -m Initial)
+exit=0
+stdout:
+stderr:
+Working copy  (@) now at: pmtrlmuk 84290214 Initial
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+
+$ (cd /tmp/gitman-old-a-6-mtnsavu3/main && jj bookmark create main -r @)
+exit=0
+stdout:
+stderr:
+Created 1 bookmarks pointing to pmtrlmuk 84290214 main | Initial
+
+$ (cd /tmp/gitman-old-a-6-mtnsavu3/main && jj git remote add origin /tmp/gitman-old-a-6-mtnsavu3/origin/.jj/repo/store/git)
+exit=0
+stdout:
+stderr:
+
+$ (cd /tmp/gitman-old-a-6-mtnsavu3/main && jj git push --bookmark main)
+exit=0
+stdout:
+stderr:
+Changes to push to origin:
+  bookmark: main [add to 842902144224]
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: ssnyotqo 09fbb194 (empty) (no description set)
+Parent commit (@-)      : pmtrlmuk 84290214 main | Initial
+
+$ (cd /tmp/gitman-old-a-6-mtnsavu3/main && jj new main)
+exit=0
+stdout:
+stderr:
+Working copy  (@) now at: vmqqozpn 4cebeedc (empty) (no description set)
+Parent commit (@-)      : pmtrlmuk 84290214 main | Initial
+
+DECISION: Check workspaces and described work before opening another workspace.
+$ (cd /tmp/gitman-old-a-6-mtnsavu3/main && jj workspace list)
+exit=0
+stdout:
+default: . vmqqozpn 4cebeedc (empty) (no description set)
+stderr:
+
+$ (cd /tmp/gitman-old-a-6-mtnsavu3/main && jj log -r '(::working_copies() ~ ::trunk()) ~ empty()')
+exit=0
+stdout:
+stderr:
+
+$ (cd /tmp/gitman-old-a-6-mtnsavu3/main && gitman work ready)
+exit=0
+stdout:
+workspace: ready
+path: /tmp/gitman-old-a-6-mtnsavu3/workspaces/ready
+base: 84290214422475d8a44aa780d9ca3ea809855dd4 (trunk())
+enter it with: cd /tmp/gitman-old-a-6-mtnsavu3/workspaces/ready
+stderr:
+
+$ write /tmp/gitman-old-a-6-mtnsavu3/workspaces/ready/feature.txt 'feature\n'
+[exit 0; output empty]
+$ (cd /tmp/gitman-old-a-6-mtnsavu3/workspaces/ready && jj status)
+exit=0
+stdout:
+Working copy changes:
+A feature.txt
+Working copy  (@) : ouyuonlz 29bd0f2c (no description set)
+Parent commit (@-): pmtrlmuk 84290214 main | Initial
+stderr:
+
+$ (cd /tmp/gitman-old-a-6-mtnsavu3/workspaces/ready && jj describe -m 'Add feature')
+exit=0
+stdout:
+stderr:
+Working copy  (@) now at: ouyuonlz bd618057 Add feature
+Parent commit (@-)      : pmtrlmuk 84290214 main | Initial
+
+DECISION: Verify task content before integration.
+$ (cd /tmp/gitman-old-a-6-mtnsavu3/workspaces/ready && bash -c 'test -f feature.txt')
+exit=0
+stdout:
+stderr:
+
+DECISION: Default workspace gains separate uncommitted work before landing.
+$ write /tmp/gitman-old-a-6-mtnsavu3/main/local.txt 'local work\n'
+[exit 0; output empty]
+$ (cd /tmp/gitman-old-a-6-mtnsavu3/main && jj status)
+exit=0
+stdout:
+Working copy changes:
+A local.txt
+Working copy  (@) : vmqqozpn 7f8c45af (no description set)
+Parent commit (@-): pmtrlmuk 84290214 main | Initial
+stderr:
+
+DECISION: Fetch, then rebase the task branch onto trunk.
+$ (cd /tmp/gitman-old-a-6-mtnsavu3/workspaces/ready && jj git fetch)
+exit=0
+stdout:
+stderr:
+Nothing changed.
+
+$ (cd /tmp/gitman-old-a-6-mtnsavu3/workspaces/ready && jj rebase -b @ -d 'trunk()')
+exit=0
+stdout:
+stderr:
+Skipped rebase of 1 commits that were already in place.
+Nothing changed.
+
+DECISION: Verify task content before integration.
+$ (cd /tmp/gitman-old-a-6-mtnsavu3/workspaces/ready && bash -c 'test -f feature.txt')
+exit=0
+stdout:
+stderr:
+
+DECISION: Set main to the task change after green verification and sync.
+$ (cd /tmp/gitman-old-a-6-mtnsavu3/workspaces/ready && jj bookmark set main -r @-)
+exit=0
+stdout:
+stderr:
+
+DECISION: Push main to local bare origin.
+$ (cd /tmp/gitman-old-a-6-mtnsavu3/workspaces/ready && jj git push --bookmark main)
+exit=0
+stdout:
+stderr:
+Bookmark main@origin already matches main
+Nothing changed.
+
+DECISION: Check default workspace before updating it.
+$ (cd /tmp/gitman-old-a-6-mtnsavu3/main && jj status)
+exit=0
+stdout:
+Working copy changes:
+A local.txt
+Working copy  (@) : vmqqozpn 7f8c45af (no description set)
+Parent commit (@-): pmtrlmuk 84290214 main | Initial
+stderr:
+
+$ (cd /tmp/gitman-old-a-6-mtnsavu3/main && jj log -r @ -T empty)
+exit=0
+stdout:
+@  false
+│
+~
+stderr:
+
+DECISION: Default workspace has local work. Do not run jj new main there; report that main checkout was not updated.
+DECISION: Check that task work is on trunk before removal. Inspect directory, including metadata and ignored files.
+$ (cd /tmp/gitman-old-a-6-mtnsavu3/main && jj log -r '(::ready@ ~ ::trunk()) ~ empty()')
+exit=0
+stdout:
+○  ouyuonlz test@example.invalid 2026-10-11 17:56:42 ready@ bd618057
+│  Add feature
+~
+stderr:
+
+$ (cd /tmp/gitman-old-a-6-mtnsavu3/main && find /tmp/gitman-old-a-6-mtnsavu3/workspaces/ready -maxdepth 2 -print)
+exit=0
+stdout:
+/tmp/gitman-old-a-6-mtnsavu3/workspaces/ready
+/tmp/gitman-old-a-6-mtnsavu3/workspaces/ready/.git
+/tmp/gitman-old-a-6-mtnsavu3/workspaces/ready/.jj
+/tmp/gitman-old-a-6-mtnsavu3/workspaces/ready/.jj/repo
+/tmp/gitman-old-a-6-mtnsavu3/workspaces/ready/.jj/working_copy
+/tmp/gitman-old-a-6-mtnsavu3/workspaces/ready/.jj/.gitignore
+/tmp/gitman-old-a-6-mtnsavu3/workspaces/ready/file.txt
+/tmp/gitman-old-a-6-mtnsavu3/workspaces/ready/feature.txt
+stderr:
+
+$ (cd /tmp/gitman-old-a-6-mtnsavu3/workspaces/ready && jj status)
+exit=0
+stdout:
+Working copy changes:
+A feature.txt
+Working copy  (@) : ouyuonlz bd618057 Add feature
+Parent commit (@-): pmtrlmuk 84290214 main | Initial
+stderr:
+
+$ (cd /tmp/gitman-old-a-6-mtnsavu3/main && jj workspace remove ready)
+exit=0
+stdout:
+stderr:
+Removed Git worktree for "/tmp/gitman-old-a-6-mtnsavu3/workspaces/ready".
+Removed workspace directory "/tmp/gitman-old-a-6-mtnsavu3/workspaces/ready".
+
+$ (cd /tmp/gitman-old-a-6-mtnsavu3/main && jj workspace list)
+exit=0
+stdout:
+default: . vmqqozpn 7f8c45af (no description set)
+stderr:
+

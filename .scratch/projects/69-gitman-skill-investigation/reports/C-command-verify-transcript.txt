@@ -1,0 +1,217 @@
+• Running gitman:test
+• Running devenv:files:cleanup
+• Running gitman:lint
+• Running devenv:python:uv
+✓ Running gitman:lint in 13.2ms
+✓ Running devenv:files:cleanup in 20.8ms
+✓ Running devenv:python:uv in 65.4ms
+• Running devenv:enterShell
+✓ Running devenv:enterShell in 19.6ms
+✓ Running gitman:test in 13.9s
+• Running devenv:enterTest
+✓ Running devenv:enterTest in 1.06µs (no command)
+ok      gitman:.agents  /home/andrew/Documents/Projects/gitman/.agents
+ok      gitman:.claude/skills  /home/andrew/Documents/Projects/gitman/.claude/skills
+ok      gitman:.envrc  /home/andrew/Documents/Projects/gitman/.envrc
+ok      gitman:.loci  /home/andrew/Documents/Projects/gitman/.loci
+ok      gitman:devenv.local.nix  /home/andrew/Documents/Projects/gitman/devenv.local.nix
+
+$ jj --version
+jj 0.46.0-7d382314f9420b4b8d932245b49c99492c812b9f
+[exit=0]
+
+$ jj git init --no-colocate /tmp/gitman-c-verify.0q1bk4/origin-holder
+Initialized repo in "origin-holder"
+[exit=0]
+
+$ ls -ld /tmp/gitman-c-verify.0q1bk4/origin-holder/.jj/repo/store/git
+drwxr-xr-x 1 andrew users 82 Oct 11 17:47 /tmp/gitman-c-verify.0q1bk4/origin-holder/.jj/repo/store/git
+[exit=0]
+
+$ jj git init --colocate /tmp/gitman-c-verify.0q1bk4/main
+Initialized repo in "main"
+[exit=0]
+
+$ jj status
+Working copy changes:
+A .gitignore
+A README.md
+Working copy  (@) : tvrrrquv 09818586 (no description set)
+Parent commit (@-): zzzzzzzz 00000000 (empty) (no description set)
+[exit=0]
+
+$ jj describe -m Initial\ commit
+Working copy  (@) now at: tvrrrquv 53506034 Initial commit
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+[exit=0]
+
+$ jj bookmark create main -r @
+Created 1 bookmarks pointing to tvrrrquv 53506034 main | Initial commit
+[exit=0]
+
+$ jj git remote add origin /tmp/gitman-c-verify.0q1bk4/origin-holder/.jj/repo/store/git
+[exit=0]
+
+$ jj git push --bookmark main
+Changes to push to origin:
+  bookmark: main [add to 535060343894]
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: zqtzrqzq 4c8e8de1 (empty) (no description set)
+Parent commit (@-)      : tvrrrquv 53506034 main | Initial commit
+[exit=0]
+
+$ jj new main
+Working copy  (@) now at: potxzwmy 7e28ae87 (empty) (no description set)
+Parent commit (@-)      : tvrrrquv 53506034 main | Initial commit
+[exit=0]
+
+$ jj git fetch
+Nothing changed.
+[exit=0]
+
+# Before opening the workspace
+
+$ jj workspace list
+default: . potxzwmy 7e28ae87 (empty) (no description set)
+[exit=0]
+
+$ jj log -r \(::working_copies\(\)\ ~\ ::trunk\(\)\)\ ~\ empty\(\)
+[exit=0]
+
+# Open workspace
+
+$ gitman work task
+workspace: task
+path: /tmp/gitman-c-verify.0q1bk4/workspaces/task
+base: 5350603438942583a6968752e7992a4e21e0dfea (trunk())
+enter it with: cd /tmp/gitman-c-verify.0q1bk4/workspaces/task
+[exit=0]
+
+$ jj workspace list
+default: . potxzwmy 7e28ae87 (empty) (no description set)
+task: ../workspaces/task okpltmys ecec42b6 (empty) (no description set)
+[exit=0]
+
+$ jj status
+Working copy changes:
+A feature.txt
+Working copy  (@) : okpltmys bad94738 (no description set)
+Parent commit (@-): tvrrrquv 53506034 main | Initial commit
+[exit=0]
+
+$ jj describe -m Add\ feature
+Working copy  (@) now at: okpltmys 9dbe3335 Add feature
+Parent commit (@-)      : tvrrrquv 53506034 main | Initial commit
+[exit=0]
+
+$ jj bookmark create task -r @-
+Created 1 bookmarks pointing to tvrrrquv 53506034 main task | Initial commit
+[exit=0]
+
+$ jj log -r task -T description\ ++\ \"\\\\n\"
+◆  Initial commit
+│  \n
+~
+[exit=0]
+
+$ jj log -r @ -T description\ ++\ \"\\\\n\"
+@  Add feature
+│  \n
+~
+[exit=0]
+
+$ jj git fetch
+Nothing changed.
+[exit=0]
+
+$ jj rebase -b @ -d trunk\(\)
+Skipped rebase of 1 commits that were already in place.
+Nothing changed.
+[exit=0]
+
+$ jj git push --bookmark task
+Changes to push to origin:
+  bookmark: task [add to 535060343894]
+[exit=0]
+
+$ jj bookmark set main -r @
+Moved 1 bookmarks to okpltmys 9dbe3335 main* | Add feature
+[exit=0]
+
+$ jj git push --bookmark main
+Changes to push to origin:
+  bookmark: main [move forward from 535060343894 to 9dbe333575de]
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: tnvymxnr ab27ed8a (empty) (no description set)
+Parent commit (@-)      : okpltmys 9dbe3335 main | Add feature
+[exit=0]
+
+$ jj status
+The working copy has no changes.
+Working copy  (@) : tnvymxnr ab27ed8a (empty) (no description set)
+Parent commit (@-): okpltmys 9dbe3335 main | Add feature
+[exit=0]
+
+$ find /tmp/gitman-c-verify.0q1bk4/workspaces/task -maxdepth 1 -type f -print
+/tmp/gitman-c-verify.0q1bk4/workspaces/task/.git
+/tmp/gitman-c-verify.0q1bk4/workspaces/task/.gitignore
+/tmp/gitman-c-verify.0q1bk4/workspaces/task/README.md
+/tmp/gitman-c-verify.0q1bk4/workspaces/task/feature.txt
+/tmp/gitman-c-verify.0q1bk4/workspaces/task/cache.ignored
+[exit=0]
+
+# Default workspace update
+
+$ jj status
+The working copy has no changes.
+Working copy  (@) : potxzwmy 7e28ae87 (empty) (no description set)
+Parent commit (@-): tvrrrquv 53506034 task | Initial commit
+[exit=0]
+
+$ jj new main
+Working copy  (@) now at: otmrrmvl 251e8d0c (empty) (no description set)
+Parent commit (@-)      : okpltmys 9dbe3335 main | Add feature
+Added 1 files, modified 0 files, removed 0 files
+[exit=0]
+
+$ jj status
+The working copy has no changes.
+Working copy  (@) : otmrrmvl 251e8d0c (empty) (no description set)
+Parent commit (@-): okpltmys 9dbe3335 main | Add feature
+[exit=0]
+
+# Removal check
+
+$ jj log -r \(::task@\ ~\ ::trunk\(\)\)\ ~\ empty\(\)
+[exit=0]
+
+$ jj workspace remove task
+Removed Git worktree for "/tmp/gitman-c-verify.0q1bk4/workspaces/task".
+Removed workspace directory "/tmp/gitman-c-verify.0q1bk4/workspaces/task".
+[exit=0]
+
+$ jj workspace list
+default: . otmrrmvl 251e8d0c (empty) (no description set)
+[exit=0]
+
+$ test -e /tmp/gitman-c-verify.0q1bk4/workspaces/task/cache.ignored
+[exit=1]
+
+$ test -e /tmp/gitman-c-verify.0q1bk4/workspaces/task
+[exit=1]
+
+$ jj log -r main -T description\ ++\ \"\\\\n\"
+◆  Add feature
+│  \n
+~
+[exit=0]
+
+$ jj git fetch
+Nothing changed.
+[exit=0]
+
+$ jj status
+The working copy has no changes.
+Working copy  (@) : otmrrmvl 251e8d0c (empty) (no description set)
+Parent commit (@-): okpltmys 9dbe3335 main | Add feature
+[exit=0]

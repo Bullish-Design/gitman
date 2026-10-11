@@ -1,0 +1,134 @@
+$ mktemp -d /tmp/gitman-old-C-7.XXXXXX
+/tmp/gitman-old-C-7.9rmLzs
+[exit 0]
+$ mkdir "$sandbox/repo"
+[exit 0]
+$ cat > "$sandbox/jjconfig.toml" <<'EOF'
+user.name = "Scenario User"
+user.email = "scenario@example.invalid"
+EOF
+[exit 0]
+$ export JJ_CONFIG="$sandbox/jjconfig.toml" GIT_CONFIG_GLOBAL=/dev/null GITMAN_WORKSPACE_ROOT="$sandbox/workspaces"
+[exit 0]
+
+$ jj git init --colocate .
+Initialized repo in "."
+[exit 0]
+
+$ printf 'base\n' > README.md
+[exit 0]
+
+$ jj status
+Working copy changes:
+A README.md
+Working copy  (@) : sxmmkorz 7128bdb8 (no description set)
+Parent commit (@-): zzzzzzzz 00000000 (empty) (no description set)
+[exit 0]
+
+$ jj describe -m 'Initialize scenario'
+Working copy  (@) now at: sxmmkorz c9e5b1be Initialize scenario
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+[exit 0]
+
+$ jj bookmark create main -r @
+Created 1 bookmarks pointing to sxmmkorz c9e5b1be main | Initialize scenario
+[exit 0]
+
+$ jj new main
+Working copy  (@) now at: xrsryxvm 2adf1aca (empty) (no description set)
+Parent commit (@-)      : sxmmkorz c9e5b1be main | Initialize scenario
+[exit 0]
+
+$ jj git init --no-colocate ../origin
+Initialized repo in "../origin"
+[exit 0]
+
+$ jj git remote add origin ../origin/.jj/repo/store/git
+[exit 0]
+
+$ jj git push --bookmark main
+Changes to push to origin:
+  bookmark: main [add to c9e5b1bea606]
+[exit 0]
+
+$ jj git fetch
+Nothing changed.
+[exit 0]
+
+$ jj workspace list
+default: . xrsryxvm 2adf1aca (empty) (no description set)
+[exit 0]
+
+$ jj log -r '(::working_copies() ~ ::trunk()) ~ empty()'
+[exit 0]
+
+$ printf '#!/bin/sh\nwhile read old new ref; do\n  if [ "$ref" = refs/heads/main ]; then\n    echo "protected main" >&2\n    exit 1\n  fi\ndone\nexit 0\n' > ../origin/.jj/repo/store/git/hooks/pre-receive
+[exit 0]
+
+$ chmod +x ../origin/.jj/repo/store/git/hooks/pre-receive
+[exit 0]
+
+$ sed -n '1,10p' ../origin/.jj/repo/store/git/hooks/pre-receive
+#!/bin/sh
+while read old new ref; do
+  if [ "$ref" = refs/heads/main ]; then
+    echo "protected main" >&2
+    exit 1
+  fi
+done
+exit 0
+[exit 0]
+
+$ gitman work pr_feature
+workspace: pr_feature
+path: /tmp/gitman-old-C-7.9rmLzs/workspaces/pr_feature
+base: c9e5b1bea6061a29f215b82751a981a0dc21ef86 (trunk())
+enter it with: cd /tmp/gitman-old-C-7.9rmLzs/workspaces/pr_feature
+[exit 0]
+
+$ cd ../workspaces/pr_feature && printf 'review me\n' > feature.txt
+[exit 0]
+
+$ cd ../workspaces/pr_feature && jj status
+Working copy changes:
+A feature.txt
+Working copy  (@) : rxoyyyom 668d8ee9 (no description set)
+Parent commit (@-): sxmmkorz c9e5b1be main | Initialize scenario
+[exit 0]
+
+$ cd ../workspaces/pr_feature && jj describe -m 'Add feature for review'
+Working copy  (@) now at: rxoyyyom f6f47c25 Add feature for review
+Parent commit (@-)      : sxmmkorz c9e5b1be main | Initialize scenario
+[exit 0]
+
+$ cd ../workspaces/pr_feature && test -f feature.txt
+[exit 0]
+
+$ cd ../workspaces/pr_feature && jj git fetch
+Nothing changed.
+[exit 0]
+
+$ cd ../workspaces/pr_feature && jj rebase -b @ -d 'trunk()'
+Skipped rebase of 1 commits that were already in place.
+Nothing changed.
+[exit 0]
+
+$ cd ../workspaces/pr_feature && jj bookmark create pr_feature -r @
+Created 1 bookmarks pointing to rxoyyyom f6f47c25 pr_feature | Add feature for review
+[exit 0]
+
+$ cd ../workspaces/pr_feature && jj git push --bookmark pr_feature
+Changes to push to origin:
+  bookmark: pr_feature [add to f6f47c25cead]
+[exit 0]
+
+$ jj workspace list
+default: . xrsryxvm 2adf1aca (empty) (no description set)
+pr_feature: ../workspaces/pr_feature rxoyyyom f6f47c25 pr_feature | Add feature for review
+[exit 0]
+
+$ jj log -r '(::pr_feature@ ~ ::trunk()) ~ empty()'
+○  rxoyyyom scenario@example.invalid 2026-10-11 18:00:20 pr_feature pr_feature@ f6f47c25
+│  Add feature for review
+~
+[exit 0]

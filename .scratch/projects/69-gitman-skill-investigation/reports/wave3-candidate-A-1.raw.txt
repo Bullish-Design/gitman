@@ -1,0 +1,562 @@
+CASE_ROOT=/tmp/tmp.eguuSIc54M
+
+$ jj git init --no-colocate /tmp/tmp.eguuSIc54M/origin
+Initialized repo in "../../../../../tmp/tmp.eguuSIc54M/origin"
+[exit 0]
+
+$ jj git init --colocate /tmp/tmp.eguuSIc54M/repo
+Initialized repo in "../../../../../tmp/tmp.eguuSIc54M/repo"
+[exit 0]
+
+$ ls -ld /tmp/tmp.eguuSIc54M/origin/.jj/repo/store/git
+drwxr-xr-x 1 andrew users 82 Oct 11 18:07 /tmp/tmp.eguuSIc54M/origin/.jj/repo/store/git
+[exit 0]
+
+$ bash -c printf\ \"base\\n\"\ \>\ \"\$1\" _ /tmp/tmp.eguuSIc54M/repo/README.md
+[exit 0]
+
+$ jj -R /tmp/tmp.eguuSIc54M/repo describe -m base
+Working copy  (@) now at: qkypyrqq 5955bfad base
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+[exit 0]
+
+$ jj -R /tmp/tmp.eguuSIc54M/repo bookmark create main -r @
+Created 1 bookmarks pointing to qkypyrqq 5955bfad main | base
+[exit 0]
+
+$ jj -R /tmp/tmp.eguuSIc54M/repo git remote add origin /tmp/tmp.eguuSIc54M/origin/.jj/repo/store/git
+[exit 0]
+
+$ jj -R /tmp/tmp.eguuSIc54M/repo git push -b main --allow-new
+error: unexpected argument '--allow-new' found
+
+  tip: a similar argument exists: '--all'
+
+Usage: jj git push --bookmark <BOOKMARK> --all
+
+For more information, try '--help'.
+[exit 2]
+
+$ jj git push --help
+Push to a Git remote
+
+By default, pushes tracking bookmarks and tags pointing to
+`remote_bookmarks(remote=<remote>)..@`. The default can be configured via
+`revsets.git-push`. Use `--bookmark`/`--tag` to push specific bookmarks or tags.
+Use `--all` to push all bookmarks and tags. Use `--change` to generate bookmark
+names based on the change IDs of specific commits.
+
+When pushing a bookmark or tag, the command pushes all commits in the range from
+the remote's current position up to and including its target commit. Any
+descendant commits beyond the reference are not pushed.
+
+If the local reference has changed from the last fetch, push will update the
+remote reference to the new position after passing safety checks. This is
+similar to `git push --force-with-lease` - the remote is updated only if its
+current state matches what Jujutsu last fetched.
+
+Unlike in Git, the remote to push to is not derived from the tracked remote
+bookmarks. Use `--remote` to select the remote Git repository by name. There is
+no option to push to multiple remotes.
+
+Before the command actually moves, creates, or deletes a remote bookmark, it
+makes several [safety checks]. If there is a problem, you may need to run `jj
+git fetch --remote <remote name>` and/or resolve some [bookmark conflicts].
+
+[safety checks]:
+https://docs.jj-vcs.dev/latest/bookmarks/#pushing-bookmarks-safety-checks
+
+[bookmark conflicts]: https://docs.jj-vcs.dev/latest/bookmarks/#conflicts
+
+Usage: jj git push [OPTIONS]
+
+Options:
+      --remote <REMOTE>
+          The remote(s) to push to (can be repeated)
+          
+          This defaults to the `git.push` setting. If that is not configured,
+          and if there are multiple remotes, the remote named "origin" will be
+          used.
+          
+          By default, the specified pattern matches remote names with glob
+          syntax, e.g., `--remote '*'`. You can also use other [string pattern
+          syntax].
+          
+          [string pattern syntax]:
+          https://docs.jj-vcs.dev/latest/revsets/#string-patterns
+
+  -b, --bookmark <BOOKMARK>
+          Push only this bookmark, or bookmarks matching a pattern (can be
+          repeated)
+          
+          If a bookmark isn't tracking anything yet, the remote bookmark will be
+          tracked automatically.
+          
+          By default, the specified pattern matches bookmark names with glob
+          syntax. You can also use other [string pattern syntax].
+          
+          [string pattern syntax]:
+          https://docs.jj-vcs.dev/latest/revsets/#string-patterns
+
+  -t, --tag <TAG>
+          Push only this tag, or tags matching a pattern (can be repeated)
+          
+          If a tag isn't tracking anything yet, the remote tag will be tracked
+          automatically.
+          
+          By default, the specified pattern matches tag names with glob syntax.
+          You can also use other [string pattern syntax].
+          
+          [string pattern syntax]:
+          https://docs.jj-vcs.dev/latest/revsets/#string-patterns
+
+      --all
+          Push all bookmarks and tags (including new ones)
+
+      --tracked
+          Push all tracked bookmarks and tags
+          
+          This usually means that the bookmark or tag was already pushed to or
+          fetched from the [relevant remote].
+          
+          [relevant remote]:
+          https://docs.jj-vcs.dev/latest/bookmarks#remotes-and-tracked-bookmarks
+
+      --deleted
+          Push all deleted bookmarks and tags
+          
+          Only tracked bookmarks and tags can be successfully deleted on the
+          remote. A warning will be printed if any untracked bookmarks or tags
+          on the remote correspond to missing local bookmarks or tags.
+
+      --allow-empty-description
+          Allow pushing commits with empty descriptions
+
+      --allow-private
+          Allow pushing commits that are private
+          
+          The set of private commits can be configured by the
+          `git.private-commits` setting. The default is `none()`, meaning all
+          commits are eligible to be pushed.
+
+      --allow-conflicts
+          Allow pushing commits that contain conflicts
+
+  -r, --revision <REVSETS>
+          Push bookmarks and tags pointing to these commits (can be repeated)
+
+  -c, --change <REVSETS>
+          Push this commit by creating a bookmark (can be repeated)
+          
+          The created bookmark will be tracked automatically. Use the
+          `templates.git_push_bookmark` setting to customize the generated
+          bookmark name. The default is `"push-" ++ change_id.short()`.
+
+      --named <NAME=REVISION>
+          Specify a new bookmark name and a revision to push under that name,
+          e.g. '--named myfeature=@'
+          
+          Automatically tracks the bookmark if it is new.
+
+      --dry-run
+          Only display what will change on the remote
+
+  -o, --option <OPTION>
+          Git push options
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+Global Options:
+  -R, --repository <REPOSITORY>
+          Path to repository to operate on
+          
+          By default, Jujutsu searches for the closest .jj/ directory in an
+          ancestor of the current working directory.
+
+      --ignore-working-copy
+          Don't snapshot the working copy, and don't update it
+          
+          By default, Jujutsu snapshots the working copy at the beginning of
+          every command. The working copy is also updated at the end of the
+          command, if the command modified the working-copy commit (`@`). If you
+          want to avoid snapshotting the working copy and instead see a possibly
+          stale working-copy commit, you can use `--ignore-working-copy`. This
+          may be useful e.g. in a command prompt, especially if you have another
+          process that commits the working copy.
+          
+          Loading the repository at a specific operation with `--at-operation`
+          implies `--ignore-working-copy`.
+
+      --no-integrate-operation
+          Run the command as usual but don't integrate any operations
+          
+          When this option is given, the operations will still be created as
+          usual but they will not be integrated to the operation log. The
+          working copy will also not be updated.
+          
+          The command will print the resulting operation ID. You can pass that
+          to e.g. `jj --at-op` to inspect the resulting repo state, or you can
+          pass it to `jj op restore` to restore the repo to that state. You can
+          also pass the ID to `jj op integrate` to integrate the operation.
+          
+          Note that this does *not* prevent side effects outside the repo. For
+          example, `jj git push --no-integrate-operation` will still perform the
+          push.
+
+      --ignore-immutable
+          Allow rewriting immutable commits
+          
+          By default, Jujutsu prevents rewriting commits in the configured set
+          of immutable commits. This option disables that check and lets you
+          rewrite any commit but the root commit.
+          
+          This option only affects the check. It does not affect the
+          `immutable_heads()` revset or the `immutable` template keyword.
+
+      --at-operation <AT_OPERATION>
+          Operation to load the repo at
+          
+          Operation to load the repo at. By default, Jujutsu loads the repo at
+          the most recent operation, or at the merge of the divergent operations
+          if any.
+          
+          You can use `--at-op=<operation ID>` to see what the repo looked like
+          at an earlier operation. For example `jj --at-op=<operation ID> st`
+          will show you what `jj st` would have shown you when the given
+          operation had just finished. `--at-op=@` is pretty much the same as
+          the default except that divergent operations will never be merged.
+          
+          Use `jj op log` to find the operation ID you want. Any unambiguous
+          prefix of the operation ID is enough.
+          
+          When loading the repo at an earlier operation, the working copy will
+          be ignored, as if `--ignore-working-copy` had been specified.
+          
+          It is possible to run mutating commands when loading the repo at an
+          earlier operation. Doing that is equivalent to having run concurrent
+          commands starting at the earlier operation. There's rarely a reason to
+          do that, but it is possible.
+          
+          [alias: --at-op]
+
+      --debug
+          Enable debug logging
+
+      --color <WHEN>
+          When to colorize output
+          
+          [possible values: always, never, debug, auto]
+
+      --quiet
+          Silence non-primary command output
+          
+          For example, `jj file list` will still list files, but it won't tell
+          you if the working copy was snapshotted or if descendants were
+          rebased.
+          
+          Warnings and errors will still be printed.
+
+      --no-pager
+          Disable the pager
+
+      --config <NAME=VALUE>
+          Additional configuration options (can be repeated)
+          
+          The name should be specified as TOML dotted keys. The value should be
+          specified as a TOML expression. If string value isn't enclosed by any
+          TOML constructs (such as array notation), quotes can be omitted.
+
+      --config-file <PATH>
+          Additional configuration files (can be repeated)
+[exit 0]
+
+$ jj -R /tmp/tmp.eguuSIc54M/repo git push -b main
+Changes to push to origin:
+  bookmark: main [add to 5955bfad84e4]
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: yrrzouzq 96ed4a25 (empty) (no description set)
+Parent commit (@-)      : qkypyrqq 5955bfad main | base
+[exit 0]
+
+$ jj -R /tmp/tmp.eguuSIc54M/repo new main
+Working copy  (@) now at: oryptrww 18b2ab3a (empty) (no description set)
+Parent commit (@-)      : qkypyrqq 5955bfad main | base
+[exit 0]
+
+$ jj -R /tmp/tmp.eguuSIc54M/repo status
+The working copy has no changes.
+Working copy  (@) : oryptrww 18b2ab3a (empty) (no description set)
+Parent commit (@-): qkypyrqq 5955bfad main | base
+[exit 0]
+
+$ jj -R /tmp/tmp.eguuSIc54M/repo workspace list
+default: ../../../../../tmp/tmp.eguuSIc54M/repo oryptrww 18b2ab3a (empty) (no description set)
+[exit 0]
+
+$ jj -R /tmp/tmp.eguuSIc54M/repo log -r \(::working_copies\(\)\ ~\ ::main\)\ ~\ empty\(\)
+[exit 0]
+
+$ jj -R /tmp/tmp.eguuSIc54M/repo bookmark list
+main: qkypyrqq 5955bfad base
+[exit 0]
+
+$ jj -R /tmp/tmp.eguuSIc54M/repo log -r trunk\(\)
+◆  qkypyrqq tester@example.test 2026-10-11 18:07:54 main 5955bfad
+│  base
+~
+[exit 0]
+
+$ jj -R /tmp/tmp.eguuSIc54M/repo git remote list
+origin /tmp/tmp.eguuSIc54M/origin/.jj/repo/store/git
+[exit 0]
+
+$ jj -R /tmp/tmp.eguuSIc54M/repo git fetch
+Nothing changed.
+[exit 0]
+
+$ gitman work feature-a --path /tmp/tmp.eguuSIc54M/workspaces/feature-a --from main
+workspace: feature-a
+path: /tmp/tmp.eguuSIc54M/workspaces/feature-a
+base: dc43ffb2c6a0a9eb841252d5ae65bac2ffe979d7 (main)
+enter it with: cd /tmp/tmp.eguuSIc54M/workspaces/feature-a
+[exit 0]
+
+$ jj -R /tmp/tmp.eguuSIc54M/workspaces/feature-a status
+The working copy has no changes.
+Working copy  (@) : kouyrrux 1460c370 (empty) (no description set)
+Parent commit (@-): urpzqlko dc43ffb2 main | release: 0.12.1 — add a flake that builds gitman and the pinned jj
+[exit 0]
+
+$ jj -R /tmp/tmp.eguuSIc54M/workspaces/feature-a log -r @\ \|\ @-
+@  kouyrrux tester@example.test 2026-10-11 18:08:11 feature-a@ 1460c370
+│  (empty) (no description set)
+◆  urpzqlko bullishdesignllc@gmail.com 2026-10-09 13:59:13 main v0.12.1 dc43ffb2
+│  release: 0.12.1 — add a flake that builds gitman and the pinned jj
+~
+[exit 0]
+
+$ jj workspace list
+default: . yxozznvr 2b971176 (no description set)
+feature-a: ../../../../../tmp/tmp.eguuSIc54M/workspaces/feature-a kouyrrux 1460c370 (empty) (no description set)
+v2-cleanup: ../gitman-workspaces/v2-cleanup yznmonwz ab9a6b18 docs: replace v1 lane workflow with the v2 workspace helper
+v2-rewrite: .worktrees/v2-rewrite xmvulltv 4f068c95 (empty) (no description set)
+[exit 0]
+
+$ find /tmp/tmp.eguuSIc54M/workspaces/feature-a -maxdepth 2 -mindepth 1 -print
+/tmp/tmp.eguuSIc54M/workspaces/feature-a/.git
+/tmp/tmp.eguuSIc54M/workspaces/feature-a/.jj
+/tmp/tmp.eguuSIc54M/workspaces/feature-a/.jj/repo
+/tmp/tmp.eguuSIc54M/workspaces/feature-a/.jj/working_copy
+/tmp/tmp.eguuSIc54M/workspaces/feature-a/.jj/.gitignore
+/tmp/tmp.eguuSIc54M/workspaces/feature-a/.devman
+/tmp/tmp.eguuSIc54M/workspaces/feature-a/.devman/project.toml
+/tmp/tmp.eguuSIc54M/workspaces/feature-a/.env
+/tmp/tmp.eguuSIc54M/workspaces/feature-a/.gitignore
+/tmp/tmp.eguuSIc54M/workspaces/feature-a/.scratch
+/tmp/tmp.eguuSIc54M/workspaces/feature-a/.scratch/projects
+/tmp/tmp.eguuSIc54M/workspaces/feature-a/.tmuxp.yaml
+/tmp/tmp.eguuSIc54M/workspaces/feature-a/AGENTS.md
+/tmp/tmp.eguuSIc54M/workspaces/feature-a/CHANGELOG.md
+/tmp/tmp.eguuSIc54M/workspaces/feature-a/CLAUDE.md
+/tmp/tmp.eguuSIc54M/workspaces/feature-a/README.md
+/tmp/tmp.eguuSIc54M/workspaces/feature-a/devenv.lock
+/tmp/tmp.eguuSIc54M/workspaces/feature-a/devenv.nix
+/tmp/tmp.eguuSIc54M/workspaces/feature-a/devenv.yaml
+/tmp/tmp.eguuSIc54M/workspaces/feature-a/docs
+/tmp/tmp.eguuSIc54M/workspaces/feature-a/docs/GITMAN_CONCEPT.md
+/tmp/tmp.eguuSIc54M/workspaces/feature-a/docs/JUJUTSU_PRIMER.md
+/tmp/tmp.eguuSIc54M/workspaces/feature-a/docs/USING_GITMAN.md
+/tmp/tmp.eguuSIc54M/workspaces/feature-a/examples
+/tmp/tmp.eguuSIc54M/workspaces/feature-a/examples/README.md
+/tmp/tmp.eguuSIc54M/workspaces/feature-a/examples/workspace-loop.sh
+/tmp/tmp.eguuSIc54M/workspaces/feature-a/flake.lock
+/tmp/tmp.eguuSIc54M/workspaces/feature-a/flake.nix
+/tmp/tmp.eguuSIc54M/workspaces/feature-a/nix
+/tmp/tmp.eguuSIc54M/workspaces/feature-a/nix/gitman.nix
+/tmp/tmp.eguuSIc54M/workspaces/feature-a/nix/jj.nix
+/tmp/tmp.eguuSIc54M/workspaces/feature-a/nix/package.nix
+/tmp/tmp.eguuSIc54M/workspaces/feature-a/pyproject.toml
+/tmp/tmp.eguuSIc54M/workspaces/feature-a/src
+/tmp/tmp.eguuSIc54M/workspaces/feature-a/src/gitman
+/tmp/tmp.eguuSIc54M/workspaces/feature-a/tests
+/tmp/tmp.eguuSIc54M/workspaces/feature-a/tests/conftest.py
+/tmp/tmp.eguuSIc54M/workspaces/feature-a/tests/test_work.py
+/tmp/tmp.eguuSIc54M/workspaces/feature-a/uv.lock
+/tmp/tmp.eguuSIc54M/workspaces/feature-a/writes
+[exit 0]
+
+$ jj -R /tmp/tmp.eguuSIc54M/workspaces/feature-a status
+The working copy has no changes.
+Working copy  (@) : kouyrrux 1460c370 (empty) (no description set)
+Parent commit (@-): urpzqlko dc43ffb2 main | release: 0.12.1 — add a flake that builds gitman and the pinned jj
+[exit 0]
+
+$ jj workspace remove feature-a
+Removed Git worktree for "/tmp/tmp.eguuSIc54M/workspaces/feature-a".
+Removed workspace directory "/tmp/tmp.eguuSIc54M/workspaces/feature-a".
+[exit 0]
+
+$ jj workspace list
+default: . yxozznvr 96ab184a (no description set)
+v2-cleanup: ../gitman-workspaces/v2-cleanup yznmonwz ab9a6b18 docs: replace v1 lane workflow with the v2 workspace helper
+v2-rewrite: .worktrees/v2-rewrite xmvulltv 4f068c95 (empty) (no description set)
+[exit 0]
+
+$ pwd
+/tmp/tmp.eguuSIc54M/repo
+[exit 0]
+
+$ gitman work feature-a --from main
+workspace: feature-a
+path: /tmp/tmp.eguuSIc54M/workspaces/feature-a
+base: 5955bfad84e4a7e860b10e9329f0c0644d6c4a06 (main)
+enter it with: cd /tmp/tmp.eguuSIc54M/workspaces/feature-a
+[exit 0]
+
+$ jj -R /tmp/tmp.eguuSIc54M/workspaces/feature-a status
+The working copy has no changes.
+Working copy  (@) : txsqknmt 5f55e7a3 (empty) (no description set)
+Parent commit (@-): qkypyrqq 5955bfad main | base
+[exit 0]
+
+$ jj -R /tmp/tmp.eguuSIc54M/repo workspace list
+default: . oryptrww 18b2ab3a (empty) (no description set)
+feature-a: ../workspaces/feature-a txsqknmt 5f55e7a3 (empty) (no description set)
+[exit 0]
+
+$ bash -c printf\ \"feature\ enabled\\n\"\ \>\ \"\$1\" _ /tmp/tmp.eguuSIc54M/workspaces/feature-a/feature.txt
+[exit 0]
+
+$ bash -c test\ \"\$\(cat\ \"\$1\"\)\"\ =\ \"feature\ enabled\" _ /tmp/tmp.eguuSIc54M/workspaces/feature-a/feature.txt
+[exit 0]
+
+$ jj -R /tmp/tmp.eguuSIc54M/workspaces/feature-a status
+Working copy changes:
+A ../workspaces/feature-a/feature.txt
+Working copy  (@) : txsqknmt d4e47674 (no description set)
+Parent commit (@-): qkypyrqq 5955bfad main | base
+[exit 0]
+
+$ jj -R /tmp/tmp.eguuSIc54M/workspaces/feature-a diff
+Added regular file ../workspaces/feature-a/feature.txt:
+        1: feature enabled
+[exit 0]
+
+$ jj -R /tmp/tmp.eguuSIc54M/workspaces/feature-a log -r @\ \|\ @-
+@  txsqknmt tester@example.test 2026-10-11 18:08:43 feature-a@ d4e47674
+│  (no description set)
+◆  qkypyrqq tester@example.test 2026-10-11 18:07:54 main 5955bfad
+│  base
+~
+[exit 0]
+
+$ jj -R /tmp/tmp.eguuSIc54M/workspaces/feature-a describe -r @ -m Add\ feature\ flag
+Working copy  (@) now at: txsqknmt a3d26eb9 Add feature flag
+Parent commit (@-)      : qkypyrqq 5955bfad main | base
+[exit 0]
+
+$ jj -R /tmp/tmp.eguuSIc54M/workspaces/feature-a log -r @\ \|\ @-
+@  txsqknmt tester@example.test 2026-10-11 18:08:43 feature-a@ a3d26eb9
+│  Add feature flag
+◆  qkypyrqq tester@example.test 2026-10-11 18:07:54 main 5955bfad
+│  base
+~
+[exit 0]
+
+$ jj -R /tmp/tmp.eguuSIc54M/workspaces/feature-a bookmark create feature-a -r @
+Created 1 bookmarks pointing to txsqknmt a3d26eb9 feature-a | Add feature flag
+[exit 0]
+
+$ jj -R /tmp/tmp.eguuSIc54M/workspaces/feature-a git fetch
+Nothing changed.
+[exit 0]
+
+$ jj -R /tmp/tmp.eguuSIc54M/workspaces/feature-a log -r main\ \|\ main@origin\ \|\ @\ \|\ @-
+@  txsqknmt tester@example.test 2026-10-11 18:08:43 feature-a feature-a@ a3d26eb9
+│  Add feature flag
+◆  qkypyrqq tester@example.test 2026-10-11 18:07:54 main 5955bfad
+│  base
+~
+[exit 0]
+
+$ jj -R /tmp/tmp.eguuSIc54M/workspaces/feature-a log -r conflicts\(\)
+[exit 0]
+
+$ jj -R /tmp/tmp.eguuSIc54M/workspaces/feature-a log -r divergent\(\)
+[exit 0]
+
+$ jj -R /tmp/tmp.eguuSIc54M/workspaces/feature-a bookmark set main -r @
+Moved 1 bookmarks to txsqknmt a3d26eb9 feature-a main* | Add feature flag
+[exit 0]
+
+$ jj -R /tmp/tmp.eguuSIc54M/workspaces/feature-a git push -b main
+Changes to push to origin:
+  bookmark: main [move forward from 5955bfad84e4 to a3d26eb96369]
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: nzzsqzxk 8ef8f4d8 (empty) (no description set)
+Parent commit (@-)      : txsqknmt a3d26eb9 feature-a main | Add feature flag
+[exit 0]
+
+$ jj -R /tmp/tmp.eguuSIc54M/repo status
+The working copy has no changes.
+Working copy  (@) : oryptrww 18b2ab3a (empty) (no description set)
+Parent commit (@-): qkypyrqq 5955bfad base
+[exit 0]
+
+$ jj -R /tmp/tmp.eguuSIc54M/repo new main
+Working copy  (@) now at: zqpzlqtp 5b0cd9f1 (empty) (no description set)
+Parent commit (@-)      : txsqknmt a3d26eb9 feature-a main | Add feature flag
+Added 1 files, modified 0 files, removed 0 files
+[exit 0]
+
+$ jj -R /tmp/tmp.eguuSIc54M/repo workspace list
+default: . zqpzlqtp 5b0cd9f1 (empty) (no description set)
+feature-a: ../workspaces/feature-a nzzsqzxk 8ef8f4d8 (empty) (no description set)
+[exit 0]
+
+$ jj -R /tmp/tmp.eguuSIc54M/repo bookmark list
+feature-a: txsqknmt a3d26eb9 Add feature flag
+main: txsqknmt a3d26eb9 Add feature flag
+[exit 0]
+
+$ jj -R /tmp/tmp.eguuSIc54M/repo log -r main\ \|\ feature-a\ \|\ feature-a@\ \|\ main@origin
+○  nzzsqzxk tester@example.test 2026-10-11 18:08:50 feature-a@ 8ef8f4d8
+│  (empty) (no description set)
+◆  txsqknmt tester@example.test 2026-10-11 18:08:43 feature-a main a3d26eb9
+│  Add feature flag
+~
+[exit 0]
+
+$ jj -R /tmp/tmp.eguuSIc54M/repo log -r \(::feature-a@\ ~\ ::main\)\ ~\ empty\(\)
+[exit 0]
+
+$ jj -R /tmp/tmp.eguuSIc54M/repo log -r divergent\(\)
+[exit 0]
+
+$ jj -R /tmp/tmp.eguuSIc54M/workspaces/feature-a status
+The working copy has no changes.
+Working copy  (@) : nzzsqzxk 8ef8f4d8 (empty) (no description set)
+Parent commit (@-): txsqknmt a3d26eb9 feature-a main | Add feature flag
+[exit 0]
+
+$ jj -R /tmp/tmp.eguuSIc54M/workspaces/feature-a file list
+../workspaces/feature-a/README.md
+../workspaces/feature-a/feature.txt
+[exit 0]
+
+$ find /tmp/tmp.eguuSIc54M/workspaces/feature-a -maxdepth 1 -mindepth 1 -print
+/tmp/tmp.eguuSIc54M/workspaces/feature-a/.git
+/tmp/tmp.eguuSIc54M/workspaces/feature-a/.jj
+/tmp/tmp.eguuSIc54M/workspaces/feature-a/README.md
+/tmp/tmp.eguuSIc54M/workspaces/feature-a/feature.txt
+[exit 0]
+
+$ jj -R /tmp/tmp.eguuSIc54M/repo workspace remove feature-a
+Removed Git worktree for "/tmp/tmp.eguuSIc54M/workspaces/feature-a".
+Removed workspace directory "/tmp/tmp.eguuSIc54M/workspaces/feature-a".
+[exit 0]
+
+$ jj -R /tmp/tmp.eguuSIc54M/repo workspace list
+default: . zqpzlqtp 5b0cd9f1 (empty) (no description set)
+[exit 0]

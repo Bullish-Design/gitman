@@ -1,0 +1,263 @@
+$ wc -l /home/andrew/.config/devman/skills/gitman/SKILL.md
+   101 /home/andrew/.config/devman/skills/gitman/SKILL.md
+$ nl -ba /home/andrew/.config/devman/skills/gitman/SKILL.md
+     1	---
+     2	name: gitman
+     3	description: Open jj workspaces with `gitman work`, and land every workspace back on main. Use native jj and `gh` for all other version control.
+     4	---
+     5	
+     6	# Gitman — workspace paths
+     7	
+     8	Read the repository's `AGENTS.md` for its version control rules. It wins when this
+     9	skill disagrees. Run project commands inside the repository's devenv shell.
+    10	
+    11	**The goal of every workspace is to land on `main`.** A workspace is temporary. Work is done
+    12	only when it is on `main`, pushed when the repository has a remote, visible in the main checkout,
+    13	and the workspace is removed. Never leave work in a workspace where nobody sees it.
+    14	
+    15	Gitman has one command. Do not run `gitman status`, `gitman land` or any other v1
+    16	verb. They no longer exist.
+    17	
+    18	```sh
+    19	gitman work NAME [--from REVSET] [--path DIRECTORY]
+    20	```
+    21	
+    22	The default path is `$GITMAN_WORKSPACE_ROOT/NAME`. Set the same absolute root in
+    23	every workspace. The default base is `trunk()`. Use `--from` to select exactly one
+    24	other revision. Use `--path` when the root does not fit. Gitman refuses an occupied
+    25	path and an existing workspace name. It creates no bookmark. It does not change your
+    26	directory. It stores no state.
+    27	
+    28	Gitman needs jj 0.46.0 or later and a colocated Git-backed repository. Its advisory
+    29	lock coordinates `gitman work` callers only. Native jj writers do not take it.
+    30	
+    31	## Shell entry and lock files
+    32	
+    33	Entering a devenv shell can change the tracked `devenv.lock` or `uv.lock`. After you
+    34	enter the shell, run `jj status`. Review any lock change. If the change is stable,
+    35	save it as its own change before unrelated work. When you change `devenv.yaml` or
+    36	`pyproject.toml`, put the new lock file in the same change.
+    37	
+    38	## Before you open a workspace
+    39	
+    40	List the workspaces and any work in them that `main` does not hold:
+    41	
+    42	```sh
+    43	jj workspace list
+    44	jj log -r '(::working_copies() ~ ::trunk()) ~ empty()'
+    45	```
+    46	
+    47	Report each result to the user. Land it, or ask what to do with it. Do not open a second
+    48	workspace for work that already has one.
+    49	
+    50	## Lifecycle with native jj
+    51	
+    52	The `repoman` skill owns the lifecycle order. This skill only gives the commands.
+    53	
+    54	| Step | Command |
+    55	|---|---|
+    56	| Status | `jj status` (it snapshots the working copy) |
+    57	| Describe | `jj describe -m "message"` |
+    58	| Bookmark | `jj bookmark create NAME -r @-` |
+    59	| Sync | `jj git fetch`, then `jj rebase -b @ -d 'trunk()'` |
+    60	| Push | `jj git push --bookmark NAME` |
+    61	| Pull request | `gh pr create` |
+    62	| Merge | `gh pr merge` |
+    63	| Undo | `jj undo` |
+    64	| List workspaces | `jj workspace list` |
+    65	| Remove a workspace | `jj workspace remove NAME` |
+    66	| Keep files, drop registration | `jj workspace forget NAME` |
+    67	
+    68	Use `jj rebase -b @`, not `jj rebase -r @-`. The `-r` form moves only that change and leaves
+    69	the working copy on the old base.
+    70	
+    71	Two laws:
+    72	
+    73	1. Verify before you integrate.
+    74	2. Never integrate on red.
+    75	
+    76	Create a bookmark before you push. A workspace name is not a bookmark.
+    77	
+    78	## Land a workspace on main
+    79	
+    80	Do every step. A workspace that stops before step 6 is unfinished work.
+    81	
+    82	1. Verify the change. It must be green.
+    83	2. `jj git fetch`, then `jj rebase -b @ -d 'trunk()'`. If the tree changed, verify again.
+    84	3. Move `main` to the change: `jj bookmark set main -r <change>`. Use a pull request instead
+    85	   when the repository requires one.
+    86	4. Push: `jj git push --bookmark main`, when the repository has a remote.
+    87	5. Update the main checkout: in the default workspace, run `jj new main` when its working copy
+    88	   is empty. If it holds other work, do not touch it; tell the user.
+    89	6. Remove the workspace (see below).
+    90	
+    91	Stop and ask the user before step 3 when verify fails or was skipped, when a conflict appears,
+    92	when the change touches secrets, CI, or release branches, or when the user wants to review it.
+    93	Then report the workspace path, its bookmark, and the reason it did not land. Never end a
+    94	session with work in a workspace that the user does not know about.
+    95	
+    96	## Remove a workspace
+    97	
+    98	`jj workspace remove NAME` deletes the workspace and its directory. Inspect the
+    99	directory first, including ignored and untracked files. Gitman does not scan or warn
+   100	before removal. Check that the work is on `main` first:
+   101	`jj log -r '(::NAME@ ~ ::trunk()) ~ empty()'` must print nothing.
+
+$ wc -l /home/andrew/.config/devman/skills/copyroom/SKILL.md
+    40 /home/andrew/.config/devman/skills/copyroom/SKILL.md
+$ nl -ba /home/andrew/.config/devman/skills/copyroom/SKILL.md
+     1	---
+     2	name: copyroom
+     3	description: Entry point for CopyRoom work with local Templateer sources and jj. Routes adoption and template workshop tasks to focused skills.
+     4	auto_trigger:
+     5	  keywords: ["scaffold a repo", "template drift", "template update", "adopt a repo", "templatize", "copyroom new", "copyroom update", "copyroom inspect", "copyroom doctor", "copyroom layer"]
+     6	---
+     7	
+     8	# CopyRoom
+     9	
+    10	CopyRoom creates and updates projects from local Templateer sources. jj records
+    11	each layer's render history. Read `docs/user/local-workflows.md` for the current
+    12	source format and commands.
+    13	
+    14	## Rules
+    15	
+    16	- Run CopyRoom inside `devenv shell`. It pins Python 3.13 and provides jj.
+    17	- Template sources are local paths. CopyRoom saves a source snapshot in each
+    18	  project, so the locator can move or disappear.
+    19	- Each layer owns its own paths and render line. Check `copyroom layer list`
+    20	  before adding a layer.
+    21	- `copyroom update` creates a separate preview. Review it, resolve conflicts in
+    22	  that workspace, then apply that exact preview with `copyroom update --apply`.
+    23	- A changed active project makes a preview stale. Do not force an apply.
+    24	- `copyroom generate` and `copyroom refresh` are the only commands that call a
+    25	  model. Normal render and update commands replay saved output.
+    26	- Exit codes: `0` success, `1` review needed, `2` infrastructure or state
+    27	  error, `3` invalid usage.
+    28	
+    29	## Route
+    30	
+    31	| Ask | Use |
+    32	| --- | --- |
+    33	| Adopt or templatize a repo | `copyroom-adopt` skill |
+    34	| Edit a local source and preview project updates | `copyroom-template-edit` skill |
+    35	| Create or update a project | `copyroom new`, then `copyroom update` |
+    36	| Add or inspect a layer | `copyroom layer add` or `copyroom layer list` |
+    37	| Other commands | `docs/user/local-workflows.md` and `copyroom --help` |
+    38	
+    39	The docs own the detailed source and command rules. Read them before you
+    40	improvise.
+
+$ wc -l /home/andrew/.config/devman/skills/writing/SKILL.md
+    34 /home/andrew/.config/devman/skills/writing/SKILL.md
+$ nl -ba /home/andrew/.config/devman/skills/writing/SKILL.md
+     1	---
+     2	name: writing
+     3	description: The user's Simplified Technical English writing rules — one word per meaning, active voice, short sentences. Read this before writing docs, skills, code comments, docstrings, commit messages, CLI help, error text, or replies to the user.
+     4	auto_trigger:
+     5	  keywords: ["writing style", "simplified technical english", "STE", "ASD-STE100", "how should I write this"]
+     6	---
+     7	
+     8	# writing — Simplified Technical English style
+     9	
+    10	This skill holds the user's standing writing rules. A repository can select it
+    11	without carrying unrelated user configuration.
+    12	
+    13	Everything you write follows **Simplified Technical English
+    14	([ASD-STE100](https://www.asd-ste100.org/)) style** as closely as the context
+    15	allows. This covers docs, skills, code comments, docstrings, commit messages,
+    16	CLI help, error text, and replies to the user.
+    17	
+    18	- **One idea per sentence.** Keep sentences short: 20 words or fewer for
+    19	  descriptive text, 25 for procedures.
+    20	- **One paragraph per topic**, six sentences or fewer.
+    21	- **Use the active voice.** Name the actor: "the parser reads the marker", not
+    22	  "the marker is read".
+    23	- **Use one word for one meaning.** Pick a term and keep it. Never swap in a
+    24	  synonym for variety — a repo's domain terms are fixed vocabulary.
+    25	- **Use the imperative for instructions.** "Run the suite." Not "You should
+    26	  probably run the suite."
+    27	- **Say what to do, not only what not to do.**
+    28	- **Drop filler.** No "simply", "just", "of course", "as you know", "note
+    29	  that", or hedging that adds no information.
+    30	- **Spell out an abbreviation on first use** in each document.
+    31	- **No slang, no idioms, no metaphors** where a plain term works.
+    32	
+    33	Where STE and clarity conflict, choose clarity. Where STE and an established
+    34	domain term conflict, keep the domain term.
+
+$ wc -l /home/andrew/.claude/skills/synced/caf3732b-f799-4579-98da-5c1660c6a1cd_c7a8c1bd-a85b-432d-b9bc-3ced79042f6b/chrome-browser/SKILL.md
+    64 /home/andrew/.claude/skills/synced/caf3732b-f799-4579-98da-5c1660c6a1cd_c7a8c1bd-a85b-432d-b9bc-3ced79042f6b/chrome-browser/SKILL.md
+$ nl -ba /home/andrew/.claude/skills/synced/caf3732b-f799-4579-98da-5c1660c6a1cd_c7a8c1bd-a85b-432d-b9bc-3ced79042f6b/chrome-browser/SKILL.md
+     1	---
+     2	name: chrome-browser
+     3	description: "Read this skill before the first step that uses Claude in Chrome, the browser extension whose tools are named mcp__claude-in-chrome__* (also called Chrome, the browser extension, or the external browser) and which acts in the person's real Chrome with their own sign-ins; before those tools are turned on there may be a single enable__mcp__claude-in-chrome tool instead. It covers loading the tools in one ToolSearch call, checking the person's open tabs and working in a new tab, site permissions, GIF recordings, console logs, dialogs to avoid, and when to stop and ask. It is not for the built-in browser (mcp__Claude_Browser__* or mcp__remote-devices__Claude_Browser__* tools), which has its own skill, and it does not decide which browser to use."
+     4	compatibility: "Claude Code, Cowork (desktop and remote), and claude.ai sessions upgraded to Cowork Remote, when the Claude in Chrome extension is connected"
+     5	license: Proprietary. LICENSE.txt has complete terms
+     6	---
+     7	
+     8	# Claude in Chrome
+     9	
+    10	Claude in Chrome is a browser extension. Its tools, named `mcp__claude-in-chrome__*`, act in the person's real Chrome, in new tabs alongside the person's own, with their existing sign-ins. Claude in Chrome is available only while the person's Chrome is running with the extension connected; if its tool calls report that the extension is not connected or get no response, Claude says so rather than retrying, and follows the session's browser guidance on whether to continue with the other browser or ask first.
+    11	
+    12	If the only Claude in Chrome tool present is `enable__mcp__claude-in-chrome`, Claude calls it first: it turns Claude in Chrome on for this conversation, and the `mcp__claude-in-chrome__*` tools appear once it has run.
+    13	
+    14	## Loading the tools
+    15	
+    16	If the `mcp__claude-in-chrome__*` tools are deferred (meaning they have to be loaded through ToolSearch before use), Claude loads every tool it expects to need in ONE ToolSearch call, because the select query accepts a comma-separated list and each extra ToolSearch call costs a full round trip. The core set to start with:
+    17	
+    18	```
+    19	ToolSearch with query "select:mcp__claude-in-chrome__tabs_context_mcp,mcp__claude-in-chrome__navigate,mcp__claude-in-chrome__computer,mcp__claude-in-chrome__read_page,mcp__claude-in-chrome__tabs_create_mcp,mcp__claude-in-chrome__tabs_close_mcp"
+    20	```
+    21	
+    22	Claude adds task-specific tools to that same call when the task obviously needs them: `read_console_messages` and `read_network_requests` for debugging, `form_input` for forms, `gif_creator` for recordings, `javascript_tool` for page scripting. A second ToolSearch is only for a tool the task turned out to need later.
+    23	
+    24	## Starting a session: tab context first, then a new tab
+    25	
+    26	At the start of each browser session Claude calls `mcp__claude-in-chrome__tabs_context_mcp` first, to see the person's current tabs and understand what they may want to work with. Then:
+    27	
+    28	1. Claude reuses an existing tab only when the person explicitly asks to work with it.
+    29	2. Otherwise Claude opens a new tab with `mcp__claude-in-chrome__tabs_create_mcp` and works there, and, unless the person wants them kept, closes the tabs it created before finishing.
+    30	3. Claude never reuses tab IDs remembered from an earlier or different session. If a tool reports that a tab does not exist or is invalid, or the person closes a tab, or a navigation error occurs, Claude calls `tabs_context_mcp` again for fresh tab IDs.
+    31	
+    32	## Site permissions
+    33	
+    34	Claude in Chrome acts on a site only once the person has allowed it; depending on their settings the person may be prompted per site, in the extension or in the app. When a tool call is waiting on or refused that permission, Claude tells the person and waits for them to allow it rather than working around it. A site the person declines is their decision; Claude moves on.
+    35	
+    36	## Recording a GIF
+    37	
+    38	For multi-step interactions the person may want to review or share, Claude can record them with `mcp__claude-in-chrome__gif_creator`. Claude captures a few extra frames before and after each action so playback is smooth, and gives the file a meaningful name (for example "login_process.gif").
+    39	
+    40	## Reading console output
+    41	
+    42	`mcp__claude-in-chrome__read_console_messages` reads the page's console. Console output can be verbose, so when Claude is looking for specific entries it passes the `pattern` parameter (a regular expression), for example pattern "[MyApp]" to keep only the application's own logs.
+    43	
+    44	## Alerts and dialogs
+    45	
+    46	Claude does not trigger JavaScript alerts, confirms, prompts, or other browser modal dialogs through its actions. Those dialogs block all further browser events, so the extension stops receiving commands. Instead:
+    47	
+    48	1. Claude avoids clicking elements likely to raise a confirmation dialog (for example a "Delete" button) unless necessary.
+    49	2. If it must interact with such an element, Claude warns the person first that this may interrupt the session.
+    50	3. Claude can use `mcp__claude-in-chrome__javascript_tool` to check for and dismiss an existing dialog before proceeding, and prefers `console.log` plus `read_console_messages` over `alert` for debugging.
+    51	
+    52	If a dialog does get triggered and the browser stops responding, Claude tells the person they need to dismiss it manually in Chrome.
+    53	
+    54	## Staying on task, and when to stop
+    55	
+    56	Claude stays focused on the specific task and does not wander into unrelated pages. Claude stops and asks the person how to proceed, explaining what it tried and what went wrong, when any of these happen:
+    57	
+    58	- browser tool calls fail or return errors after 2 or 3 attempts
+    59	- the extension gives no response
+    60	- page elements do not respond to clicks or input, or pages do not load or time out
+    61	- the task turns out to involve unexpected complexity or tangents
+    62	- several approaches have not completed the task
+    63	
+    64	Claude does not keep retrying the same failing action.
+
+$ wc -l /home/andrew/Documents/Projects/gitman/.scratch/projects/69-gitman-skill-investigation/KICKOFF_PROMPT.md
+   174 /home/andrew/Documents/Projects/gitman/.scratch/projects/69-gitman-skill-investigation/KICKOFF_PROMPT.md
+$ nl -ba /home/andrew/Documents/Projects/gitman/.scratch/projects/69-gitman-skill-investigation/KICKOFF_PROMPT.md | sed -n '57,60p'
+    57	- Someone edited the skill after the cutover. Read its **current** text first. It now
+    58	  adds a "land every workspace on main" goal, a pre-open workspace check, a six-step
+    59	  landing procedure, and a removal check. It may now be longer than the 80-line budget
+    60	  that the cutover set. Check its length.
+

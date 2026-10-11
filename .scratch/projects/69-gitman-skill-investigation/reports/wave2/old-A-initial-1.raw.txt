@@ -1,0 +1,210 @@
+DECISION: SCENARIO 1; sandbox /tmp/gitman-old-a-1-s8tl8hra
+$ write /tmp/gitman-old-a-1-s8tl8hra/jjconfig.toml '[user]\nname = "Test User"\nemail = "test@example.invalid"\n'
+[exit 0; output empty]
+$ (cd /tmp/gitman-old-a-1-s8tl8hra && jj git init --no-colocate /tmp/gitman-old-a-1-s8tl8hra/origin)
+exit=0
+stdout:
+stderr:
+Initialized repo in "origin"
+
+$ (cd /tmp/gitman-old-a-1-s8tl8hra && jj git init --colocate /tmp/gitman-old-a-1-s8tl8hra/main)
+exit=0
+stdout:
+stderr:
+Initialized repo in "main"
+
+$ write /tmp/gitman-old-a-1-s8tl8hra/main/file.txt 'base\n'
+[exit 0; output empty]
+$ (cd /tmp/gitman-old-a-1-s8tl8hra/main && jj status)
+exit=0
+stdout:
+Working copy changes:
+A file.txt
+Working copy  (@) : pkzntkpy 771f2b0a (no description set)
+Parent commit (@-): zzzzzzzz 00000000 (empty) (no description set)
+stderr:
+
+$ (cd /tmp/gitman-old-a-1-s8tl8hra/main && jj describe -m Initial)
+exit=0
+stdout:
+stderr:
+Working copy  (@) now at: pkzntkpy 58e5acc4 Initial
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+
+$ (cd /tmp/gitman-old-a-1-s8tl8hra/main && jj bookmark create main -r @)
+exit=0
+stdout:
+stderr:
+Created 1 bookmarks pointing to pkzntkpy 58e5acc4 main | Initial
+
+$ (cd /tmp/gitman-old-a-1-s8tl8hra/main && jj git remote add origin /tmp/gitman-old-a-1-s8tl8hra/origin/.jj/repo/store/git)
+exit=0
+stdout:
+stderr:
+
+$ (cd /tmp/gitman-old-a-1-s8tl8hra/main && jj git push --bookmark main)
+exit=0
+stdout:
+stderr:
+Changes to push to origin:
+  bookmark: main [add to 58e5acc4d2eb]
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: mqzmllll 8a6bfe01 (empty) (no description set)
+Parent commit (@-)      : pkzntkpy 58e5acc4 main | Initial
+
+$ (cd /tmp/gitman-old-a-1-s8tl8hra/main && jj new main)
+exit=0
+stdout:
+stderr:
+Working copy  (@) now at: ryzurqyw 7496d0d3 (empty) (no description set)
+Parent commit (@-)      : pkzntkpy 58e5acc4 main | Initial
+
+DECISION: Check workspaces and described work before opening another workspace.
+$ (cd /tmp/gitman-old-a-1-s8tl8hra/main && jj workspace list)
+exit=0
+stdout:
+default: . ryzurqyw 7496d0d3 (empty) (no description set)
+stderr:
+
+$ (cd /tmp/gitman-old-a-1-s8tl8hra/main && jj log -r '(::working_copies() ~ ::trunk()) ~ empty()')
+exit=0
+stdout:
+stderr:
+
+DECISION: No unlanded work found; open task workspace.
+$ (cd /tmp/gitman-old-a-1-s8tl8hra/main && gitman work feature)
+exit=0
+stdout:
+workspace: feature
+path: /tmp/gitman-old-a-1-s8tl8hra/workspaces/feature
+base: 58e5acc4d2eb560cd84fbe6e636513852428b964 (trunk())
+enter it with: cd /tmp/gitman-old-a-1-s8tl8hra/workspaces/feature
+stderr:
+
+$ write /tmp/gitman-old-a-1-s8tl8hra/workspaces/feature/feature.txt 'feature\n'
+[exit 0; output empty]
+$ (cd /tmp/gitman-old-a-1-s8tl8hra/workspaces/feature && jj status)
+exit=0
+stdout:
+Working copy changes:
+A feature.txt
+Working copy  (@) : oltlpqwr c4aca4fe (no description set)
+Parent commit (@-): pkzntkpy 58e5acc4 main | Initial
+stderr:
+
+$ (cd /tmp/gitman-old-a-1-s8tl8hra/workspaces/feature && jj describe -m 'Add feature')
+exit=0
+stdout:
+stderr:
+Working copy  (@) now at: oltlpqwr 0500dcb5 Add feature
+Parent commit (@-)      : pkzntkpy 58e5acc4 main | Initial
+
+DECISION: Verify task content before integration.
+$ (cd /tmp/gitman-old-a-1-s8tl8hra/workspaces/feature && bash -c 'test -f feature.txt')
+exit=0
+stdout:
+stderr:
+
+DECISION: Fetch, then rebase the task branch onto trunk.
+$ (cd /tmp/gitman-old-a-1-s8tl8hra/workspaces/feature && jj git fetch)
+exit=0
+stdout:
+stderr:
+Nothing changed.
+
+$ (cd /tmp/gitman-old-a-1-s8tl8hra/workspaces/feature && jj rebase -b @ -d 'trunk()')
+exit=0
+stdout:
+stderr:
+Skipped rebase of 1 commits that were already in place.
+Nothing changed.
+
+DECISION: Verify task content before integration.
+$ (cd /tmp/gitman-old-a-1-s8tl8hra/workspaces/feature && bash -c 'test -f feature.txt')
+exit=0
+stdout:
+stderr:
+
+DECISION: Set main to the task change after green verification and sync.
+$ (cd /tmp/gitman-old-a-1-s8tl8hra/workspaces/feature && jj bookmark set main -r @-)
+exit=0
+stdout:
+stderr:
+
+DECISION: Push main to local bare origin.
+$ (cd /tmp/gitman-old-a-1-s8tl8hra/workspaces/feature && jj git push --bookmark main)
+exit=0
+stdout:
+stderr:
+Bookmark main@origin already matches main
+Nothing changed.
+
+DECISION: Check default workspace before updating it.
+$ (cd /tmp/gitman-old-a-1-s8tl8hra/main && jj status)
+exit=0
+stdout:
+The working copy has no changes.
+Working copy  (@) : ryzurqyw 7496d0d3 (empty) (no description set)
+Parent commit (@-): pkzntkpy 58e5acc4 main | Initial
+stderr:
+
+$ (cd /tmp/gitman-old-a-1-s8tl8hra/main && jj log -r @ -T empty)
+exit=0
+stdout:
+@  true
+│
+~
+stderr:
+
+DECISION: Default workspace is empty; update it to main.
+$ (cd /tmp/gitman-old-a-1-s8tl8hra/main && jj new main)
+exit=0
+stdout:
+stderr:
+Working copy  (@) now at: ylywmvry c0b6a41e (empty) (no description set)
+Parent commit (@-)      : pkzntkpy 58e5acc4 main | Initial
+
+DECISION: Check that task work is on trunk before removal. Inspect directory, including metadata and ignored files.
+$ (cd /tmp/gitman-old-a-1-s8tl8hra/main && jj log -r '(::feature@ ~ ::trunk()) ~ empty()')
+exit=0
+stdout:
+○  oltlpqwr test@example.invalid 2026-10-11 17:56:36 feature@ 0500dcb5
+│  Add feature
+~
+stderr:
+
+$ (cd /tmp/gitman-old-a-1-s8tl8hra/main && find /tmp/gitman-old-a-1-s8tl8hra/workspaces/feature -maxdepth 2 -print)
+exit=0
+stdout:
+/tmp/gitman-old-a-1-s8tl8hra/workspaces/feature
+/tmp/gitman-old-a-1-s8tl8hra/workspaces/feature/.git
+/tmp/gitman-old-a-1-s8tl8hra/workspaces/feature/.jj
+/tmp/gitman-old-a-1-s8tl8hra/workspaces/feature/.jj/repo
+/tmp/gitman-old-a-1-s8tl8hra/workspaces/feature/.jj/working_copy
+/tmp/gitman-old-a-1-s8tl8hra/workspaces/feature/.jj/.gitignore
+/tmp/gitman-old-a-1-s8tl8hra/workspaces/feature/file.txt
+/tmp/gitman-old-a-1-s8tl8hra/workspaces/feature/feature.txt
+stderr:
+
+$ (cd /tmp/gitman-old-a-1-s8tl8hra/workspaces/feature && jj status)
+exit=0
+stdout:
+Working copy changes:
+A feature.txt
+Working copy  (@) : oltlpqwr 0500dcb5 Add feature
+Parent commit (@-): pkzntkpy 58e5acc4 main | Initial
+stderr:
+
+$ (cd /tmp/gitman-old-a-1-s8tl8hra/main && jj workspace remove feature)
+exit=0
+stdout:
+stderr:
+Removed Git worktree for "/tmp/gitman-old-a-1-s8tl8hra/workspaces/feature".
+Removed workspace directory "/tmp/gitman-old-a-1-s8tl8hra/workspaces/feature".
+
+$ (cd /tmp/gitman-old-a-1-s8tl8hra/main && jj workspace list)
+exit=0
+stdout:
+default: . ylywmvry c0b6a41e (empty) (no description set)
+stderr:
+

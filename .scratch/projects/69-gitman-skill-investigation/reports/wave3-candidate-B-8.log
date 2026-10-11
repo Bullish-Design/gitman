@@ -1,0 +1,185 @@
+ROOT /tmp/gitman-wave3-b-8-nedd8rm1
+$ (cd /tmp/gitman-wave3-b-8-nedd8rm1 && jj git init --colocate repo)
+Initialized repo in "repo"
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-8-nedd8rm1/repo && bash -c 'printf "base\n" > README.md')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-8-nedd8rm1/repo && jj describe -m 'Add base')
+Working copy  (@) now at: wwyryxos 4cc7f8a2 Add base
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-8-nedd8rm1/repo && jj bookmark create main -r @)
+Created 1 bookmarks pointing to wwyryxos 4cc7f8a2 main | Add base
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-8-nedd8rm1/repo && jj new main)
+Working copy  (@) now at: qnsmsnky cc55700d (empty) (no description set)
+Parent commit (@-)      : wwyryxos 4cc7f8a2 main | Add base
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-8-nedd8rm1 && jj git init --no-colocate origin)
+Initialized repo in "origin"
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-8-nedd8rm1/repo && jj git remote add origin /tmp/gitman-wave3-b-8-nedd8rm1/origin/.jj/repo/store/git)
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-8-nedd8rm1/repo && jj git push --remote origin --bookmark main)
+Changes to push to origin:
+  bookmark: main [add to 4cc7f8a2cf9d]
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-8-nedd8rm1/repo && jj status)
+The working copy has no changes.
+Working copy  (@) : qnsmsnky cc55700d (empty) (no description set)
+Parent commit (@-): wwyryxos 4cc7f8a2 main | Add base
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-8-nedd8rm1/repo && jj workspace list)
+default: . qnsmsnky cc55700d (empty) (no description set)
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-8-nedd8rm1/repo && jj log -r '(::working_copies() ~ ::main) ~ empty()')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-8-nedd8rm1/repo && jj bookmark list)
+main: wwyryxos 4cc7f8a2 Add base
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-8-nedd8rm1/repo && jj log -r 'trunk()')
+◆  wwyryxos test@example.com 2026-10-11 18:11:06 main 4cc7f8a2
+│  Add base
+~
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-8-nedd8rm1/repo && jj git fetch --remote origin)
+Nothing changed.
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-8-nedd8rm1/repo && gitman work feature)
+workspace: feature
+path: /tmp/gitman-wave3-b-8-nedd8rm1/workspaces/feature
+base: 4cc7f8a2cf9d77d829c4770cedab3128f88cf45c (trunk())
+enter it with: cd /tmp/gitman-wave3-b-8-nedd8rm1/workspaces/feature
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-8-nedd8rm1/workspaces/feature && bash -c 'printf "feature\n" > feature.txt')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-8-nedd8rm1/workspaces/feature && bash -c 'test "$(cat feature.txt)" = feature')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-8-nedd8rm1/workspaces/feature && jj status)
+Working copy changes:
+A feature.txt
+Working copy  (@) : sqpslvrx 515a1a0d (no description set)
+Parent commit (@-): wwyryxos 4cc7f8a2 main | Add base
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-8-nedd8rm1/workspaces/feature && jj diff)
+Added regular file feature.txt:
+        1: feature
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-8-nedd8rm1/workspaces/feature && jj log -r '@|@-')
+@  sqpslvrx test@example.com 2026-10-11 18:11:21 feature@ 515a1a0d
+│  (no description set)
+◆  wwyryxos test@example.com 2026-10-11 18:11:06 main 4cc7f8a2
+│  Add base
+~
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-8-nedd8rm1/workspaces/feature && jj describe -r @ -m 'Add feature marker')
+Working copy  (@) now at: sqpslvrx 03835230 Add feature marker
+Parent commit (@-)      : wwyryxos 4cc7f8a2 main | Add base
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-8-nedd8rm1/workspaces/feature && jj log -r '@|@-')
+@  sqpslvrx test@example.com 2026-10-11 18:11:22 feature@ 03835230
+│  Add feature marker
+◆  wwyryxos test@example.com 2026-10-11 18:11:06 main 4cc7f8a2
+│  Add base
+~
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-8-nedd8rm1/workspaces/feature && jj bookmark create feature -r @)
+Created 1 bookmarks pointing to sqpslvrx 03835230 feature | Add feature marker
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-8-nedd8rm1/workspaces/feature && jj git fetch --remote origin)
+Nothing changed.
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-8-nedd8rm1/workspaces/feature && jj log -r 'conflicts()')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-8-nedd8rm1/workspaces/feature && jj log -r 'divergent()')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-8-nedd8rm1/workspaces/feature && jj bookmark set main -r @)
+Moved 1 bookmarks to sqpslvrx 03835230 feature main* | Add feature marker
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-8-nedd8rm1/workspaces/feature && jj git push --remote origin --bookmark main)
+Changes to push to origin:
+  bookmark: main [move forward from 4cc7f8a2cf9d to 038352301def]
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: ukqyywoo 9c69340e (empty) (no description set)
+Parent commit (@-)      : sqpslvrx 03835230 feature main | Add feature marker
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-8-nedd8rm1/repo && jj status)
+The working copy has no changes.
+Working copy  (@) : qnsmsnky cc55700d (empty) (no description set)
+Parent commit (@-): wwyryxos 4cc7f8a2 Add base
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-8-nedd8rm1/repo && jj new main)
+Working copy  (@) now at: pytwyvol b20b1eb3 (empty) (no description set)
+Parent commit (@-)      : sqpslvrx 03835230 feature main | Add feature marker
+Added 1 files, modified 0 files, removed 0 files
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-8-nedd8rm1/repo && jj workspace list)
+default: . pytwyvol b20b1eb3 (empty) (no description set)
+feature: ../workspaces/feature ukqyywoo 9c69340e (empty) (no description set)
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-8-nedd8rm1/repo && jj bookmark list)
+feature: sqpslvrx 03835230 Add feature marker
+main: sqpslvrx 03835230 Add feature marker
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-8-nedd8rm1/repo && jj log -r 'main|feature|feature@|divergent()')
+○  ukqyywoo test@example.com 2026-10-11 18:11:27 feature@ 9c69340e
+│  (empty) (no description set)
+◆  sqpslvrx test@example.com 2026-10-11 18:11:22 feature main 03835230
+│  Add feature marker
+~
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-8-nedd8rm1/repo && jj log -r '(::feature@ ~ ::main) ~ empty()')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-8-nedd8rm1/workspaces/feature && git status --short --ignored)
+!! .jj/
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-8-nedd8rm1/workspaces/feature && find . -maxdepth 2 -type f -not -path './.git/*' -not -path './.jj/*' -print)
+./.git
+./README.md
+./feature.txt
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-8-nedd8rm1/repo && jj workspace remove feature)
+Removed Git worktree for "/tmp/gitman-wave3-b-8-nedd8rm1/workspaces/feature".
+Removed workspace directory "/tmp/gitman-wave3-b-8-nedd8rm1/workspaces/feature".
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-8-nedd8rm1/repo && jj workspace list)
+default: . pytwyvol b20b1eb3 (empty) (no description set)
+[exit 0]
+

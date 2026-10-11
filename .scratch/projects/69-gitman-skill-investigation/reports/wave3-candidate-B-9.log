@@ -1,0 +1,268 @@
+ROOT /tmp/gitman-wave3-b-9-iko3wiig
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig && jj git init --colocate repo)
+Initialized repo in "repo"
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/repo && bash -c 'printf "base\n" > README.md; printf "lock-v1\n" > devenv.lock')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/repo && jj status)
+Working copy changes:
+A README.md
+A devenv.lock
+Working copy  (@) : ytpqnsvp 6be4675d (no description set)
+Parent commit (@-): zzzzzzzz 00000000 (empty) (no description set)
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/repo && jj describe -m 'Add base and lock')
+Working copy  (@) now at: ytpqnsvp fb1d3fe8 Add base and lock
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/repo && jj bookmark create main -r @)
+Created 1 bookmarks pointing to ytpqnsvp fb1d3fe8 main | Add base and lock
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/repo && jj new main)
+Working copy  (@) now at: pnvyuolr 382936bc (empty) (no description set)
+Parent commit (@-)      : ytpqnsvp fb1d3fe8 main | Add base and lock
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig && jj git init --no-colocate origin)
+Initialized repo in "origin"
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/repo && jj git remote add origin /tmp/gitman-wave3-b-9-iko3wiig/origin/.jj/repo/store/git)
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/repo && jj git push --remote origin --bookmark main)
+Changes to push to origin:
+  bookmark: main [add to fb1d3fe8a9bf]
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/repo && bash -c 'printf "lock-v2\n" > devenv.lock')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/repo && jj status)
+Working copy changes:
+M devenv.lock
+Working copy  (@) : pnvyuolr ab192207 (no description set)
+Parent commit (@-): ytpqnsvp fb1d3fe8 main | Add base and lock
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/repo && jj diff)
+Modified regular file devenv.lock:
+   1     : lock-v1
+        1: lock-v2
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/repo && jj workspace list)
+default: . pnvyuolr ab192207 (no description set)
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/repo && jj log -r '(::working_copies() ~ ::main) ~ empty()')
+@  pnvyuolr test@example.com 2026-10-11 18:11:46 ab192207
+│  (no description set)
+~
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/repo && jj bookmark list)
+main: ytpqnsvp fb1d3fe8 Add base and lock
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/repo && jj log -r 'trunk()')
+◆  ytpqnsvp test@example.com 2026-10-11 18:11:41 main fb1d3fe8
+│  Add base and lock
+~
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/repo && bash -c 'test "$(cat devenv.lock)" = lock-v2')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/repo && jj describe -r @ -m 'Update devenv lock')
+Working copy  (@) now at: pnvyuolr 1da9cfdd Update devenv lock
+Parent commit (@-)      : ytpqnsvp fb1d3fe8 main | Add base and lock
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/repo && jj log -r '@|@-')
+@  pnvyuolr test@example.com 2026-10-11 18:11:55 1da9cfdd
+│  Update devenv lock
+◆  ytpqnsvp test@example.com 2026-10-11 18:11:41 main fb1d3fe8
+│  Add base and lock
+~
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/repo && jj git fetch --remote origin)
+Nothing changed.
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/repo && jj log -r 'conflicts()')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/repo && jj log -r 'divergent()')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/repo && jj bookmark set main -r @)
+Moved 1 bookmarks to pnvyuolr 1da9cfdd main* | Update devenv lock
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/repo && jj git push --remote origin --bookmark main)
+Changes to push to origin:
+  bookmark: main [move forward from fb1d3fe8a9bf to 1da9cfddcbb6]
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: wuukyxkx 991e1e0c (empty) (no description set)
+Parent commit (@-)      : pnvyuolr 1da9cfdd main | Update devenv lock
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/repo && jj status)
+The working copy has no changes.
+Working copy  (@) : wuukyxkx 991e1e0c (empty) (no description set)
+Parent commit (@-): pnvyuolr 1da9cfdd main | Update devenv lock
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/repo && jj workspace list)
+default: . wuukyxkx 991e1e0c (empty) (no description set)
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/repo && jj log -r '(::working_copies() ~ ::main) ~ empty()')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/repo && jj bookmark list)
+main: pnvyuolr 1da9cfdd Update devenv lock
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/repo && jj log -r 'trunk()')
+◆  pnvyuolr test@example.com 2026-10-11 18:11:55 main 1da9cfdd
+│  Update devenv lock
+~
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/repo && jj git fetch --remote origin)
+Nothing changed.
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/repo && gitman work feature)
+workspace: feature
+path: /tmp/gitman-wave3-b-9-iko3wiig/workspaces/feature
+base: 1da9cfddcbb6b81c4feb69b4fa7c692de0ae6ee5 (trunk())
+enter it with: cd /tmp/gitman-wave3-b-9-iko3wiig/workspaces/feature
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/workspaces/feature && bash -c 'printf "feature\n" > feature.txt')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/workspaces/feature && bash -c 'test "$(cat feature.txt)" = feature; test "$(cat devenv.lock)" = lock-v2')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/workspaces/feature && jj status)
+Working copy changes:
+A feature.txt
+Working copy  (@) : upoxrvzv 5c7987e4 (no description set)
+Parent commit (@-): pnvyuolr 1da9cfdd main | Update devenv lock
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/workspaces/feature && jj diff)
+Added regular file feature.txt:
+        1: feature
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/workspaces/feature && jj log -r '@|@-')
+@  upoxrvzv test@example.com 2026-10-11 18:12:04 feature@ 5c7987e4
+│  (no description set)
+◆  pnvyuolr test@example.com 2026-10-11 18:11:55 main 1da9cfdd
+│  Update devenv lock
+~
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/workspaces/feature && jj describe -r @ -m 'Add feature marker')
+Working copy  (@) now at: upoxrvzv eeaedd36 Add feature marker
+Parent commit (@-)      : pnvyuolr 1da9cfdd main | Update devenv lock
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/workspaces/feature && jj log -r '@|@-')
+@  upoxrvzv test@example.com 2026-10-11 18:12:07 feature@ eeaedd36
+│  Add feature marker
+◆  pnvyuolr test@example.com 2026-10-11 18:11:55 main 1da9cfdd
+│  Update devenv lock
+~
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/workspaces/feature && jj bookmark create feature -r @)
+Created 1 bookmarks pointing to upoxrvzv eeaedd36 feature | Add feature marker
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/workspaces/feature && jj git fetch --remote origin)
+Nothing changed.
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/workspaces/feature && jj log -r 'conflicts()')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/workspaces/feature && jj log -r 'divergent()')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/workspaces/feature && jj bookmark set main -r @)
+Moved 1 bookmarks to upoxrvzv eeaedd36 feature main* | Add feature marker
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/workspaces/feature && jj git push --remote origin --bookmark main)
+Changes to push to origin:
+  bookmark: main [move forward from 1da9cfddcbb6 to eeaedd364d69]
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: snqslqlp 4e2c61a0 (empty) (no description set)
+Parent commit (@-)      : upoxrvzv eeaedd36 feature main | Add feature marker
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/repo && jj status)
+The working copy has no changes.
+Working copy  (@) : wuukyxkx 991e1e0c (empty) (no description set)
+Parent commit (@-): pnvyuolr 1da9cfdd Update devenv lock
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/repo && jj new main)
+Working copy  (@) now at: vxyrvrnk c6c5fa65 (empty) (no description set)
+Parent commit (@-)      : upoxrvzv eeaedd36 feature main | Add feature marker
+Added 1 files, modified 0 files, removed 0 files
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/repo && jj workspace list)
+default: . vxyrvrnk c6c5fa65 (empty) (no description set)
+feature: ../workspaces/feature snqslqlp 4e2c61a0 (empty) (no description set)
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/repo && jj bookmark list)
+feature: upoxrvzv eeaedd36 Add feature marker
+main: upoxrvzv eeaedd36 Add feature marker
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/repo && jj log -r 'main|feature|feature@|divergent()')
+○  snqslqlp test@example.com 2026-10-11 18:12:09 feature@ 4e2c61a0
+│  (empty) (no description set)
+◆  upoxrvzv test@example.com 2026-10-11 18:12:07 feature main eeaedd36
+│  Add feature marker
+~
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/repo && jj log -r '(::feature@ ~ ::main) ~ empty()')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/workspaces/feature && git status --short --ignored)
+!! .jj/
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/workspaces/feature && find . -maxdepth 2 -type f -not -path './.git/*' -not -path './.jj/*' -print)
+./.git
+./README.md
+./devenv.lock
+./feature.txt
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/repo && jj workspace remove feature)
+Removed Git worktree for "/tmp/gitman-wave3-b-9-iko3wiig/workspaces/feature".
+Removed workspace directory "/tmp/gitman-wave3-b-9-iko3wiig/workspaces/feature".
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-9-iko3wiig/repo && jj workspace list)
+default: . vxyrvrnk c6c5fa65 (empty) (no description set)
+[exit 0]
+

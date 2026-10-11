@@ -1,0 +1,157 @@
+ROOT /tmp/gitman-wave3-b-5-cbh1j79m
+$ (cd /tmp/gitman-wave3-b-5-cbh1j79m && jj git init --colocate repo)
+Initialized repo in "repo"
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-5-cbh1j79m/repo && bash -c 'printf "base\n" > README.md')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-5-cbh1j79m/repo && jj describe -m 'Add base')
+Working copy  (@) now at: kyurnmul 11ed1672 Add base
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-5-cbh1j79m/repo && jj bookmark create main -r @)
+Created 1 bookmarks pointing to kyurnmul 11ed1672 main | Add base
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-5-cbh1j79m/repo && jj new main)
+Working copy  (@) now at: wuntqqwl 4d636b0a (empty) (no description set)
+Parent commit (@-)      : kyurnmul 11ed1672 main | Add base
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-5-cbh1j79m/repo && jj status)
+The working copy has no changes.
+Working copy  (@) : wuntqqwl 4d636b0a (empty) (no description set)
+Parent commit (@-): kyurnmul 11ed1672 main | Add base
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-5-cbh1j79m/repo && jj workspace list)
+default: . wuntqqwl 4d636b0a (empty) (no description set)
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-5-cbh1j79m/repo && jj log -r '(::working_copies() ~ ::main) ~ empty()')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-5-cbh1j79m/repo && jj bookmark list)
+main: kyurnmul 11ed1672 Add base
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-5-cbh1j79m/repo && jj log -r 'trunk()')
+◆  zzzzzzzz root() 00000000
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-5-cbh1j79m/repo && jj git remote list)
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-5-cbh1j79m/repo && gitman work feature --from main)
+workspace: feature
+path: /tmp/gitman-wave3-b-5-cbh1j79m/workspaces/feature
+base: 11ed167246fa3ef2e8b921c08b4350549cdd49b0 (main)
+enter it with: cd /tmp/gitman-wave3-b-5-cbh1j79m/workspaces/feature
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-5-cbh1j79m/workspaces/feature && bash -c 'printf "done\n" > feature.txt')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-5-cbh1j79m/workspaces/feature && bash -c 'test "$(cat feature.txt)" = done')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-5-cbh1j79m/workspaces/feature && jj status)
+Working copy changes:
+A feature.txt
+Working copy  (@) : kvtzokwo be2cda07 (no description set)
+Parent commit (@-): kyurnmul 11ed1672 main | Add base
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-5-cbh1j79m/workspaces/feature && jj diff)
+Added regular file feature.txt:
+        1: done
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-5-cbh1j79m/workspaces/feature && jj log -r '@|@-')
+@  kvtzokwo test@example.com 2026-10-11 18:09:07 feature@ be2cda07
+│  (no description set)
+○  kyurnmul test@example.com 2026-10-11 18:08:59 main 11ed1672
+│  Add base
+~
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-5-cbh1j79m/workspaces/feature && jj describe -r @ -m 'Add feature marker')
+Working copy  (@) now at: kvtzokwo 6acd4723 Add feature marker
+Parent commit (@-)      : kyurnmul 11ed1672 main | Add base
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-5-cbh1j79m/workspaces/feature && jj log -r '@|@-')
+@  kvtzokwo test@example.com 2026-10-11 18:09:14 feature@ 6acd4723
+│  Add feature marker
+○  kyurnmul test@example.com 2026-10-11 18:08:59 main 11ed1672
+│  Add base
+~
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-5-cbh1j79m/workspaces/feature && jj bookmark create feature -r @)
+Created 1 bookmarks pointing to kvtzokwo 6acd4723 feature | Add feature marker
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-5-cbh1j79m/workspaces/feature && jj log -r 'conflicts()')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-5-cbh1j79m/workspaces/feature && jj log -r 'divergent()')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-5-cbh1j79m/workspaces/feature && jj bookmark set main -r @)
+Moved 1 bookmarks to kvtzokwo 6acd4723 feature main* | Add feature marker
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-5-cbh1j79m/repo && jj status)
+The working copy has no changes.
+Working copy  (@) : wuntqqwl 4d636b0a (empty) (no description set)
+Parent commit (@-): kyurnmul 11ed1672 Add base
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-5-cbh1j79m/repo && jj new main)
+Working copy  (@) now at: msvvyswm 10ab4fc7 (empty) (no description set)
+Parent commit (@-)      : kvtzokwo 6acd4723 feature main | Add feature marker
+Added 1 files, modified 0 files, removed 0 files
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-5-cbh1j79m/repo && jj workspace list)
+default: . msvvyswm 10ab4fc7 (empty) (no description set)
+feature: ../workspaces/feature kvtzokwo 6acd4723 feature main | Add feature marker
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-5-cbh1j79m/repo && jj bookmark list)
+feature: kvtzokwo 6acd4723 Add feature marker
+main: kvtzokwo 6acd4723 Add feature marker
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-5-cbh1j79m/repo && jj log -r 'main|feature|feature@|divergent()')
+○  kvtzokwo test@example.com 2026-10-11 18:09:14 feature main feature@ 6acd4723
+│  Add feature marker
+~
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-5-cbh1j79m/repo && jj log -r '(::feature@ ~ ::main) ~ empty()')
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-5-cbh1j79m/workspaces/feature && git status --short --ignored)
+ A feature.txt
+!! .jj/
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-5-cbh1j79m/workspaces/feature && find . -maxdepth 2 -type f -not -path './.git/*' -not -path './.jj/*' -print)
+./.git
+./README.md
+./feature.txt
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-5-cbh1j79m/repo && jj workspace remove feature)
+Removed Git worktree for "/tmp/gitman-wave3-b-5-cbh1j79m/workspaces/feature".
+Removed workspace directory "/tmp/gitman-wave3-b-5-cbh1j79m/workspaces/feature".
+[exit 0]
+
+$ (cd /tmp/gitman-wave3-b-5-cbh1j79m/repo && jj workspace list)
+default: . msvvyswm 10ab4fc7 (empty) (no description set)
+[exit 0]
+

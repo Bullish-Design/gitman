@@ -1,0 +1,20 @@
+
+================ divergent change survives landing check ================
+$ (cd /tmp/gitman-d-divergent-ops-wmixeh21/workspaces/task && jj bookmark set main -r task)
+Moved 1 bookmarks to znomrzmx/1 ad3f6006 main* task | (divergent) first variant
+[exit=0]
+$ (cd /tmp/gitman-d-divergent-ops-wmixeh21/workspaces/task && jj git push --bookmark main)
+Changes to push to origin:
+  bookmark: main [move forward from d205eb6c55e5 to ad3f60067582]
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: srwktlqs 6585fdde (empty) (no description set)
+Parent commit (@-)      : znomrzmx/1 ad3f6006 main task | (divergent) first variant
+[exit=0]
+$ (cd /tmp/gitman-d-divergent-ops-wmixeh21/workspaces/task && jj log -r '(::task@ ~ ::trunk()) ~ empty()')
+
+[exit=0]
+$ (cd /tmp/gitman-d-divergent-ops-wmixeh21/workspaces/task && jj log -r 'divergent()' --no-graph -T 'change_id.short() ++ " | " ++ commit_id.short() ++ " | " ++ description ++ "\n"')
+znomrzmxpszl | b176ef31c3c5 | alternate variant
+
+znomrzmxpszl | ad3f60067582 | first variant
+[exit=0]

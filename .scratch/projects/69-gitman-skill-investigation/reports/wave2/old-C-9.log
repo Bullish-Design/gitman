@@ -1,0 +1,223 @@
+$ mktemp -d /tmp/gitman-old-C-9.XXXXXX
+/tmp/gitman-old-C-9.8Achhx
+[exit 0]
+$ mkdir "$sandbox/repo"
+[exit 0]
+$ cat > "$sandbox/jjconfig.toml" <<'EOF'
+user.name = "Scenario User"
+user.email = "scenario@example.invalid"
+EOF
+[exit 0]
+$ export JJ_CONFIG="$sandbox/jjconfig.toml" GIT_CONFIG_GLOBAL=/dev/null GITMAN_WORKSPACE_ROOT="$sandbox/workspaces"
+[exit 0]
+
+$ jj git init --colocate .
+Initialized repo in "."
+[exit 0]
+
+$ printf 'base\n' > README.md
+[exit 0]
+
+$ printf 'lock=old\n' > devenv.lock
+[exit 0]
+
+$ jj status
+Working copy changes:
+A README.md
+A devenv.lock
+Working copy  (@) : mosqqkvz 0e50bbba (no description set)
+Parent commit (@-): zzzzzzzz 00000000 (empty) (no description set)
+[exit 0]
+
+$ jj describe -m 'Initialize scenario'
+Working copy  (@) now at: mosqqkvz 11233565 Initialize scenario
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+[exit 0]
+
+$ jj bookmark create main -r @
+Created 1 bookmarks pointing to mosqqkvz 11233565 main | Initialize scenario
+[exit 0]
+
+$ jj new main
+Working copy  (@) now at: ntvpxxwv 80c0795d (empty) (no description set)
+Parent commit (@-)      : mosqqkvz 11233565 main | Initialize scenario
+[exit 0]
+
+$ jj git init --no-colocate ../origin
+Initialized repo in "../origin"
+[exit 0]
+
+$ jj git remote add origin ../origin/.jj/repo/store/git
+[exit 0]
+
+$ jj git push --bookmark main
+Changes to push to origin:
+  bookmark: main [add to 1123356590d2]
+[exit 0]
+
+$ jj git fetch
+Nothing changed.
+[exit 0]
+
+$ jj workspace list
+default: . ntvpxxwv 80c0795d (empty) (no description set)
+[exit 0]
+
+$ jj log -r '(::working_copies() ~ ::trunk()) ~ empty()'
+[exit 0]
+
+$ printf 'lock=new\n' > devenv.lock
+[exit 0]
+
+$ jj status
+Working copy changes:
+M devenv.lock
+Working copy  (@) : ntvpxxwv b943466e (no description set)
+Parent commit (@-): mosqqkvz 11233565 main | Initialize scenario
+[exit 0]
+
+$ jj diff
+Modified regular file devenv.lock:
+   1     : lock=old
+        1: lock=new
+[exit 0]
+
+$ jj describe -m 'Update devenv lock'
+Working copy  (@) now at: ntvpxxwv 269d31cf Update devenv lock
+Parent commit (@-)      : mosqqkvz 11233565 main | Initialize scenario
+[exit 0]
+
+$ rg -x 'lock=new' devenv.lock
+lock=new
+[exit 0]
+
+$ jj git fetch
+Nothing changed.
+[exit 0]
+
+$ jj rebase -b @ -d 'trunk()'
+Skipped rebase of 1 commits that were already in place.
+Nothing changed.
+[exit 0]
+
+$ jj bookmark set main -r @
+Moved 1 bookmarks to ntvpxxwv 269d31cf main* | Update devenv lock
+[exit 0]
+
+$ jj git push --bookmark main
+Changes to push to origin:
+  bookmark: main [move forward from 1123356590d2 to 269d31cf33f7]
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: yrozoklw 438759a0 (empty) (no description set)
+Parent commit (@-)      : ntvpxxwv 269d31cf main | Update devenv lock
+[exit 0]
+
+$ jj status
+The working copy has no changes.
+Working copy  (@) : yrozoklw 438759a0 (empty) (no description set)
+Parent commit (@-): ntvpxxwv 269d31cf main | Update devenv lock
+[exit 0]
+
+$ jj new main
+Working copy  (@) now at: rnqmmlyr 4434be13 (empty) (no description set)
+Parent commit (@-)      : ntvpxxwv 269d31cf main | Update devenv lock
+[exit 0]
+
+$ jj workspace list
+default: . rnqmmlyr 4434be13 (empty) (no description set)
+[exit 0]
+
+$ jj log -r '(::working_copies() ~ ::trunk()) ~ empty()'
+[exit 0]
+
+$ gitman work post_lock_feature
+workspace: post_lock_feature
+path: /tmp/gitman-old-C-9.8Achhx/workspaces/post_lock_feature
+base: 269d31cf33f782895bc65d6e5dca55afb2ae2c36 (trunk())
+enter it with: cd /tmp/gitman-old-C-9.8Achhx/workspaces/post_lock_feature
+[exit 0]
+
+$ cd ../workspaces/post_lock_feature && printf 'after lock\n' > feature.txt
+[exit 0]
+
+$ cd ../workspaces/post_lock_feature && jj status
+Working copy changes:
+A feature.txt
+Working copy  (@) : tpwvusnt e049d91a (no description set)
+Parent commit (@-): ntvpxxwv 269d31cf main | Update devenv lock
+[exit 0]
+
+$ cd ../workspaces/post_lock_feature && jj describe -m 'Add feature after lock update'
+Working copy  (@) now at: tpwvusnt 394b5be6 Add feature after lock update
+Parent commit (@-)      : ntvpxxwv 269d31cf main | Update devenv lock
+[exit 0]
+
+$ cd ../workspaces/post_lock_feature && test -f feature.txt
+[exit 0]
+
+$ cd ../workspaces/post_lock_feature && jj git fetch
+Nothing changed.
+[exit 0]
+
+$ cd ../workspaces/post_lock_feature && jj rebase -b @ -d 'trunk()'
+Skipped rebase of 1 commits that were already in place.
+Nothing changed.
+[exit 0]
+
+$ cd ../workspaces/post_lock_feature && jj bookmark create post_lock_feature -r @
+Created 1 bookmarks pointing to tpwvusnt 394b5be6 post_lock_feature | Add feature after lock update
+[exit 0]
+
+$ cd ../workspaces/post_lock_feature && jj bookmark set main -r @
+Moved 1 bookmarks to tpwvusnt 394b5be6 main* post_lock_feature | Add feature after lock update
+[exit 0]
+
+$ cd ../workspaces/post_lock_feature && jj git push --bookmark main
+Changes to push to origin:
+  bookmark: main [move forward from 269d31cf33f7 to 394b5be6e618]
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: xxnmvupk fdade286 (empty) (no description set)
+Parent commit (@-)      : tpwvusnt 394b5be6 main post_lock_feature | Add feature after lock update
+[exit 0]
+
+$ jj status
+The working copy has no changes.
+Working copy  (@) : rnqmmlyr 4434be13 (empty) (no description set)
+Parent commit (@-): ntvpxxwv 269d31cf Update devenv lock
+[exit 0]
+
+$ jj new main
+Working copy  (@) now at: swzknvvv 681ffa42 (empty) (no description set)
+Parent commit (@-)      : tpwvusnt 394b5be6 main post_lock_feature | Add feature after lock update
+Added 1 files, modified 0 files, removed 0 files
+[exit 0]
+
+$ jj log -r '(::post_lock_feature@ ~ ::trunk()) ~ empty()'
+[exit 0]
+
+$ find ../workspaces/post_lock_feature -maxdepth 2 -print
+../workspaces/post_lock_feature
+../workspaces/post_lock_feature/.git
+../workspaces/post_lock_feature/.jj
+../workspaces/post_lock_feature/.jj/repo
+../workspaces/post_lock_feature/.jj/working_copy
+../workspaces/post_lock_feature/.jj/.gitignore
+../workspaces/post_lock_feature/README.md
+../workspaces/post_lock_feature/devenv.lock
+../workspaces/post_lock_feature/feature.txt
+[exit 0]
+
+$ jj workspace remove post_lock_feature
+Removed Git worktree for "/tmp/gitman-old-C-9.8Achhx/workspaces/post_lock_feature".
+Removed workspace directory "/tmp/gitman-old-C-9.8Achhx/workspaces/post_lock_feature".
+[exit 0]
+
+$ jj workspace list
+default: . swzknvvv 681ffa42 (empty) (no description set)
+[exit 0]
+
+$ jj log -r 'main'
+◆  tpwvusnt scenario@example.invalid 2026-10-11 18:01:00 main post_lock_feature 394b5be6
+│  Add feature after lock update
+~
+[exit 0]

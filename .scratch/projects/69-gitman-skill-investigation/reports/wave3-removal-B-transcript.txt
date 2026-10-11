@@ -1,0 +1,556 @@
+$ mktemp -d
+/tmp/tmp.0Nbn0L3NLK
+[exit 0]
+$ export JJ_CONFIG=/tmp/tmp.0Nbn0L3NLK/jj-config.toml GIT_CONFIG_GLOBAL=/dev/null GITMAN_WORKSPACE_ROOT=/tmp/tmp.0Nbn0L3NLK/workspaces
+$ printf user configuration > /tmp/tmp.0Nbn0L3NLK/jj-config.toml
+[exit 0]
+$ jj version
+jj 0.46.0-7d382314f9420b4b8d932245b49c99492c812b9f
+[exit 0]
+$ jj git init --no-colocate /tmp/tmp.0Nbn0L3NLK/origin
+Initialized repo in "../../../../../tmp/tmp.0Nbn0L3NLK/origin"
+[exit 0]
+$ jj git init --colocate /tmp/tmp.0Nbn0L3NLK/project
+Initialized repo in "../../../../../tmp/tmp.0Nbn0L3NLK/project"
+[exit 0]
+$ cd /tmp/tmp.0Nbn0L3NLK/project
+[exit 0]
+$ pwd
+/tmp/tmp.0Nbn0L3NLK/project
+[exit 0]
+$ jj root
+/tmp/tmp.0Nbn0L3NLK/project
+[exit 0]
+$ jj status
+The working copy has no changes.
+Working copy  (@) : tzmzlwuo ab9e7274 (empty) (no description set)
+Parent commit (@-): zzzzzzzz 00000000 (empty) (no description set)
+[exit 0]
+$ jj workspace list
+default: . tzmzlwuo ab9e7274 (empty) (no description set)
+[exit 0]
+$ jj bookmark list
+[exit 0]
+$ jj log -r trunk\(\)
+◆  zzzzzzzz root() 00000000
+[exit 0]
+$ jj git remote add origin /tmp/tmp.0Nbn0L3NLK/origin/.jj/repo/store/git
+[exit 0]
+$ jj git remote list
+origin /tmp/tmp.0Nbn0L3NLK/origin/.jj/repo/store/git
+[exit 0]
+$ printf "Project seed\n" > README.md
+[exit 0]
+$ jj status
+Working copy changes:
+A README.md
+Working copy  (@) : tzmzlwuo e3d12e9b (no description set)
+Parent commit (@-): zzzzzzzz 00000000 (empty) (no description set)
+[exit 0]
+$ jj describe -m Initialize\ project
+Working copy  (@) now at: tzmzlwuo b27b8fef Initialize project
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+[exit 0]
+$ jj bookmark create main -r @
+Created 1 bookmarks pointing to tzmzlwuo b27b8fef main | Initialize project
+[exit 0]
+$ jj git push --bookmark main --allow-new
+error: unexpected argument '--allow-new' found
+
+  tip: a similar argument exists: '--all'
+
+Usage: jj git push --bookmark <BOOKMARK> --all
+
+For more information, try '--help'.
+$ export JJ_CONFIG=/tmp/tmp.0Nbn0L3NLK/jj-config.toml GIT_CONFIG_GLOBAL=/dev/null GITMAN_WORKSPACE_ROOT=/tmp/tmp.0Nbn0L3NLK/workspaces
+$ cd /tmp/tmp.0Nbn0L3NLK/project
+[exit 0]
+$ pwd
+/tmp/tmp.0Nbn0L3NLK/project
+[exit 0]
+$ jj root
+/tmp/tmp.0Nbn0L3NLK/project
+[exit 0]
+$ jj git push --help
+Push to a Git remote
+
+By default, pushes tracking bookmarks and tags pointing to `remote_bookmarks(remote=<remote>)..@`.
+The default can be configured via `revsets.git-push`. Use `--bookmark`/`--tag` to push specific
+bookmarks or tags. Use `--all` to push all bookmarks and tags. Use `--change` to generate bookmark
+names based on the change IDs of specific commits.
+
+When pushing a bookmark or tag, the command pushes all commits in the range from the remote's
+current position up to and including its target commit. Any descendant commits beyond the reference
+are not pushed.
+
+If the local reference has changed from the last fetch, push will update the remote reference to the
+new position after passing safety checks. This is similar to `git push --force-with-lease` - the
+remote is updated only if its current state matches what Jujutsu last fetched.
+
+Unlike in Git, the remote to push to is not derived from the tracked remote bookmarks. Use
+`--remote` to select the remote Git repository by name. There is no option to push to multiple
+remotes.
+
+Before the command actually moves, creates, or deletes a remote bookmark, it makes several [safety
+checks]. If there is a problem, you may need to run `jj git fetch --remote <remote name>` and/or
+resolve some [bookmark conflicts].
+
+[safety checks]: https://docs.jj-vcs.dev/latest/bookmarks/#pushing-bookmarks-safety-checks
+
+[bookmark conflicts]: https://docs.jj-vcs.dev/latest/bookmarks/#conflicts
+
+Usage: jj git push [OPTIONS]
+
+Options:
+      --remote <REMOTE>
+          The remote(s) to push to (can be repeated)
+          
+          This defaults to the `git.push` setting. If that is not configured, and if there are
+          multiple remotes, the remote named "origin" will be used.
+          
+          By default, the specified pattern matches remote names with glob syntax, e.g., `--remote
+          '*'`. You can also use other [string pattern syntax].
+          
+          [string pattern syntax]: https://docs.jj-vcs.dev/latest/revsets/#string-patterns
+
+  -b, --bookmark <BOOKMARK>
+          Push only this bookmark, or bookmarks matching a pattern (can be repeated)
+          
+          If a bookmark isn't tracking anything yet, the remote bookmark will be tracked
+          automatically.
+          
+          By default, the specified pattern matches bookmark names with glob syntax. You can also
+          use other [string pattern syntax].
+          
+          [string pattern syntax]: https://docs.jj-vcs.dev/latest/revsets/#string-patterns
+
+  -t, --tag <TAG>
+          Push only this tag, or tags matching a pattern (can be repeated)
+          
+          If a tag isn't tracking anything yet, the remote tag will be tracked automatically.
+          
+          By default, the specified pattern matches tag names with glob syntax. You can also use
+          other [string pattern syntax].
+          
+          [string pattern syntax]: https://docs.jj-vcs.dev/latest/revsets/#string-patterns
+
+      --all
+          Push all bookmarks and tags (including new ones)
+
+      --tracked
+          Push all tracked bookmarks and tags
+          
+          This usually means that the bookmark or tag was already pushed to or fetched from the
+          [relevant remote].
+          
+          [relevant remote]: https://docs.jj-vcs.dev/latest/bookmarks#remotes-and-tracked-bookmarks
+
+      --deleted
+          Push all deleted bookmarks and tags
+          
+          Only tracked bookmarks and tags can be successfully deleted on the remote. A warning will
+          be printed if any untracked bookmarks or tags on the remote correspond to missing local
+          bookmarks or tags.
+
+      --allow-empty-description
+          Allow pushing commits with empty descriptions
+
+      --allow-private
+          Allow pushing commits that are private
+          
+          The set of private commits can be configured by the `git.private-commits` setting. The
+          default is `none()`, meaning all commits are eligible to be pushed.
+
+      --allow-conflicts
+          Allow pushing commits that contain conflicts
+
+  -r, --revision <REVSETS>
+          Push bookmarks and tags pointing to these commits (can be repeated)
+
+  -c, --change <REVSETS>
+          Push this commit by creating a bookmark (can be repeated)
+          
+          The created bookmark will be tracked automatically. Use the `templates.git_push_bookmark`
+          setting to customize the generated bookmark name. The default is `"push-" ++
+          change_id.short()`.
+
+      --named <NAME=REVISION>
+          Specify a new bookmark name and a revision to push under that name, e.g. '--named
+          myfeature=@'
+          
+          Automatically tracks the bookmark if it is new.
+
+      --dry-run
+          Only display what will change on the remote
+
+  -o, --option <OPTION>
+          Git push options
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+Global Options:
+  -R, --repository <REPOSITORY>
+          Path to repository to operate on
+          
+          By default, Jujutsu searches for the closest .jj/ directory in an ancestor of the current
+          working directory.
+
+      --ignore-working-copy
+          Don't snapshot the working copy, and don't update it
+          
+          By default, Jujutsu snapshots the working copy at the beginning of every command. The
+          working copy is also updated at the end of the command, if the command modified the
+          working-copy commit (`@`). If you want to avoid snapshotting the working copy and instead
+          see a possibly stale working-copy commit, you can use `--ignore-working-copy`. This may be
+          useful e.g. in a command prompt, especially if you have another process that commits the
+          working copy.
+          
+          Loading the repository at a specific operation with `--at-operation` implies
+          `--ignore-working-copy`.
+
+      --no-integrate-operation
+          Run the command as usual but don't integrate any operations
+          
+          When this option is given, the operations will still be created as usual but they will not
+          be integrated to the operation log. The working copy will also not be updated.
+          
+          The command will print the resulting operation ID. You can pass that to e.g. `jj --at-op`
+          to inspect the resulting repo state, or you can pass it to `jj op restore` to restore the
+          repo to that state. You can also pass the ID to `jj op integrate` to integrate the
+          operation.
+          
+          Note that this does *not* prevent side effects outside the repo. For example, `jj git push
+          --no-integrate-operation` will still perform the push.
+
+      --ignore-immutable
+          Allow rewriting immutable commits
+          
+          By default, Jujutsu prevents rewriting commits in the configured set of immutable commits.
+          This option disables that check and lets you rewrite any commit but the root commit.
+          
+          This option only affects the check. It does not affect the `immutable_heads()` revset or
+          the `immutable` template keyword.
+
+      --at-operation <AT_OPERATION>
+          Operation to load the repo at
+          
+          Operation to load the repo at. By default, Jujutsu loads the repo at the most recent
+          operation, or at the merge of the divergent operations if any.
+          
+          You can use `--at-op=<operation ID>` to see what the repo looked like at an earlier
+          operation. For example `jj --at-op=<operation ID> st` will show you what `jj st` would
+          have shown you when the given operation had just finished. `--at-op=@` is pretty much the
+          same as the default except that divergent operations will never be merged.
+          
+          Use `jj op log` to find the operation ID you want. Any unambiguous prefix of the operation
+          ID is enough.
+          
+          When loading the repo at an earlier operation, the working copy will be ignored, as if
+          `--ignore-working-copy` had been specified.
+          
+          It is possible to run mutating commands when loading the repo at an earlier operation.
+          Doing that is equivalent to having run concurrent commands starting at the earlier
+          operation. There's rarely a reason to do that, but it is possible.
+          
+          [alias: --at-op]
+
+      --debug
+          Enable debug logging
+
+      --color <WHEN>
+          When to colorize output
+          
+          [possible values: always, never, debug, auto]
+
+      --quiet
+          Silence non-primary command output
+          
+          For example, `jj file list` will still list files, but it won't tell you if the working
+          copy was snapshotted or if descendants were rebased.
+          
+          Warnings and errors will still be printed.
+
+      --no-pager
+          Disable the pager
+
+      --config <NAME=VALUE>
+          Additional configuration options (can be repeated)
+          
+          The name should be specified as TOML dotted keys. The value should be specified as a TOML
+          expression. If string value isn't enclosed by any TOML constructs (such as array
+          notation), quotes can be omitted.
+
+      --config-file <PATH>
+          Additional configuration files (can be repeated)
+[exit 0]
+$ jj git push --bookmark main
+Changes to push to origin:
+  bookmark: main [add to b27b8fefcba0]
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: kutnwkml a55c8449 (empty) (no description set)
+Parent commit (@-)      : tzmzlwuo b27b8fef main | Initialize project
+[exit 0]
+$ jj new main
+Working copy  (@) now at: wloylmqu 737b4ba7 (empty) (no description set)
+Parent commit (@-)      : tzmzlwuo b27b8fef main | Initialize project
+[exit 0]
+$ jj status
+The working copy has no changes.
+Working copy  (@) : wloylmqu 737b4ba7 (empty) (no description set)
+Parent commit (@-): tzmzlwuo b27b8fef main | Initialize project
+[exit 0]
+$ jj workspace list
+default: . wloylmqu 737b4ba7 (empty) (no description set)
+[exit 0]
+$ jj log -r \(::working_copies\(\)\ ~\ ::main\)\ ~\ empty\(\)
+[exit 0]
+$ jj bookmark list
+main: tzmzlwuo b27b8fef Initialize project
+[exit 0]
+$ jj log -r trunk\(\)
+◆  tzmzlwuo test@example.com 2026-10-12 11:49:51 main b27b8fef
+│  Initialize project
+~
+[exit 0]
+$ jj git fetch
+Nothing changed.
+[exit 0]
+$ pwd
+/tmp/tmp.0Nbn0L3NLK/project
+[exit 0]
+$ jj root
+/tmp/tmp.0Nbn0L3NLK/project
+[exit 0]
+$ gitman work feature --from main
+workspace: feature
+path: /tmp/tmp.0Nbn0L3NLK/workspaces/feature
+base: b27b8fefcba05f7b45b217105516410c9af585cf (main)
+enter it with: cd /tmp/tmp.0Nbn0L3NLK/workspaces/feature
+[exit 0]
+$ jj workspace list
+default: . wloylmqu 737b4ba7 (empty) (no description set)
+feature: ../workspaces/feature mtwqymvw 06090261 (empty) (no description set)
+[exit 0]
+$ cd /tmp/tmp.0Nbn0L3NLK/workspaces/feature
+[exit 0]
+$ pwd
+/tmp/tmp.0Nbn0L3NLK/workspaces/feature
+[exit 0]
+$ jj root
+/tmp/tmp.0Nbn0L3NLK/workspaces/feature
+[exit 0]
+$ printf feature source > greeting.py
+[exit 0]
+$ printf feature test > test_greeting.py
+[exit 0]
+$ python3 -m unittest discover -v
+test_greet (test_greeting.GreetingTest.test_greet) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+OK
+[exit 0]
+$ jj status
+Working copy changes:
+A __pycache__/greeting.cpython-313.pyc
+A __pycache__/test_greeting.cpython-313.pyc
+A greeting.py
+A test_greeting.py
+Working copy  (@) : mtwqymvw 6ad120e0 (no description set)
+Parent commit (@-): tzmzlwuo b27b8fef main | Initialize project
+[exit 0]
+$ jj diff
+Added regular file __pycache__/greeting.cpython-313.pyc:
+    (binary)
+Added regular file __pycache__/test_greeting.cpython-313.pyc:
+    (binary)
+Added regular file greeting.py:
+        1: def greet(name: str) -> str:
+        2:     return f"Hello, {name}!"
+Added regular file test_greeting.py:
+        1: import unittest
+        2: 
+        3: from greeting import greet
+        4: 
+        5: 
+        6: class GreetingTest(unittest.TestCase):
+        7:     def test_greet(self) -> None:
+        8:         self.assertEqual(greet("Ada"), "Hello, Ada!")
+[exit 0]
+$ jj log -r @\ \|\ @-
+@  mtwqymvw test@example.com 2026-10-12 11:50:22 feature@ 6ad120e0
+│  (no description set)
+◆  tzmzlwuo test@example.com 2026-10-12 11:49:51 main b27b8fef
+│  Initialize project
+~
+[exit 0]
+$ jj describe -r @ -m Add\ greeting\ function\ and\ test
+Working copy  (@) now at: mtwqymvw 056bebe4 Add greeting function and test
+Parent commit (@-)      : tzmzlwuo b27b8fef main | Initialize project
+[exit 0]
+$ jj log -r @\ \|\ @-
+@  mtwqymvw test@example.com 2026-10-12 11:50:22 feature@ 056bebe4
+│  Add greeting function and test
+◆  tzmzlwuo test@example.com 2026-10-12 11:49:51 main b27b8fef
+│  Initialize project
+~
+[exit 0]
+$ jj bookmark create feature -r @
+Created 1 bookmarks pointing to mtwqymvw 056bebe4 feature | Add greeting function and test
+[exit 0]
+$ jj bookmark list
+feature: mtwqymvw 056bebe4 Add greeting function and test
+main: tzmzlwuo b27b8fef Initialize project
+[exit 0]
+$ jj git fetch
+Nothing changed.
+[exit 0]
+$ jj log -r main\ \|\ main@origin\ \|\ feature
+@  mtwqymvw test@example.com 2026-10-12 11:50:22 feature feature@ 056bebe4
+│  Add greeting function and test
+◆  tzmzlwuo test@example.com 2026-10-12 11:49:51 main b27b8fef
+│  Initialize project
+~
+[exit 0]
+$ jj log -r conflicts\(\)
+[exit 0]
+$ jj log -r divergent\(\)
+[exit 0]
+$ jj bookmark set main -r feature
+Moved 1 bookmarks to mtwqymvw 056bebe4 feature main* | Add greeting function and test
+[exit 0]
+$ jj git push --bookmark main
+Changes to push to origin:
+  bookmark: main [move forward from b27b8fefcba0 to 056bebe48a3a]
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: qpsknyou 13d80fd1 (empty) (no description set)
+Parent commit (@-)      : mtwqymvw 056bebe4 feature main | Add greeting function and test
+[exit 0]
+$ jj status
+The working copy has no changes.
+Working copy  (@) : qpsknyou 13d80fd1 (empty) (no description set)
+Parent commit (@-): mtwqymvw 056bebe4 feature main | Add greeting function and test
+[exit 0]
+$ jj log -r main\ \|\ main@origin\ \|\ feature
+◆  mtwqymvw test@example.com 2026-10-12 11:50:22 feature main 056bebe4
+│  Add greeting function and test
+~
+[exit 0]
+$ cd /tmp/tmp.0Nbn0L3NLK/project
+[exit 0]
+$ pwd
+/tmp/tmp.0Nbn0L3NLK/project
+[exit 0]
+$ jj root
+/tmp/tmp.0Nbn0L3NLK/project
+[exit 0]
+$ jj status
+The working copy has no changes.
+Working copy  (@) : wloylmqu 737b4ba7 (empty) (no description set)
+Parent commit (@-): tzmzlwuo b27b8fef Initialize project
+[exit 0]
+$ jj new main
+Working copy  (@) now at: qzxwlwkz 5caf40fd (empty) (no description set)
+Parent commit (@-)      : mtwqymvw 056bebe4 feature main | Add greeting function and test
+Added 4 files, modified 0 files, removed 0 files
+[exit 0]
+$ jj log -r @\ \|\ main\ \|\ main@origin
+@  qzxwlwkz test@example.com 2026-10-12 11:50:23 default@ 5caf40fd
+│  (empty) (no description set)
+◆  mtwqymvw test@example.com 2026-10-12 11:50:22 feature main 056bebe4
+│  Add greeting function and test
+~
+[exit 0]
+$ python3 -m unittest discover -v
+test_greet (test_greeting.GreetingTest.test_greet) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+OK
+[exit 0]
+$ printf "local scratch\n" > /tmp/tmp.0Nbn0L3NLK/workspaces/feature/local-note.txt
+[exit 0]
+$ jj workspace list
+default: . qzxwlwkz 4257fb41 (no description set)
+feature: ../workspaces/feature qpsknyou 13d80fd1 (empty) (no description set)
+[exit 0]
+$ jj bookmark list
+feature: mtwqymvw 056bebe4 Add greeting function and test
+main: mtwqymvw 056bebe4 Add greeting function and test
+[exit 0]
+$ jj log -r main\ \|\ main@origin\ \|\ feature
+◆  mtwqymvw test@example.com 2026-10-12 11:50:22 feature main 056bebe4
+│  Add greeting function and test
+~
+[exit 0]
+$ jj log -r \(::feature@\ ~\ ::main\)\ ~\ empty\(\)
+[exit 0]
+$ git -C /tmp/tmp.0Nbn0L3NLK/workspaces/feature status --short --untracked-files=all
+?? local-note.txt
+[exit 0]
+$ find /tmp/tmp.0Nbn0L3NLK/workspaces/feature -maxdepth 1 -mindepth 1 -printf %f\\n
+.git
+.jj
+README.md
+greeting.py
+test_greeting.py
+__pycache__
+local-note.txt
+[exit 0]
+STOP: Candidate requires explicit user decision on deletion or retention before jj workspace remove or forget. Workspace retained at /tmp/tmp.0Nbn0L3NLK/workspaces/feature
+$ cd /tmp/tmp.0Nbn0L3NLK/project
+[exit 0]
+$ pwd
+/tmp/tmp.0Nbn0L3NLK/project
+[exit 0]
+$ jj root
+/tmp/tmp.0Nbn0L3NLK/project
+[exit 0]
+$ git -C /tmp/tmp.0Nbn0L3NLK/workspaces/feature status --short --ignored --untracked-files=all
+?? local-note.txt
+!! .jj/.gitignore
+!! .jj/repo
+!! .jj/working_copy/checkout
+!! .jj/working_copy/tree_state
+!! .jj/working_copy/type
+[exit 0]
+$ find /tmp/tmp.0Nbn0L3NLK/workspaces/feature -type f -printf %P\\n
+.git
+.jj/repo
+.jj/working_copy/type
+.jj/working_copy/tree_state
+.jj/working_copy/checkout
+.jj/.gitignore
+README.md
+greeting.py
+test_greeting.py
+__pycache__/test_greeting.cpython-313.pyc
+__pycache__/greeting.cpython-313.pyc
+local-note.txt
+[exit 0]
+$ test -d /tmp/tmp.0Nbn0L3NLK/workspaces/feature
+[exit 0]
+$ jj workspace list
+default: . qzxwlwkz 4257fb41 (no description set)
+feature: ../workspaces/feature qpsknyou 13d80fd1 (empty) (no description set)
+[exit 0]
+DECISION: Ask user whether to delete or retain local-note.txt. No decision supplied in this independent test. Do not run jj workspace remove or jj workspace forget.
+$ cd /tmp/tmp.0Nbn0L3NLK/project
+[exit 0]
+$ jj status
+Working copy changes:
+M __pycache__/greeting.cpython-313.pyc
+M __pycache__/test_greeting.cpython-313.pyc
+Working copy  (@) : qzxwlwkz 4257fb41 (no description set)
+Parent commit (@-): mtwqymvw 056bebe4 feature main | Add greeting function and test
+[exit 0]
+$ jj diff --stat
+__pycache__/greeting.cpython-313.pyc      | (binary) -11 bytes
+__pycache__/test_greeting.cpython-313.pyc | (binary) -11 bytes
+2 files changed, 0 insertions(+), 0 deletions(-)
+[exit 0]
+$ jj log -r conflicts\(\)\ \|\ divergent\(\)
+[exit 0]

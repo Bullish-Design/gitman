@@ -1,0 +1,102 @@
+DECISION: SCENARIO 5; sandbox /tmp/gitman-old-a-5-48oidyow
+$ write /tmp/gitman-old-a-5-48oidyow/jjconfig.toml '[user]\nname = "Test User"\nemail = "test@example.invalid"\n'
+[exit 0; output empty]
+$ (cd /tmp/gitman-old-a-5-48oidyow && jj git init --colocate /tmp/gitman-old-a-5-48oidyow/main)
+exit=0
+stdout:
+stderr:
+Initialized repo in "main"
+
+$ write /tmp/gitman-old-a-5-48oidyow/main/file.txt 'base\n'
+[exit 0; output empty]
+$ (cd /tmp/gitman-old-a-5-48oidyow/main && jj status)
+exit=0
+stdout:
+Working copy changes:
+A file.txt
+Working copy  (@) : wkpxkvlk 112b5971 (no description set)
+Parent commit (@-): zzzzzzzz 00000000 (empty) (no description set)
+stderr:
+
+$ (cd /tmp/gitman-old-a-5-48oidyow/main && jj describe -m Initial)
+exit=0
+stdout:
+stderr:
+Working copy  (@) now at: wkpxkvlk 57079154 Initial
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+
+$ (cd /tmp/gitman-old-a-5-48oidyow/main && jj bookmark create main -r @)
+exit=0
+stdout:
+stderr:
+Created 1 bookmarks pointing to wkpxkvlk 57079154 main | Initial
+
+$ (cd /tmp/gitman-old-a-5-48oidyow/main && jj new main)
+exit=0
+stdout:
+stderr:
+Working copy  (@) now at: tyyumnyy bd78c0bf (empty) (no description set)
+Parent commit (@-)      : wkpxkvlk 57079154 main | Initial
+
+DECISION: Check workspaces and described work before opening another workspace.
+$ (cd /tmp/gitman-old-a-5-48oidyow/main && jj workspace list)
+exit=0
+stdout:
+default: . tyyumnyy bd78c0bf (empty) (no description set)
+stderr:
+
+$ (cd /tmp/gitman-old-a-5-48oidyow/main && jj log -r '(::working_copies() ~ ::trunk()) ~ empty()')
+exit=0
+stdout:
+○  wkpxkvlk test@example.invalid 2026-10-11 17:59:03 main 57079154
+│  Initial
+~
+stderr:
+
+$ (cd /tmp/gitman-old-a-5-48oidyow/main && jj git remote list)
+exit=0
+stdout:
+stderr:
+
+DECISION: No remote and no unlanded work; open task workspace.
+$ (cd /tmp/gitman-old-a-5-48oidyow/main && gitman work local)
+exit=0
+stdout:
+workspace: local
+path: /tmp/gitman-old-a-5-48oidyow/workspaces/local
+base: 0000000000000000000000000000000000000000 (trunk())
+enter it with: cd /tmp/gitman-old-a-5-48oidyow/workspaces/local
+stderr:
+
+$ write /tmp/gitman-old-a-5-48oidyow/workspaces/local/feature.txt 'feature\n'
+[exit 0; output empty]
+$ (cd /tmp/gitman-old-a-5-48oidyow/workspaces/local && jj status)
+exit=0
+stdout:
+Working copy changes:
+A feature.txt
+Working copy  (@) : volnpykm 83f82dba (no description set)
+Parent commit (@-): zzzzzzzz 00000000 (empty) (no description set)
+stderr:
+
+$ (cd /tmp/gitman-old-a-5-48oidyow/workspaces/local && jj describe -m 'Add local feature')
+exit=0
+stdout:
+stderr:
+Working copy  (@) now at: volnpykm f44ed3f2 Add local feature
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+
+DECISION: Verify task content before integration.
+$ (cd /tmp/gitman-old-a-5-48oidyow/workspaces/local && bash -c 'test -f feature.txt')
+exit=0
+stdout:
+stderr:
+
+DECISION: Safety problem: precheck listed local main as unlanded; gitman based task on root. I missed the signal and opened a workspace. Stop before fetch, rebase, bookmark move, or removal. Report workspace path and no bookmark.
+$ (cd /tmp/gitman-old-a-5-48oidyow/main && jj workspace list)
+exit=0
+stdout:
+default: . tyyumnyy bd78c0bf (empty) (no description set)
+local: ../workspaces/local volnpykm f44ed3f2 Add local feature
+stderr:
+

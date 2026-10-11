@@ -1,0 +1,364 @@
+## All Gitman text mentions in the scope (symlink targets appear once)
+$ rg --no-ignore --hidden -n -i gitman /home/andrew/.config/devman/skills /home/andrew/.config/devman/agents /home/andrew/.config/devman/common /home/andrew/.config/devman/projects/PyGentic/agents /home/andrew/.config/devman/projects/agentman/agents /home/andrew/.config/devman/projects/argentic/agents /home/andrew/.config/devman/projects/atuout/agents /home/andrew/.config/devman/projects/browsee/agents /home/andrew/.config/devman/projects/cairn/agents /home/andrew/.config/devman/projects/clinch/agents /home/andrew/.config/devman/projects/copyroom/agents /home/andrew/.config/devman/projects/copyroom-consumer/agents /home/andrew/.config/devman/projects/copyroom-consumer-final/agents /home/andrew/.config/devman/projects/copyroom-consumer-review/agents /home/andrew/.config/devman/projects/devenv-py/agents /home/andrew/.config/devman/projects/devman/agents /home/andrew/.config/devman/projects/docman/agents /home/andrew/.config/devman/projects/embeddy/agents /home/andrew/.config/devman/projects/eventic/agents /home/andrew/.config/devman/projects/flora/agents /home/andrew/.config/devman/projects/flora-core/agents /home/andrew/.config/devman/projects/flora-qc/agents /home/andrew/.config/devman/projects/forgelab/agents /home/andrew/.config/devman/projects/fornix/agents /home/andrew/.config/devman/projects/fsdantic/agents /home/andrew/.config/devman/projects/gitman/agents /home/andrew/.config/devman/projects/grail/agents /home/andrew/.config/devman/projects/inferference/agents /home/andrew/.config/devman/projects/interplay/agents /home/andrew/.config/devman/projects/knappy/agents /home/andrew/.config/devman/projects/linkman/agents /home/andrew/.config/devman/projects/llgym/agents /home/andrew/.config/devman/projects/loci-core/agents /home/andrew/.config/devman/projects/loci.nvim/agents /home/andrew/.config/devman/projects/mnemonix/agents /home/andrew/.config/devman/projects/nix-desktop/agents /home/andrew/.config/devman/projects/nix-meta/agents /home/andrew/.config/devman/projects/nix-nvim/agents /home/andrew/.config/devman/projects/nix-paseo/agents /home/andrew/.config/devman/projects/nix-secrets/agents /home/andrew/.config/devman/projects/nix-terminal/agents /home/andrew/.config/devman/projects/nixbuild/agents /home/andrew/.config/devman/projects/nixos-core/agents /home/andrew/.config/devman/projects/nixvim/agents /home/andrew/.config/devman/projects/observantic/agents /home/andrew/.config/devman/projects/parsedantic/agents /home/andrew/.config/devman/projects/poddantic/agents /home/andrew/.config/devman/projects/pydantree/agents /home/andrew/.config/devman/projects/pyjutsu/agents /home/andrew/.config/devman/projects/pyllij/agents /home/andrew/.config/devman/projects/pytuin/agents /home/andrew/.config/devman/projects/repoman/agents /home/andrew/.config/devman/projects/scopeman/agents /home/andrew/.config/devman/projects/shellij/agents /home/andrew/.config/devman/projects/silverbullet-server/agents /home/andrew/.config/devman/projects/siteman/agents /home/andrew/.config/devman/projects/structured-agents-v2/agents /home/andrew/.config/devman/projects/talkee/agents /home/andrew/.config/devman/projects/template-py/agents /home/andrew/.config/devman/projects/templateer_v2/agents /home/andrew/.config/devman/projects/terminal-state/agents /home/andrew/.config/devman/projects/testee/agents /home/andrew/.config/devman/projects/tyo3/agents /home/andrew/.config/devman/projects/vendomat/agents /home/andrew/.config/devman/projects/webdantic/agents /home/andrew/.config/devman/projects/zelligate/agents /home/andrew/.config/devman/projects/devman/workflows
+[exit 0]
+/home/andrew/.config/devman/common/claude.json:5:      "Bash(gitman *)",
+/home/andrew/.config/devman/skills/gitman/SKILL.md:2:name: gitman
+/home/andrew/.config/devman/skills/gitman/SKILL.md:3:description: Open jj workspaces with `gitman work`, and land every workspace back on main. Use native jj and `gh` for all other version control.
+/home/andrew/.config/devman/skills/gitman/SKILL.md:6:# Gitman — workspace paths
+/home/andrew/.config/devman/skills/gitman/SKILL.md:15:Gitman has one command. Do not run `gitman status`, `gitman land` or any other v1
+/home/andrew/.config/devman/skills/gitman/SKILL.md:19:gitman work NAME [--from REVSET] [--path DIRECTORY]
+/home/andrew/.config/devman/skills/gitman/SKILL.md:22:The default path is `$GITMAN_WORKSPACE_ROOT/NAME`. Set the same absolute root in
+/home/andrew/.config/devman/skills/gitman/SKILL.md:24:other revision. Use `--path` when the root does not fit. Gitman refuses an occupied
+/home/andrew/.config/devman/skills/gitman/SKILL.md:28:Gitman needs jj 0.46.0 or later and a colocated Git-backed repository. Its advisory
+/home/andrew/.config/devman/skills/gitman/SKILL.md:29:lock coordinates `gitman work` callers only. Native jj writers do not take it.
+/home/andrew/.config/devman/skills/gitman/SKILL.md:99:directory first, including ignored and untracked files. Gitman does not scan or warn
+/home/andrew/.config/devman/skills/devenv-troubleshoot/SKILL.md:14:| `gitman`/`copyroom`/`docman`: command not found | machine toolchain not bootstrapped | `repoman-sync --machine` (repoman checkout) → `command-not-found-in-shell` |
+/home/andrew/.config/devman/agents/devenv/languages-python.md:21:The manager commands (repoman/gitman/copyroom) and the host `testee` do not live in this venv —
+/home/andrew/.config/devman/skills/devenv-lock/SKILL.md:18:normalization in its own gitman lane. If either lock changes again, find the
+/home/andrew/.config/devman/skills/devenv-lock/SKILL.md:20:before `gitman land`; the next shell entry can recreate the change.
+/home/andrew/.config/devman/agents/devenv/articles/authoring-a-manager-module.md:3:The `*man` family (copyroom, testee, gitman, docman) all share one devenv-module shape: an
+/home/andrew/.config/devman/agents/devenv/articles/authoring-a-manager-module.md:31:- **A manager command on the host profile.** The pure-CLI managers (repoman/gitman/copyroom) never
+/home/andrew/.config/devman/agents/devenv/articles/adopting-the-man-family.md:13:- **The `*man` doers** — copyroom (scaffold), testee (verify), gitman (save) — are commands on
+/home/andrew/.config/devman/agents/devenv/articles/adopting-the-man-family.md:27:3. **Install the machine commands (once per machine).** The manager commands — copyroom, gitman,
+/home/andrew/.config/devman/agents/devenv/articles/command-not-found-in-shell.md:26:- **`gitman` / `copyroom` / `docman` / `repoman` missing?** Those live in the SYSTEM-WIDE toolchain
+/home/andrew/.config/devman/projects/loci.nvim/agents/skills/repoman/SKILL.md:26:| commit, branch, land, undo, or release | git | `gitman` | `gitman` |
+/home/andrew/.config/devman/projects/pyllij/agents/skills/repoman/SKILL.md:27:| commit, branch, land, undo, or release | git | `gitman` | `gitman` |
+/home/andrew/.config/devman/projects/pyllij/agents/devenv/languages-python.md:21:The manager commands (repoman/gitman/copyroom) and the host `testee` do not live in this venv —
+/home/andrew/.config/devman/projects/pyllij/agents/devenv/articles/authoring-a-manager-module.md:3:The `*man` family (copyroom, testee, gitman, docman) all share one devenv-module shape: an
+/home/andrew/.config/devman/projects/pyllij/agents/devenv/articles/authoring-a-manager-module.md:31:- **A manager command on the host profile.** The pure-CLI managers (repoman/gitman/copyroom) never
+/home/andrew/.config/devman/projects/pyllij/agents/devenv/articles/adopting-the-man-family.md:13:- **The `*man` doers** — copyroom (scaffold), testee (verify), gitman (save) — are commands on
+/home/andrew/.config/devman/projects/pyllij/agents/devenv/articles/adopting-the-man-family.md:27:3. **Install the machine commands (once per machine).** The manager commands — copyroom, gitman,
+/home/andrew/.config/devman/projects/loci-core/agents/devenv/articles/authoring-a-manager-module.md:3:The `*man` family (copyroom, testee, gitman, docman) all share one devenv-module shape: an
+/home/andrew/.config/devman/projects/pyllij/agents/devenv/articles/command-not-found-in-shell.md:26:- **`gitman` / `copyroom` / `docman` / `repoman` missing?** Those live in the SYSTEM-WIDE toolchain
+/home/andrew/.config/devman/projects/loci-core/agents/devenv/articles/adopting-the-man-family.md:13:- **The `*man` doers** — copyroom (scaffold), testee (verify), gitman (save), docman (publish) —
+/home/andrew/.config/devman/projects/talkee/agents/skills/repoman/SKILL.md:27:| commit, branch, land, undo, or release | git | `gitman` | `gitman` |
+/home/andrew/.config/devman/projects/loci-core/agents/skills/repoman/SKILL.md:26:| commit, branch, land, undo, or release | git | `gitman` | `gitman` |
+/home/andrew/.config/devman/projects/loci-core/agents/skills/loci-dev/SKILL.md:22:`gitman`. See the `loci-verify` skill for the task list and single-task runs.
+/home/andrew/.config/devman/projects/flora/agents/skills/repoman/SKILL.md:27:| commit, branch, land, undo, or release | git | `gitman` | `gitman` |
+/home/andrew/.config/devman/projects/loci-core/agents/skills/dev-fix/SKILL.md:102:- One commit, one purpose, through `gitman`.
+/home/andrew/.config/devman/projects/argentic/agents/skills/agent-files/SKILL.md:45:| `.claude/skills/devenv-*`, `gitman`, `repoman` | repoman's devman subsystem | `repoman install-skills` |
+/home/andrew/.config/devman/projects/agentman/agents/skills/repoman/SKILL.md:26:| commit, branch, land, undo, or release | git | `gitman` | `gitman` |
+/home/andrew/.config/devman/projects/forgelab/agents/skills/repoman/SKILL.md:26:| commit, branch, land, undo, or release | git | `gitman` | `gitman` |
+/home/andrew/.config/devman/projects/loci-core/agents/skills/dev-feature/SKILL.md:106:Green gate, one commit, one purpose, through `gitman`. Write the outcome into
+/home/andrew/.config/devman/projects/loci-core/agents/skills/dev/SKILL.md:85:One commit, one coherent purpose. Route version control through `gitman`.
+/home/andrew/.config/devman/projects/flora/agents/devenv/languages-python.md:21:The manager commands (repoman/gitman/copyroom) and the host `testee` do not live in this venv —
+/home/andrew/.config/devman/projects/agentman/agents/devenv/languages-python.md:21:The manager commands (repoman/gitman/copyroom) and the host `testee` do not live in this venv —
+/home/andrew/.config/devman/projects/loci-core/agents/skills/loci/SKILL.md:36:  `pytest`, or `git`. Route version control through `gitman`.
+/home/andrew/.config/devman/projects/flora/agents/devenv/articles/authoring-a-manager-module.md:3:The `*man` family (copyroom, testee, gitman, docman) all share one devenv-module shape: an
+/home/andrew/.config/devman/projects/flora/agents/devenv/articles/authoring-a-manager-module.md:31:- **A manager command on the host profile.** The pure-CLI managers (repoman/gitman/copyroom) never
+/home/andrew/.config/devman/projects/flora/agents/devenv/articles/adopting-the-man-family.md:13:- **The `*man` doers** — copyroom (scaffold), testee (verify), gitman (save) — are commands on
+/home/andrew/.config/devman/projects/flora/agents/devenv/articles/adopting-the-man-family.md:27:3. **Install the machine commands (once per machine).** The manager commands — copyroom, gitman,
+/home/andrew/.config/devman/projects/argentic/agents/skills/repoman/SKILL.md:26:| commit, branch, land, undo, or release | git | `gitman` | `gitman` |
+/home/andrew/.config/devman/projects/flora/agents/devenv/articles/command-not-found-in-shell.md:26:- **`gitman` / `copyroom` / `docman` / `repoman` missing?** Those live in the SYSTEM-WIDE toolchain
+/home/andrew/.config/devman/projects/agentman/agents/devenv/articles/authoring-a-manager-module.md:3:The `*man` family (copyroom, testee, gitman, docman) all share one devenv-module shape: an
+/home/andrew/.config/devman/projects/agentman/agents/devenv/articles/authoring-a-manager-module.md:31:- **A manager command on the host profile.** The pure-CLI managers (repoman/gitman/copyroom) never
+/home/andrew/.config/devman/projects/forgelab/agents/devenv/articles/authoring-a-manager-module.md:3:The `*man` family (copyroom, testee, gitman, docman) all share one devenv-module shape: an
+/home/andrew/.config/devman/projects/forgelab/agents/devenv/articles/adopting-the-man-family.md:13:- **The `*man` doers** — copyroom (scaffold), testee (verify), gitman (save), docman (publish) —
+/home/andrew/.config/devman/projects/agentman/agents/devenv/articles/adopting-the-man-family.md:13:- **The `*man` doers** — copyroom (scaffold), testee (verify), gitman (save) — are commands on
+/home/andrew/.config/devman/projects/agentman/agents/devenv/articles/adopting-the-man-family.md:27:3. **Install the machine commands (once per machine).** The manager commands — copyroom, gitman,
+/home/andrew/.config/devman/projects/nix-desktop/agents/skills/repoman/SKILL.md:26:| commit, branch, land, undo, or release | git | `gitman` | `gitman` |
+/home/andrew/.config/devman/projects/agentman/agents/devenv/articles/command-not-found-in-shell.md:26:- **`gitman` / `copyroom` / `docman` / `repoman` missing?** Those live in the SYSTEM-WIDE toolchain
+/home/andrew/.config/devman/projects/argentic/agents/devenv/languages-python.md:21:The manager commands (repoman/gitman/copyroom) and the host `testee` do not live in this venv —
+/home/andrew/.config/devman/projects/argentic/agents/devenv/articles/authoring-a-manager-module.md:3:The `*man` family (copyroom, testee, gitman, docman) all share one devenv-module shape: an
+/home/andrew/.config/devman/projects/argentic/agents/devenv/articles/authoring-a-manager-module.md:31:- **A manager command on the host profile.** The pure-CLI managers (repoman/gitman/copyroom) never
+/home/andrew/.config/devman/projects/argentic/agents/devenv/articles/adopting-the-man-family.md:13:- **The `*man` doers** — copyroom (scaffold), testee (verify), gitman (save) — are commands on
+/home/andrew/.config/devman/projects/argentic/agents/devenv/articles/adopting-the-man-family.md:27:3. **Install the machine commands (once per machine).** The manager commands — copyroom, gitman,
+/home/andrew/.config/devman/projects/linkman/agents/devenv/languages-python.md:21:The manager commands (repoman/gitman/copyroom) and the host `testee` do not live in this venv —
+/home/andrew/.config/devman/projects/argentic/agents/devenv/articles/command-not-found-in-shell.md:26:- **`gitman` / `copyroom` / `docman` / `repoman` missing?** Those live in the SYSTEM-WIDE toolchain
+/home/andrew/.config/devman/projects/nix-desktop/agents/devenv/articles/authoring-a-manager-module.md:3:The `*man` family (copyroom, testee, gitman, docman) all share one devenv-module shape: an
+/home/andrew/.config/devman/projects/nix-desktop/agents/devenv/articles/adopting-the-man-family.md:13:- **The `*man` doers** — copyroom (scaffold), testee (verify), gitman (save), docman (publish) —
+/home/andrew/.config/devman/projects/flora-qc/agents/devenv/languages-python.md:21:The manager commands (repoman/gitman/copyroom) and the host `testee` do not live in this venv —
+/home/andrew/.config/devman/projects/flora-core/agents/skills/repoman/SKILL.md:26:| commit, branch, land, undo, or release | git | `gitman` | `gitman` |
+/home/andrew/.config/devman/projects/linkman/agents/devenv/articles/authoring-a-manager-module.md:3:The `*man` family (copyroom, testee, gitman, docman) all share one devenv-module shape: an
+/home/andrew/.config/devman/projects/linkman/agents/devenv/articles/authoring-a-manager-module.md:31:- **A manager command on the host profile.** The pure-CLI managers (repoman/gitman/copyroom) never
+/home/andrew/.config/devman/projects/linkman/agents/devenv/articles/adopting-the-man-family.md:14:- **The `*man` doers** — copyroom (scaffold), testee (verify), gitman (save) — are commands on
+/home/andrew/.config/devman/projects/linkman/agents/devenv/articles/adopting-the-man-family.md:33:   gitman, and this machine's one `testee` — are installed on the Nix profile from published
+/home/andrew/.config/devman/projects/flora-qc/agents/devenv/articles/authoring-a-manager-module.md:3:The `*man` family (copyroom, testee, gitman, docman) all share one devenv-module shape: an
+/home/andrew/.config/devman/projects/flora-qc/agents/devenv/articles/authoring-a-manager-module.md:31:- **A manager command on the host profile.** The pure-CLI managers (repoman/gitman/copyroom) never
+/home/andrew/.config/devman/projects/flora-qc/agents/devenv/articles/adopting-the-man-family.md:13:- **The `*man` doers** — copyroom (scaffold), testee (verify), gitman (save) — are commands on
+/home/andrew/.config/devman/projects/flora-qc/agents/devenv/articles/adopting-the-man-family.md:27:3. **Install the machine commands (once per machine).** The manager commands — copyroom, gitman,
+/home/andrew/.config/devman/projects/linkman/agents/devenv/articles/command-not-found-in-shell.md:26:- **`gitman` / `copyroom` / `docman` / `repoman` missing?** Those live in the SYSTEM-WIDE toolchain
+/home/andrew/.config/devman/projects/flora-qc/agents/devenv/articles/command-not-found-in-shell.md:26:- **`gitman` / `copyroom` / `docman` / `repoman` missing?** Those live in the SYSTEM-WIDE toolchain
+/home/andrew/.config/devman/projects/linkman/agents/skills/repoman/SKILL.md:27:| commit, branch, land, undo, or release | git | `gitman` | `gitman` |
+/home/andrew/.config/devman/projects/nix-nvim/agents/skills/repoman/SKILL.md:26:| commit, branch, land, undo, or release | git | `gitman` | `gitman` |
+/home/andrew/.config/devman/projects/repoman/agents/skills/repoman/SKILL.md:36:| start, describe, sync, publish, land, push, undo, repair, or release a change | git | `gitman` | `gitman` |
+/home/andrew/.config/devman/projects/flora-core/agents/devenv/languages-python.md:21:The manager commands (repoman/gitman/copyroom) and the host `testee` do not live in this venv —
+/home/andrew/.config/devman/projects/nix-paseo/agents/skills/repoman/SKILL.md:26:| commit, branch, land, undo, or release | git | `gitman` | `gitman` |
+/home/andrew/.config/devman/projects/flora-core/agents/devenv/articles/authoring-a-manager-module.md:3:The `*man` family (copyroom, testee, gitman, docman) all share one devenv-module shape: an
+/home/andrew/.config/devman/projects/flora-core/agents/devenv/articles/authoring-a-manager-module.md:31:- **A manager command on the host profile.** The pure-CLI managers (repoman/gitman/copyroom) never
+/home/andrew/.config/devman/projects/flora-core/agents/devenv/articles/adopting-the-man-family.md:13:- **The `*man` doers** — copyroom (scaffold), testee (verify), gitman (save) — are commands on
+/home/andrew/.config/devman/projects/flora-core/agents/devenv/articles/adopting-the-man-family.md:27:3. **Install the machine commands (once per machine).** The manager commands — copyroom, gitman,
+/home/andrew/.config/devman/projects/flora-core/agents/devenv/articles/command-not-found-in-shell.md:26:- **`gitman` / `copyroom` / `docman` / `repoman` missing?** Those live in the SYSTEM-WIDE toolchain
+/home/andrew/.config/devman/projects/nix-paseo/agents/devenv/articles/authoring-a-manager-module.md:3:The `*man` family (copyroom, testee, gitman, docman) all share one devenv-module shape: an
+/home/andrew/.config/devman/projects/nix-paseo/agents/devenv/articles/adopting-the-man-family.md:13:- **The `*man` doers** — copyroom (scaffold), testee (verify), gitman (save), docman (publish) —
+/home/andrew/.config/devman/projects/poddantic/agents/skills/repoman/SKILL.md:26:| commit, branch, land, undo, or release | git | `gitman` | `gitman` |
+/home/andrew/.config/devman/projects/poddantic/agents/devenv/languages-python.md:21:The manager commands (repoman/gitman/copyroom) and the host `testee` do not live in this venv —
+/home/andrew/.config/devman/projects/poddantic/agents/devenv/articles/authoring-a-manager-module.md:3:The `*man` family (copyroom, testee, gitman, docman) all share one devenv-module shape: an
+/home/andrew/.config/devman/projects/poddantic/agents/devenv/articles/authoring-a-manager-module.md:31:- **A manager command on the host profile.** The pure-CLI managers (repoman/gitman/copyroom) never
+/home/andrew/.config/devman/projects/poddantic/agents/devenv/articles/adopting-the-man-family.md:13:- **The `*man` doers** — copyroom (scaffold), testee (verify), gitman (save) — are commands on
+/home/andrew/.config/devman/projects/poddantic/agents/devenv/articles/adopting-the-man-family.md:27:3. **Install the machine commands (once per machine).** The manager commands — copyroom, gitman,
+/home/andrew/.config/devman/projects/poddantic/agents/devenv/articles/command-not-found-in-shell.md:26:- **`gitman` / `copyroom` / `docman` / `repoman` missing?** Those live in the SYSTEM-WIDE toolchain
+/home/andrew/.config/devman/projects/scopeman/agents/devenv/languages-python.md:21:The manager commands (repoman/gitman/copyroom) and the host `testee` do not live in this venv —
+/home/andrew/.config/devman/projects/nix-nvim/agents/devenv/articles/authoring-a-manager-module.md:3:The `*man` family (copyroom, testee, gitman, docman) all share one devenv-module shape: an
+/home/andrew/.config/devman/projects/nix-nvim/agents/devenv/articles/adopting-the-man-family.md:13:- **The `*man` doers** — copyroom (scaffold), testee (verify), gitman (save), docman (publish) —
+/home/andrew/.config/devman/projects/scopeman/agents/devenv/articles/authoring-a-manager-module.md:3:The `*man` family (copyroom, testee, gitman, docman) all share one devenv-module shape: an
+/home/andrew/.config/devman/projects/scopeman/agents/devenv/articles/authoring-a-manager-module.md:31:- **A manager command on the host profile.** The pure-CLI managers (repoman/gitman/copyroom) never
+/home/andrew/.config/devman/projects/scopeman/agents/devenv/articles/adopting-the-man-family.md:14:- **The `*man` doers** — copyroom (scaffold), testee (verify), gitman (save) — are commands on
+/home/andrew/.config/devman/projects/scopeman/agents/devenv/articles/adopting-the-man-family.md:33:   gitman, and this machine's one `testee` — are installed on the Nix profile from published
+/home/andrew/.config/devman/projects/scopeman/agents/devenv/articles/command-not-found-in-shell.md:26:- **`gitman` / `copyroom` / `docman` / `repoman` missing?** Those live in the SYSTEM-WIDE toolchain
+/home/andrew/.config/devman/projects/shellij/agents/skills/repoman/SKILL.md:26:| commit, branch, land, undo, or release | git | `gitman` | `gitman` |
+/home/andrew/.config/devman/projects/shellij/agents/devenv/articles/authoring-a-manager-module.md:3:The `*man` family (copyroom, testee, gitman, docman) all share one devenv-module shape: an
+/home/andrew/.config/devman/projects/shellij/agents/devenv/articles/adopting-the-man-family.md:13:- **The `*man` doers** — copyroom (scaffold), testee (verify), gitman (save), docman (publish) —
+/home/andrew/.config/devman/projects/devman/agents/skills/devman-workflow/SKILL.md:198:the one that is true.** `.devman/workflows/gitman-commit-message.yaml` is the
+/home/andrew/.config/devman/projects/devman/agents/skills/devman-workflow/SKILL.md:538:| `.devman/workflows/gitman-commit-message.yaml` | an LLM call over an OpenAI-compatible endpoint, on `gpu` |
+/home/andrew/.config/devman/projects/devman/agents/skills/devman-workflow/SKILL.md:541:| `.devman/workflows/gitman-commit-message.yaml` | naming `gpu` for a resource, and calling a server the plane does not supervise |
+/home/andrew/.config/devman/projects/devman/agents/skills/devman/SKILL.md:223:| `free` | a file that did not exist, and agent surface — `.agents/**`, `docs/**`, notes, a tool's own hidden directory (`.devman/`, `.loci/`, `.gitman/`) | the working tree, directly |
+/home/andrew/.config/devman/projects/devman/agents/skills/devman/SKILL.md:224:| `lane` | an edit to an existing tracked source file — dependency updates, code generation, autofix | a `gitman` lane, for a person to merge when they choose |
+/home/andrew/.config/devman/projects/llgym/agents/skills/repoman/SKILL.md:27:| commit, branch, land, undo, or release | git | `gitman` | `gitman` |
+/home/andrew/.config/devman/projects/llgym/agents/devenv/languages-python.md:21:The manager commands (repoman/gitman/copyroom) and the host `testee` do not live in this venv —
+/home/andrew/.config/devman/projects/llgym/agents/devenv/articles/authoring-a-manager-module.md:3:The `*man` family (copyroom, testee, gitman, docman) all share one devenv-module shape: an
+/home/andrew/.config/devman/projects/llgym/agents/devenv/articles/authoring-a-manager-module.md:31:- **A manager command on the host profile.** The pure-CLI managers (repoman/gitman/copyroom) never
+/home/andrew/.config/devman/projects/llgym/agents/devenv/articles/adopting-the-man-family.md:13:- **The `*man` doers** — copyroom (scaffold), testee (verify), gitman (save) — are commands on
+/home/andrew/.config/devman/projects/llgym/agents/devenv/articles/adopting-the-man-family.md:27:3. **Install the machine commands (once per machine).** The manager commands — copyroom, gitman,
+/home/andrew/.config/devman/projects/llgym/agents/devenv/articles/command-not-found-in-shell.md:26:- **`gitman` / `copyroom` / `docman` / `repoman` missing?** Those live in the SYSTEM-WIDE toolchain
+/home/andrew/.config/devman/projects/nix-secrets/agents/skills/repoman/SKILL.md:26:| commit, branch, land, undo, or release | git | `gitman` | `gitman` |
+/home/andrew/.config/devman/projects/nix-secrets/agents/devenv/articles/authoring-a-manager-module.md:3:The `*man` family (copyroom, testee, gitman, docman) all share one devenv-module shape: an
+/home/andrew/.config/devman/projects/nix-secrets/agents/devenv/articles/adopting-the-man-family.md:13:- **The `*man` doers** — copyroom (scaffold), testee (verify), gitman (save), docman (publish) —
+/home/andrew/.config/devman/projects/siteman/agents/skills/repoman/SKILL.md:27:| commit, branch, land, undo, or release | git | `gitman` | `gitman` |
+/home/andrew/.config/devman/projects/tyo3/agents/skills/repoman/SKILL.md:25:| commit, branch, land, undo, or release | git | `gitman` | `gitman` |
+/home/andrew/.config/devman/projects/pytuin/agents/skills/repoman/SKILL.md:27:| commit, branch, land, undo, or release | git | `gitman` | `gitman` |
+/home/andrew/.config/devman/projects/devman/workflows/gitman-commit-message.yaml:1:# devman/gitman-commit-message — draft a commit message from the staged diff,
+/home/andrew/.config/devman/projects/devman/workflows/gitman-commit-message.yaml:2:# and leave it behind as a file gitman can read.
+/home/andrew/.config/devman/projects/devman/workflows/gitman-commit-message.yaml:8:# one repository pairs gitman with an agent CLI today. It becomes a group the
+/home/andrew/.config/devman/projects/devman/workflows/gitman-commit-message.yaml:17:# (`gitman save -m "$(cat ...)"`), so it lives in its own subdirectory under
+/home/andrew/.config/devman/projects/devman/workflows/gitman-commit-message.yaml:22:# `.devman/gitman/messages/<run id>.md` — created on first run, git-ignored
+/home/andrew/.config/devman/projects/devman/workflows/gitman-commit-message.yaml:42:#     GPU_LLM_MODEL=<name> devman run gitman-commit-message
+/home/andrew/.config/devman/projects/devman/workflows/gitman-commit-message.yaml:43:#     gitman save -m "$(cat .devman/gitman/messages/<run id>.md)"
+/home/andrew/.config/devman/projects/devman/workflows/gitman-commit-message.yaml:45:# This workflow never calls `gitman save` itself. It drafts; a caller decides
+/home/andrew/.config/devman/projects/devman/workflows/gitman-commit-message.yaml:72:      mkdir -p .devman/gitman/messages
+/home/andrew/.config/devman/projects/devman/workflows/gitman-commit-message.yaml:73:      export MESSAGE_FILE=".devman/gitman/messages/${context.run.id}.md"
+/home/andrew/.config/devman/projects/devman/workflows/gitman-commit-message.yaml:74:      devenv tasks run -v gitman:commit-message
+/home/andrew/.config/devman/projects/devman/workflows/README.md:19:| `gitman-commit-message.yaml` | `gpu` | manual | drafts a commit message from the staged diff on a local OpenAI-compatible server (pydantic-ai), for `gitman save -m "$(cat …)"` |
+/home/andrew/.config/devman/projects/devman/workflows/README.md:31:- `agent-review` and `gitman-commit-message` are **not yet** groups: one
+/home/andrew/.config/devman/projects/devman/workflows/README.md:41:reads a tree another run may be rewriting. `gitman-commit-message` says `gpu`:
+/home/andrew/.config/devman/projects/devman/workflows/README.md:56:devman run gitman-commit-message     # then read the file it names
+/home/andrew/.config/devman/projects/eventic/agents/skills/repoman/SKILL.md:27:| commit, branch, land, undo, or release | git | `gitman` | `gitman` |
+/home/andrew/.config/devman/projects/eventic/agents/devenv/languages-python.md:21:The manager commands (repoman/gitman/copyroom) and the host `testee` do not live in this venv —
+/home/andrew/.config/devman/projects/eventic/agents/devenv/articles/authoring-a-manager-module.md:3:The `*man` family (copyroom, testee, gitman, docman) all share one devenv-module shape: an
+/home/andrew/.config/devman/projects/eventic/agents/devenv/articles/authoring-a-manager-module.md:31:- **A manager command on the host profile.** The pure-CLI managers (repoman/gitman/copyroom) never
+/home/andrew/.config/devman/projects/eventic/agents/devenv/articles/adopting-the-man-family.md:13:- **The `*man` doers** — copyroom (scaffold), testee (verify), gitman (save) — are commands on
+/home/andrew/.config/devman/projects/eventic/agents/devenv/articles/adopting-the-man-family.md:27:3. **Install the machine commands (once per machine).** The manager commands — copyroom, gitman,
+/home/andrew/.config/devman/projects/eventic/agents/devenv/articles/command-not-found-in-shell.md:26:- **`gitman` / `copyroom` / `docman` / `repoman` missing?** Those live in the SYSTEM-WIDE toolchain
+
+## Retired command and gitman-v2 mentions in the scope
+$ rg --no-ignore --hidden -n -i gitman-v2|gitman[[:space:]]+(save|land|status|start|switch|split|abandon|repair|sync|push|describe|reconcile|doctor|log|undo) /home/andrew/.config/devman/skills /home/andrew/.config/devman/agents /home/andrew/.config/devman/common /home/andrew/.config/devman/projects/PyGentic/agents /home/andrew/.config/devman/projects/agentman/agents /home/andrew/.config/devman/projects/argentic/agents /home/andrew/.config/devman/projects/atuout/agents /home/andrew/.config/devman/projects/browsee/agents /home/andrew/.config/devman/projects/cairn/agents /home/andrew/.config/devman/projects/clinch/agents /home/andrew/.config/devman/projects/copyroom/agents /home/andrew/.config/devman/projects/copyroom-consumer/agents /home/andrew/.config/devman/projects/copyroom-consumer-final/agents /home/andrew/.config/devman/projects/copyroom-consumer-review/agents /home/andrew/.config/devman/projects/devenv-py/agents /home/andrew/.config/devman/projects/devman/agents /home/andrew/.config/devman/projects/docman/agents /home/andrew/.config/devman/projects/embeddy/agents /home/andrew/.config/devman/projects/eventic/agents /home/andrew/.config/devman/projects/flora/agents /home/andrew/.config/devman/projects/flora-core/agents /home/andrew/.config/devman/projects/flora-qc/agents /home/andrew/.config/devman/projects/forgelab/agents /home/andrew/.config/devman/projects/fornix/agents /home/andrew/.config/devman/projects/fsdantic/agents /home/andrew/.config/devman/projects/gitman/agents /home/andrew/.config/devman/projects/grail/agents /home/andrew/.config/devman/projects/inferference/agents /home/andrew/.config/devman/projects/interplay/agents /home/andrew/.config/devman/projects/knappy/agents /home/andrew/.config/devman/projects/linkman/agents /home/andrew/.config/devman/projects/llgym/agents /home/andrew/.config/devman/projects/loci-core/agents /home/andrew/.config/devman/projects/loci.nvim/agents /home/andrew/.config/devman/projects/mnemonix/agents /home/andrew/.config/devman/projects/nix-desktop/agents /home/andrew/.config/devman/projects/nix-meta/agents /home/andrew/.config/devman/projects/nix-nvim/agents /home/andrew/.config/devman/projects/nix-paseo/agents /home/andrew/.config/devman/projects/nix-secrets/agents /home/andrew/.config/devman/projects/nix-terminal/agents /home/andrew/.config/devman/projects/nixbuild/agents /home/andrew/.config/devman/projects/nixos-core/agents /home/andrew/.config/devman/projects/nixvim/agents /home/andrew/.config/devman/projects/observantic/agents /home/andrew/.config/devman/projects/parsedantic/agents /home/andrew/.config/devman/projects/poddantic/agents /home/andrew/.config/devman/projects/pydantree/agents /home/andrew/.config/devman/projects/pyjutsu/agents /home/andrew/.config/devman/projects/pyllij/agents /home/andrew/.config/devman/projects/pytuin/agents /home/andrew/.config/devman/projects/repoman/agents /home/andrew/.config/devman/projects/scopeman/agents /home/andrew/.config/devman/projects/shellij/agents /home/andrew/.config/devman/projects/silverbullet-server/agents /home/andrew/.config/devman/projects/siteman/agents /home/andrew/.config/devman/projects/structured-agents-v2/agents /home/andrew/.config/devman/projects/talkee/agents /home/andrew/.config/devman/projects/template-py/agents /home/andrew/.config/devman/projects/templateer_v2/agents /home/andrew/.config/devman/projects/terminal-state/agents /home/andrew/.config/devman/projects/testee/agents /home/andrew/.config/devman/projects/tyo3/agents /home/andrew/.config/devman/projects/vendomat/agents /home/andrew/.config/devman/projects/webdantic/agents /home/andrew/.config/devman/projects/zelligate/agents /home/andrew/.config/devman/projects/devman/workflows
+[exit 0]
+/home/andrew/.config/devman/skills/gitman/SKILL.md:15:Gitman has one command. Do not run `gitman status`, `gitman land` or any other v1
+/home/andrew/.config/devman/skills/devenv-lock/SKILL.md:20:before `gitman land`; the next shell entry can recreate the change.
+/home/andrew/.config/devman/projects/devman/workflows/gitman-commit-message.yaml:17:# (`gitman save -m "$(cat ...)"`), so it lives in its own subdirectory under
+/home/andrew/.config/devman/projects/devman/workflows/gitman-commit-message.yaml:43:#     gitman save -m "$(cat .devman/gitman/messages/<run id>.md)"
+/home/andrew/.config/devman/projects/devman/workflows/gitman-commit-message.yaml:45:# This workflow never calls `gitman save` itself. It drafts; a caller decides
+/home/andrew/.config/devman/projects/devman/workflows/README.md:19:| `gitman-commit-message.yaml` | `gpu` | manual | drafts a commit message from the staged diff on a local OpenAI-compatible server (pydantic-ai), for `gitman save -m "$(cat …)"` |
+
+## Router and workflow file names
+$ find /home/andrew/.config/devman/projects -maxdepth 5 -type f ( -name AGENTS.md -o -name CLAUDE.md -o -iname *router* -o -iname *routing* ) -print
+[exit 0]
+/home/andrew/.config/devman/projects/cairn/agents/AGENTS.md
+/home/andrew/.config/devman/projects/grail/agents/AGENTS.md
+
+## Project Gitman skill links
+$ python3 project-link-audit (Path.is_symlink, readlink, resolve, exists)
+
+projects=63
+
+PyGentic: /home/andrew/.config/devman/projects/PyGentic/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+agentman: /home/andrew/.config/devman/projects/agentman/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+argentic: /home/andrew/.config/devman/projects/argentic/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+browsee: /home/andrew/.config/devman/projects/browsee/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+cairn: /home/andrew/.config/devman/projects/cairn/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+clinch: /home/andrew/.config/devman/projects/clinch/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+copyroom: /home/andrew/.config/devman/projects/copyroom/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+devenv-py: /home/andrew/.config/devman/projects/devenv-py/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+devman: /home/andrew/.config/devman/projects/devman/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+docman: /home/andrew/.config/devman/projects/docman/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+embeddy: /home/andrew/.config/devman/projects/embeddy/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+eventic: /home/andrew/.config/devman/projects/eventic/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+flora: /home/andrew/.config/devman/projects/flora/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+flora-core: /home/andrew/.config/devman/projects/flora-core/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+flora-qc: /home/andrew/.config/devman/projects/flora-qc/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+forgelab: /home/andrew/.config/devman/projects/forgelab/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+fornix: /home/andrew/.config/devman/projects/fornix/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+fsdantic: /home/andrew/.config/devman/projects/fsdantic/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+gitman: /home/andrew/.config/devman/projects/gitman/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+grail: /home/andrew/.config/devman/projects/grail/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+inferference: /home/andrew/.config/devman/projects/inferference/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+interplay: /home/andrew/.config/devman/projects/interplay/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+linkman: /home/andrew/.config/devman/projects/linkman/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+llgym: /home/andrew/.config/devman/projects/llgym/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+loci-core: /home/andrew/.config/devman/projects/loci-core/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+loci.nvim: /home/andrew/.config/devman/projects/loci.nvim/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+nix-desktop: /home/andrew/.config/devman/projects/nix-desktop/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+nix-meta: /home/andrew/.config/devman/projects/nix-meta/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+nix-nvim: /home/andrew/.config/devman/projects/nix-nvim/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+nix-paseo: /home/andrew/.config/devman/projects/nix-paseo/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+nix-secrets: /home/andrew/.config/devman/projects/nix-secrets/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+nix-terminal: /home/andrew/.config/devman/projects/nix-terminal/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+nixbuild: /home/andrew/.config/devman/projects/nixbuild/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+nixos-core: /home/andrew/.config/devman/projects/nixos-core/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+nixvim: /home/andrew/.config/devman/projects/nixvim/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+observantic: /home/andrew/.config/devman/projects/observantic/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+parsedantic: /home/andrew/.config/devman/projects/parsedantic/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+poddantic: /home/andrew/.config/devman/projects/poddantic/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+pydantree: /home/andrew/.config/devman/projects/pydantree/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+pyjutsu: /home/andrew/.config/devman/projects/pyjutsu/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+pyllij: /home/andrew/.config/devman/projects/pyllij/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+pytuin: /home/andrew/.config/devman/projects/pytuin/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+repoman: /home/andrew/.config/devman/projects/repoman/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+scopeman: /home/andrew/.config/devman/projects/scopeman/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+shellij: /home/andrew/.config/devman/projects/shellij/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+silverbullet-server: /home/andrew/.config/devman/projects/silverbullet-server/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+siteman: /home/andrew/.config/devman/projects/siteman/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+structured-agents-v2: /home/andrew/.config/devman/projects/structured-agents-v2/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+talkee: /home/andrew/.config/devman/projects/talkee/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+template-py: /home/andrew/.config/devman/projects/template-py/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+templateer_v2: /home/andrew/.config/devman/projects/templateer_v2/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+terminal-state: /home/andrew/.config/devman/projects/terminal-state/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+tyo3: /home/andrew/.config/devman/projects/tyo3/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+vendomat: /home/andrew/.config/devman/projects/vendomat/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+webdantic: /home/andrew/.config/devman/projects/webdantic/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+zelligate: /home/andrew/.config/devman/projects/zelligate/agents/skills/gitman -> ../../../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+linked=56 missing=7 other=0
+missing: atuout, copyroom-consumer, copyroom-consumer-final, copyroom-consumer-review, knappy, mnemonix, testee
+other: 
+
+central link: /home/andrew/.config/devman/.agents/skills/gitman -> ../../skills/gitman => /home/andrew/.config/devman/skills/gitman exists=True
+
+broken project agent symlinks=0
+
+
+## Source task cross-check outside primary scope
+$ nl -ba /home/andrew/Documents/Projects/devman/devenv.nix | sed -n 190,222p
+
+   190	    '';
+   191	
+   192	    # What `.devman/workflows/gitman-commit-message.yaml` runs. Same shape as
+   193	    # `agent:review`: the diff is piped in as the whole prompt, the agent gets
+   194	    # no tools and no repo access, and `head -c` bounds the input.
+   195	    #
+   196	    # `git diff --staged` reads jj's colocated git index, which gitman keeps in
+   197	    # sync on every `save` — so this sees the change a lane is about to record,
+   198	    # not the change it already did.
+   199	    #
+   200	    # $MESSAGE_FILE holds nothing but the message: no report header, no run id,
+   201	    # so `gitman save -m "$(cat "$MESSAGE_FILE")"` can use it unmodified.
+   202	    #
+   203	    # Runs on the local GPU rather than `claude -p` — `scripts/gpu_complete.py`
+   204	    # is a standalone `uv run --script` (PEP 723 inline deps: pydantic-ai +
+   205	    # openai), never installed into this package, so the GPU-only dependency
+   206	    # never reaches `pyproject.toml` or the shipped `devman` CLI (cli.py's own
+   207	    # note: this CLI ships from the NixOS module only). It calls out to any
+   208	    # OpenAI-compatible endpoint named by `$GPU_LLM_BASE_URL` — devman does not
+   209	    # start or own that server, only calls it, and the script fails plainly if
+   210	    # nothing answers.
+   211	    "gitman:commit-message".exec = ''
+   212	      set -euo pipefail
+   213	      prompt='Write a commit message for this diff. One summary line, 50
+   214	      characters or fewer, imperative mood. A blank line, then body lines only
+   215	      if the diff needs one explained. No markdown fences, no "here is a
+   216	      commit message" preamble — output only the message text.'
+   217	      {
+   218	        printf '%s\n\n' "$prompt"
+   219	        git diff --staged
+   220	      } | head -c 60000 | uv run --script scripts/gpu_complete.py > "$MESSAGE_FILE"
+   221	    '';
+   222	  };
+
+## Missing-link detail and retired skill path
+$ python3 Path.is_dir/exists on missing project skill directories and skills/gitman-v2
+atuout: agents/skills exists=True, symlink count=4
+copyroom-consumer: agents/skills exists=True, symlink count=0
+copyroom-consumer-final: agents/skills exists=True, symlink count=0
+copyroom-consumer-review: agents/skills exists=True, symlink count=0
+knappy: agents/skills exists=True, symlink count=4
+mnemonix: agents/skills exists=True, symlink count=1
+testee: agents/skills exists=True, symlink count=5
+skills/gitman-v2 exists=False
+project gitman-v2 links=0 []
+
+## Supplemental global and project AGENTS routers
+$ rg -n -i gitman /home/andrew/.claude/CLAUDE.md /home/andrew/.config/devman/projects/cairn/agents/AGENTS.md /home/andrew/.config/devman/projects/grail/agents/AGENTS.md
+[exit 0]
+/home/andrew/.claude/CLAUDE.md:34:In repos that use gitman (or an equivalent lane-based VC skill), land and push
+$ nl -ba /home/andrew/.claude/CLAUDE.md | sed -n 32,47p
+    32	## Version control lanes
+    33	
+    34	In repos that use gitman (or an equivalent lane-based VC skill), land and push
+    35	a lane by default once its verify step passes — do not stop to ask first. Run
+    36	the full loop: verify, save, land into trunk, push to origin.
+    37	
+    38	The goal of every workspace is to land on `main`. Work is finished only when it
+    39	is on `main`, the main checkout shows it (`jj new main` there when its working
+    40	copy is empty), and the workspace is removed. Before you open a workspace, list
+    41	the existing ones and any work in them that `main` lacks; report it. Never end a
+    42	session with work left in a workspace that the user does not know about.
+    43	
+    44	Still stop and ask before landing or pushing when something is unusual: verify
+    45	fails or is skipped, the lane touches shared or risky files (secrets, CI
+    46	config, release branches), a merge conflict appears, or the user gave
+    47	instructions that suggest they want to review the change first.

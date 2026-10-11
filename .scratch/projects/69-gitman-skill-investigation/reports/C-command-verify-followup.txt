@@ -1,0 +1,168 @@
+• Running devenv:files:cleanup
+• Running devenv:python:uv
+• Running gitman:test
+• Running gitman:lint
+✓ Running devenv:files:cleanup in 33.5ms
+✓ Running gitman:lint in 36.3ms
+✓ Running devenv:python:uv in 67.3ms
+• Running devenv:enterShell
+✓ Running devenv:enterShell in 21.8ms
+✓ Running gitman:test in 14.2s
+• Running devenv:enterTest
+✓ Running devenv:enterTest in 2.96µs (no command)
+ok      gitman:.agents  /home/andrew/Documents/Projects/gitman/.agents
+ok      gitman:.claude/skills  /home/andrew/Documents/Projects/gitman/.claude/skills
+ok      gitman:.envrc  /home/andrew/Documents/Projects/gitman/.envrc
+ok      gitman:.loci  /home/andrew/Documents/Projects/gitman/.loci
+ok      gitman:devenv.local.nix  /home/andrew/Documents/Projects/gitman/devenv.local.nix
+
+# Positive pre-open scan; --from and --path
+
+$ gitman work pending --from main --path /tmp/gitman-c-verify.0q1bk4/pending
+workspace: pending
+path: /tmp/gitman-c-verify.0q1bk4/pending
+base: 9dbe333575deea6fc390fe5130b19c0ab7a6c817 (main)
+enter it with: cd /tmp/gitman-c-verify.0q1bk4/pending
+[exit=0]
+
+$ jj status
+Working copy changes:
+A pending.txt
+Working copy  (@) : npskmxrv 4737fe11 (no description set)
+Parent commit (@-): okpltmys 9dbe3335 main | Add feature
+[exit=0]
+
+$ jj describe -m Pending\ work
+Working copy  (@) now at: npskmxrv b6e8269c Pending work
+Parent commit (@-)      : okpltmys 9dbe3335 main | Add feature
+[exit=0]
+
+$ jj workspace list
+default: . otmrrmvl 251e8d0c (empty) (no description set)
+pending: ../pending npskmxrv b6e8269c Pending work
+[exit=0]
+
+$ jj log -r \(::working_copies\(\)\ ~\ ::trunk\(\)\)\ ~\ empty\(\)
+○  npskmxrv gitman-test@example.invalid 2026-10-11 17:47:57 pending@ b6e8269c
+│  Pending work
+~
+[exit=0]
+
+# Forget keeps files
+
+$ jj workspace forget pending
+Removed Git worktree for "/tmp/gitman-c-verify.0q1bk4/pending".
+[exit=0]
+
+$ test -e /tmp/gitman-c-verify.0q1bk4/pending/pending.txt
+[exit=0]
+
+$ jj workspace list
+default: . otmrrmvl 251e8d0c (empty) (no description set)
+[exit=0]
+
+# Undo a disposable bookmark creation
+
+$ jj bookmark create undo-probe -r main
+Created 1 bookmarks pointing to okpltmys 9dbe3335 main undo-probe | Add feature
+[exit=0]
+
+$ jj undo
+Undid operation: 603bb4c5aebe (2026-10-11 17:47:57) create bookmark undo-probe pointing to commit 9dbe333575deea6fc390fe5130b19c0ab7a6c817
+Restored to operation: 35c6fb90644b (2026-10-11 17:47:57) forget workspace pending
+[exit=0]
+
+$ jj bookmark list --all-remotes
+main: okpltmys 9dbe3335 Add feature
+  @git: okpltmys 9dbe3335 Add feature
+  @origin: okpltmys 9dbe3335 Add feature
+task: tvrrrquv 53506034 Initial commit
+  @git: tvrrrquv 53506034 Initial commit
+  @origin: tvrrrquv 53506034 Initial commit
+[exit=0]
+
+# Rebase a real branch after trunk moves
+
+$ gitman work rebasecheck
+workspace: rebasecheck
+path: /tmp/gitman-c-verify.0q1bk4/workspaces/rebasecheck
+base: 9dbe333575deea6fc390fe5130b19c0ab7a6c817 (trunk())
+enter it with: cd /tmp/gitman-c-verify.0q1bk4/workspaces/rebasecheck
+[exit=0]
+
+$ jj status
+Working copy changes:
+A branch.txt
+Working copy  (@) : srovmzxw 9e0709ec (no description set)
+Parent commit (@-): okpltmys 9dbe3335 main | Add feature
+[exit=0]
+
+$ jj describe -m Branch\ work
+Working copy  (@) now at: srovmzxw d2df15c6 Branch work
+Parent commit (@-)      : okpltmys 9dbe3335 main | Add feature
+[exit=0]
+
+$ jj new
+Working copy  (@) now at: ryumrsut 88cf96cc (empty) (no description set)
+Parent commit (@-)      : srovmzxw d2df15c6 Branch work
+[exit=0]
+
+$ jj bookmark create rebasecheck -r @-
+Created 1 bookmarks pointing to srovmzxw d2df15c6 rebasecheck | Branch work
+[exit=0]
+
+$ jj log -r rebasecheck -T description\ ++\ \"\\\\n\"
+○  Branch work
+│  \n
+~
+[exit=0]
+
+$ jj status
+Working copy changes:
+A main.txt
+Working copy  (@) : otmrrmvl 30cf3cb8 (no description set)
+Parent commit (@-): okpltmys 9dbe3335 main | Add feature
+[exit=0]
+
+$ jj describe -m Advance\ main
+Working copy  (@) now at: otmrrmvl 79a47f05 Advance main
+Parent commit (@-)      : okpltmys 9dbe3335 main | Add feature
+[exit=0]
+
+$ jj bookmark set main -r @
+Moved 1 bookmarks to otmrrmvl 79a47f05 main* | Advance main
+[exit=0]
+
+$ jj git push --bookmark main
+Changes to push to origin:
+  bookmark: main [move forward from 9dbe333575de to 79a47f05d54d]
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: vwntzyrv 59a49600 (empty) (no description set)
+Parent commit (@-)      : otmrrmvl 79a47f05 main | Advance main
+[exit=0]
+
+$ jj git fetch
+Nothing changed.
+[exit=0]
+
+$ jj rebase -b @ -d trunk\(\)
+Rebased 2 commits to destination.
+Working copy  (@) now at: ryumrsut 7abf9c4a (empty) (no description set)
+Parent commit (@-)      : srovmzxw 0597436e rebasecheck | Branch work
+Added 1 files, modified 0 files, removed 0 files
+[exit=0]
+
+$ jj status
+The working copy has no changes.
+Working copy  (@) : ryumrsut 7abf9c4a (empty) (no description set)
+Parent commit (@-): srovmzxw 0597436e rebasecheck | Branch work
+[exit=0]
+
+$ jj log -r rebasecheck\ \|\ main\ \|\ @ -T description\ ++\ \"\\\\n\"
+@  \n
+○  Branch work
+│  \n
+◆  Advance main
+│  \n
+~
+[exit=0]

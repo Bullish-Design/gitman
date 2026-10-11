@@ -1,0 +1,222 @@
+DECISION: SCENARIO 6; sandbox /tmp/gitman-old-a-6-2vimzwuo
+$ write /tmp/gitman-old-a-6-2vimzwuo/jjconfig.toml '[user]\nname = "Test User"\nemail = "test@example.invalid"\n'
+[exit 0; output empty]
+$ (cd /tmp/gitman-old-a-6-2vimzwuo && jj git init --no-colocate /tmp/gitman-old-a-6-2vimzwuo/origin)
+exit=0
+stdout:
+stderr:
+Initialized repo in "origin"
+
+$ (cd /tmp/gitman-old-a-6-2vimzwuo && jj git init --colocate /tmp/gitman-old-a-6-2vimzwuo/main)
+exit=0
+stdout:
+stderr:
+Initialized repo in "main"
+
+$ write /tmp/gitman-old-a-6-2vimzwuo/main/file.txt 'base\n'
+[exit 0; output empty]
+$ (cd /tmp/gitman-old-a-6-2vimzwuo/main && jj status)
+exit=0
+stdout:
+Working copy changes:
+A file.txt
+Working copy  (@) : nrrwzykp b565540f (no description set)
+Parent commit (@-): zzzzzzzz 00000000 (empty) (no description set)
+stderr:
+
+$ (cd /tmp/gitman-old-a-6-2vimzwuo/main && jj describe -m Initial)
+exit=0
+stdout:
+stderr:
+Working copy  (@) now at: nrrwzykp fd602cdd Initial
+Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
+
+$ (cd /tmp/gitman-old-a-6-2vimzwuo/main && jj bookmark create main -r @)
+exit=0
+stdout:
+stderr:
+Created 1 bookmarks pointing to nrrwzykp fd602cdd main | Initial
+
+$ (cd /tmp/gitman-old-a-6-2vimzwuo/main && jj git remote add origin /tmp/gitman-old-a-6-2vimzwuo/origin/.jj/repo/store/git)
+exit=0
+stdout:
+stderr:
+
+$ (cd /tmp/gitman-old-a-6-2vimzwuo/main && jj git push --bookmark main)
+exit=0
+stdout:
+stderr:
+Changes to push to origin:
+  bookmark: main [add to fd602cdd47d7]
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: uzyutwxo 35a469a0 (empty) (no description set)
+Parent commit (@-)      : nrrwzykp fd602cdd main | Initial
+
+$ (cd /tmp/gitman-old-a-6-2vimzwuo/main && jj new main)
+exit=0
+stdout:
+stderr:
+Working copy  (@) now at: zntsmvrz 387488df (empty) (no description set)
+Parent commit (@-)      : nrrwzykp fd602cdd main | Initial
+
+DECISION: Check workspaces and described work before opening another workspace.
+$ (cd /tmp/gitman-old-a-6-2vimzwuo/main && jj workspace list)
+exit=0
+stdout:
+default: . zntsmvrz 387488df (empty) (no description set)
+stderr:
+
+$ (cd /tmp/gitman-old-a-6-2vimzwuo/main && jj log -r '(::working_copies() ~ ::trunk()) ~ empty()')
+exit=0
+stdout:
+stderr:
+
+DECISION: No unlanded work; open task workspace.
+$ (cd /tmp/gitman-old-a-6-2vimzwuo/main && gitman work ready)
+exit=0
+stdout:
+workspace: ready
+path: /tmp/gitman-old-a-6-2vimzwuo/workspaces/ready
+base: fd602cdd47d7440812c5139cdfa34dece1405b78 (trunk())
+enter it with: cd /tmp/gitman-old-a-6-2vimzwuo/workspaces/ready
+stderr:
+
+$ write /tmp/gitman-old-a-6-2vimzwuo/workspaces/ready/feature.txt 'feature\n'
+[exit 0; output empty]
+$ (cd /tmp/gitman-old-a-6-2vimzwuo/workspaces/ready && jj status)
+exit=0
+stdout:
+Working copy changes:
+A feature.txt
+Working copy  (@) : kquttkur 9883e8c4 (no description set)
+Parent commit (@-): nrrwzykp fd602cdd main | Initial
+stderr:
+
+$ (cd /tmp/gitman-old-a-6-2vimzwuo/workspaces/ready && jj describe -m 'Add feature')
+exit=0
+stdout:
+stderr:
+Working copy  (@) now at: kquttkur 70782d61 Add feature
+Parent commit (@-)      : nrrwzykp fd602cdd main | Initial
+
+DECISION: Verify task content before integration.
+$ (cd /tmp/gitman-old-a-6-2vimzwuo/workspaces/ready && bash -c 'test -f feature.txt')
+exit=0
+stdout:
+stderr:
+
+DECISION: Default workspace gains separate uncommitted work before task lands.
+$ write /tmp/gitman-old-a-6-2vimzwuo/main/local.txt 'local work\n'
+[exit 0; output empty]
+$ (cd /tmp/gitman-old-a-6-2vimzwuo/main && jj status)
+exit=0
+stdout:
+Working copy changes:
+A local.txt
+Working copy  (@) : zntsmvrz 54e4de4b (no description set)
+Parent commit (@-): nrrwzykp fd602cdd main | Initial
+stderr:
+
+$ (cd /tmp/gitman-old-a-6-2vimzwuo/workspaces/ready && jj git fetch)
+exit=0
+stdout:
+stderr:
+Nothing changed.
+
+$ (cd /tmp/gitman-old-a-6-2vimzwuo/workspaces/ready && jj rebase -b @ -d 'trunk()')
+exit=0
+stdout:
+stderr:
+Skipped rebase of 1 commits that were already in place.
+Nothing changed.
+
+$ (cd /tmp/gitman-old-a-6-2vimzwuo/workspaces/ready && jj status)
+exit=0
+stdout:
+Working copy changes:
+A feature.txt
+Working copy  (@) : kquttkur 70782d61 Add feature
+Parent commit (@-): nrrwzykp fd602cdd main | Initial
+stderr:
+
+DECISION: Task tree unchanged and verification green; move main and push.
+$ (cd /tmp/gitman-old-a-6-2vimzwuo/workspaces/ready && jj bookmark set main -r @)
+exit=0
+stdout:
+stderr:
+Moved 1 bookmarks to kquttkur 70782d61 main* | Add feature
+
+$ (cd /tmp/gitman-old-a-6-2vimzwuo/workspaces/ready && jj git push --bookmark main)
+exit=0
+stdout:
+stderr:
+Changes to push to origin:
+  bookmark: main [move forward from fd602cdd47d7 to 70782d61cf58]
+Warning: The working-copy commit became immutable; a new commit has been created on top of it.
+Working copy  (@) now at: szktmmol 8ecdc9c4 (empty) (no description set)
+Parent commit (@-)      : kquttkur 70782d61 main | Add feature
+
+$ (cd /tmp/gitman-old-a-6-2vimzwuo/main && jj status)
+exit=0
+stdout:
+Working copy changes:
+A local.txt
+Working copy  (@) : zntsmvrz 54e4de4b (no description set)
+Parent commit (@-): nrrwzykp fd602cdd Initial
+stderr:
+
+DECISION: Default workspace contains local.txt; leave it untouched and report it. Check task is on trunk before workspace removal.
+$ (cd /tmp/gitman-old-a-6-2vimzwuo/main && jj log -r '(::ready@ ~ ::trunk()) ~ empty()')
+exit=0
+stdout:
+stderr:
+
+$ (cd /tmp/gitman-old-a-6-2vimzwuo/main && find /tmp/gitman-old-a-6-2vimzwuo/workspaces/ready -maxdepth 2 -print)
+exit=0
+stdout:
+/tmp/gitman-old-a-6-2vimzwuo/workspaces/ready
+/tmp/gitman-old-a-6-2vimzwuo/workspaces/ready/.git
+/tmp/gitman-old-a-6-2vimzwuo/workspaces/ready/.jj
+/tmp/gitman-old-a-6-2vimzwuo/workspaces/ready/.jj/repo
+/tmp/gitman-old-a-6-2vimzwuo/workspaces/ready/.jj/working_copy
+/tmp/gitman-old-a-6-2vimzwuo/workspaces/ready/.jj/.gitignore
+/tmp/gitman-old-a-6-2vimzwuo/workspaces/ready/file.txt
+/tmp/gitman-old-a-6-2vimzwuo/workspaces/ready/feature.txt
+stderr:
+
+$ (cd /tmp/gitman-old-a-6-2vimzwuo/workspaces/ready && jj status)
+exit=0
+stdout:
+The working copy has no changes.
+Working copy  (@) : szktmmol 8ecdc9c4 (empty) (no description set)
+Parent commit (@-): kquttkur 70782d61 main | Add feature
+stderr:
+
+DECISION: Task is on trunk. Workspace holds only tracked files and jj metadata; remove task workspace.
+$ (cd /tmp/gitman-old-a-6-2vimzwuo/main && jj workspace remove ready)
+exit=0
+stdout:
+stderr:
+Removed Git worktree for "/tmp/gitman-old-a-6-2vimzwuo/workspaces/ready".
+Removed workspace directory "/tmp/gitman-old-a-6-2vimzwuo/workspaces/ready".
+
+$ (cd /tmp/gitman-old-a-6-2vimzwuo/main && jj workspace list)
+exit=0
+stdout:
+default: . zntsmvrz 54e4de4b (no description set)
+stderr:
+
+$ (cd /tmp/gitman-old-a-6-2vimzwuo/main && jj status)
+exit=0
+stdout:
+Working copy changes:
+A local.txt
+Working copy  (@) : zntsmvrz 54e4de4b (no description set)
+Parent commit (@-): nrrwzykp fd602cdd Initial
+stderr:
+
+$ (cd /tmp/gitman-old-a-6-2vimzwuo/main && bash -c 'test -f local.txt && test ! -f feature.txt')
+exit=0
+stdout:
+stderr:
+
