@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.13.0 — breaking
 
 Workspaces move inside the repository, and Gitman gains `gitman done`.
 
