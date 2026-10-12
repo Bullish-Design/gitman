@@ -46,6 +46,7 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setenv("JJ_CONFIG", str(config))
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
     monkeypatch.setenv("GIT_CONFIG_SYSTEM", os.devnull)
+    monkeypatch.delenv("GITMAN_WORKSPACE_ROOT", raising=False)
 
 
 @pytest.fixture

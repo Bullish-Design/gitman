@@ -51,6 +51,45 @@ def test_path_option_exits_2(repo, monkeypatch, capsys):
     assert not (repo.main / ".gitman").exists()
 
 
+def test_absolute_root_override_places_the_workspace_there(repo, monkeypatch, capsys, tmp_path):
+    root = tmp_path / "elsewhere"
+    monkeypatch.setenv("GITMAN_WORKSPACE_ROOT", str(root))
+    code, out, err = work(monkeypatch, capsys, repo.main, "t1")
+    assert code == 0, err
+    assert f"path: {root / 't1'}\n" in out
+    assert (root / "t1" / "a.txt").exists()
+    assert "t1" in repo.workspaces()
+    # Gitman owns `.gitman` at the default root only.
+    assert not (repo.main / ".gitman").exists()
+    assert not (root.parent / ".gitignore").exists()
+
+
+def test_relative_root_override_resolves_against_the_main_checkout(repo, monkeypatch, capsys):
+    monkeypatch.setenv("GITMAN_WORKSPACE_ROOT", "wt")
+    code, out, err = work(monkeypatch, capsys, repo.main, "one")
+    assert code == 0, err
+    assert f"path: {repo.main / 'wt' / 'one'}\n" in out
+    code, out, err = work(monkeypatch, capsys, repo.main / "wt" / "one", "two")
+    assert code == 0, err
+    assert f"path: {repo.main / 'wt' / 'two'}\n" in out
+    assert sorted(repo.workspaces()) == ["default", "one", "two"]
+
+
+def test_empty_root_override_means_the_default(repo, monkeypatch, capsys):
+    monkeypatch.setenv("GITMAN_WORKSPACE_ROOT", "")
+    code, out, err = work(monkeypatch, capsys, repo.main, "t1")
+    assert code == 0, err
+    assert f"path: {repo.root / 't1'}\n" in out
+
+
+def test_root_outside_the_repository_skips_the_base_file_check(repo, monkeypatch, capsys, tmp_path):
+    # Tools in an outside workspace never walk up to the main checkout's `devenv.nix`.
+    (repo.main / "devenv.nix").write_text("x\n")
+    monkeypatch.setenv("GITMAN_WORKSPACE_ROOT", str(tmp_path / "elsewhere"))
+    code, _, err = work(monkeypatch, capsys, repo.main, "t1")
+    assert code == 0, err
+
+
 def test_gitignore_is_created_once_and_never_changed(repo, monkeypatch, capsys):
     ignore = repo.main / ".gitman" / ".gitignore"
     work(monkeypatch, capsys, repo.main, "one")

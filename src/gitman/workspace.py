@@ -13,6 +13,8 @@ BASE_FILES = ("devenv.nix", "pyproject.toml")
 # Untracked symlinks of the main checkout that `work` recreates in the new workspace.
 LINKED = (".envrc", "devenv.local.nix", ".agents", ".loci", ".claude/skills")
 NAME_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]{0,63}")
+# Optional per-project override of the directory that holds the workspaces.
+ROOT_VARIABLE = "GITMAN_WORKSPACE_ROOT"
 
 
 class Refusal(Exception):
@@ -75,8 +77,24 @@ def repo_root(cwd: Path) -> Path:
     return git_dir.parent
 
 
-def check_base(repo: Path, revset: str, base: str, cwd: Path) -> None:
-    """Refuse a base that lacks a top-level file the main checkout has. Tools walk up to the main checkout."""
+def workspace_root(repo: Path) -> Path:
+    """Return the directory that holds the workspaces: `$GITMAN_WORKSPACE_ROOT`, else `<repo>/.gitman/workspaces`.
+
+    A relative setting resolves against the main checkout, so every workspace derives the same path.
+    """
+    setting = os.environ.get(ROOT_VARIABLE)
+    if not setting:
+        return repo / ".gitman" / "workspaces"
+    return repo / setting
+
+
+def check_base(repo: Path, dest: Path, revset: str, base: str, cwd: Path) -> None:
+    """Refuse a base that lacks a top-level file the main checkout has, when `dest` is inside the main checkout.
+
+    Tools in such a workspace walk up to the main checkout.
+    """
+    if not dest.is_relative_to(repo):
+        return
     for file in BASE_FILES:
         if not os.path.lexists(repo / file):
             continue
@@ -113,22 +131,24 @@ def work(name: str, revset: str, cwd: Path) -> str:
     """Create workspace `name` on the commit `revset` resolves to. Return the report."""
     check_name(name)
     repo = repo_root(cwd)
-    home = repo / ".gitman"
-    dest = home / "workspaces" / name
+    root = workspace_root(repo)
+    dest = root / name
     if os.path.lexists(dest):
         raise Refusal(f"{dest} already exists: gitman does not adopt an existing path")
     base = resolve_one(revset, cwd)
-    check_base(repo, revset, base, cwd)
+    check_base(repo, dest, revset, base, cwd)
     # Two gitman processes in one repo take turns, so jj's name check and its write cannot interleave.
     with _repo_lock(cwd):
         if name in workspace_names(cwd):
             raise Refusal(f"workspace {name!r} already exists: see `jj workspace list`")
         # An atomic mkdir claims the path: of two racing callers, only one succeeds.
         try:
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            ignore = home / ".gitignore"
-            if not ignore.exists():
-                ignore.write_text("*\n")
+            root.mkdir(parents=True, exist_ok=True)
+            # Gitman owns `.gitman` only at the default root. An override is the project's own choice.
+            if root == repo / ".gitman" / "workspaces":
+                ignore = root.parent / ".gitignore"
+                if not ignore.exists():
+                    ignore.write_text("*\n")
             dest.mkdir()
         except FileExistsError:
             raise Refusal(f"{dest} already exists: gitman does not adopt an existing path") from None

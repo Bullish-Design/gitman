@@ -13,6 +13,8 @@ gitman done NAME                   close a workspace whose work has landed
   checkout. The base is `trunk()` unless you pass `--from`. It prints the resolved commit ID
   and the path. It creates `.gitman/.gitignore` and links `.envrc` and similar files from the
   main checkout. Run `direnv allow` once in the new workspace.
+- A project can set `GITMAN_WORKSPACE_ROOT` to place its workspaces elsewhere. A relative value
+  resolves against the main checkout. There is no `--path` option.
 - `done` runs `jj workspace remove NAME` only when every non-empty revision of the workspace
   is on `trunk()`. Otherwise it prints those revisions and refuses. It never deletes commits.
 - `jj workspace remove NAME` and `jj workspace forget NAME` are the native overrides. They

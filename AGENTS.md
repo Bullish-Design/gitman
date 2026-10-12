@@ -12,8 +12,9 @@ precedence when the skill and repository instructions disagree.
 
 - Run `jj status`, `jj log`, `jj diff`, `jj new`, `jj describe`, `jj bookmark`, `jj git fetch`,
   `jj git push`, and `jj undo` directly.
-- Open a task directory with `gitman work NAME`. It lands in `.gitman/workspaces/NAME`. Run
-  `direnv allow` there once. List workspaces with `jj workspace list`.
+- Open a task directory with `gitman work NAME`. It lands in `.gitman/workspaces/NAME`, or under
+  `$GITMAN_WORKSPACE_ROOT` when a project sets it. Run `direnv allow` there once. List
+  workspaces with `jj workspace list`.
 - After the work lands, close the workspace with `gitman done NAME` from the main checkout.
   It refuses and prints the revisions when work is not on `trunk()`. Land them or report them.
 - Override with native `jj workspace remove NAME` (deletes the directory) or

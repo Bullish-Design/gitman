@@ -12,6 +12,11 @@ Evidence: `RECORD.md` (phase 1 results in section 7). Plan: `PLAN.md`.
    work lands.
 3. Treat unlanded work per item. The list is in `MIGRATION.md` step 0.
 4. Release 0.13.0 before the Vendomat slice 1 session.
+5. (After 0.13.0, 2026-10-12.) Restore `GITMAN_WORKSPACE_ROOT` as an optional per-project
+   override with the nested default. `--path` stays removed. Reason: `RECORD.md` section 5
+   never weighed "nested default plus override"; option 1 bundled the default with removing
+   the knob. A relative root resolves against the main checkout so every workspace derives the
+   same path. An override creates no `.gitman/.gitignore`.
 
 ## 2. Contract
 

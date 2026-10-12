@@ -1,7 +1,8 @@
 # Gitman — a small jj workspace helper
 
 **Date:** 2026-10-12  
-**Status:** Accepted 2026-10-12. Implemented in Gitman 0.13.0; 0.12.x used `$GITMAN_WORKSPACE_ROOT`.  
+**Status:** Accepted 2026-10-12. Implemented in Gitman 0.13.0. The optional `$GITMAN_WORKSPACE_ROOT`
+override returned after 0.13.0, with the nested default.  
 **Scope:** Personal devenv workflow
 
 This document defines the current Gitman contract. The design history is in
@@ -51,7 +52,7 @@ writers.
 
 | Need | Interface | Result |
 |---|---|---|
-| Open a workspace | `gitman work NAME [--from REVSET]` | Creates `<repo>/.gitman/workspaces/NAME`. |
+| Open a workspace | `gitman work NAME [--from REVSET]` | Creates `<repo>/.gitman/workspaces/NAME`, or `NAME` under `$GITMAN_WORKSPACE_ROOT`. |
 | Close a workspace | `gitman done NAME` | Removes it when its work is on `trunk()`. Refuses otherwise. |
 | See workspaces | `jj workspace list` | Shows jj workspace registrations. |
 | Override: delete | `jj workspace remove NAME` | Removes the registration and its directory. No check. |
@@ -63,10 +64,21 @@ check. Inspect the target directory yourself before `jj workspace remove NAME`.
 
 ### 3.1 `gitman work NAME [--from REVSET]`
 
-The destination is always `<repo>/.gitman/workspaces/NAME`. It is the same from
+The destination is `<repo>/.gitman/workspaces/NAME`. It is the same from
 the main checkout and from any other workspace. `work` needs a colocated
 repository. It refuses when `jj git root` does not end in `.git`.
-`--path` and `GITMAN_WORKSPACE_ROOT` do not exist. `--path` exits with usage code 2.
+
+A project may set `GITMAN_WORKSPACE_ROOT` to place its workspaces elsewhere. The
+destination is then `$GITMAN_WORKSPACE_ROOT/NAME`. A relative value resolves against
+`<repo>`, so every workspace derives the same path. An empty value means the default.
+Set it once per project, for example in `devenv.nix`, and use a value that is
+the same in every workspace. Gitman reads no other setting, and `--path` does not
+exist: it exits with usage code 2.
+
+An override changes three things. Gitman creates no `.gitman/.gitignore`, because
+the project owns that directory. The base-file check below applies only when the
+destination is inside `<repo>`, because only then do tools walk up to the main
+checkout. `done` is unchanged: it reads the registered path.
 
 The default base is `trunk()`. `--from REVSET` selects another base, including a
 change in a native jj stack. Gitman resolves the revset to exactly one commit
@@ -153,7 +165,8 @@ and `jj workspace add --colocate` to create the workspace.
 
 Pin jj 0.46.0 or later through devenv. `work` requires
 `jj workspace add --colocate`, which that version provides. Gitman needs no path
-configuration. It does not launch devenv itself.
+configuration; `GITMAN_WORKSPACE_ROOT` is an optional override. It does not launch
+devenv itself.
 
 Old workspaces outside `.gitman/workspaces` keep working where they are. Nothing
 is moved. Close each one with `gitman done NAME`.
@@ -183,6 +196,10 @@ configuration isolated. Check these cases:
 16. `done` closes a workspace outside `.gitman/workspaces`.
 17. `done` never deletes commits.
 18. `gitman work NAME --path X` and `gitman close NAME` exit with usage code 2.
+19. `GITMAN_WORKSPACE_ROOT` places the workspace under that root. A relative value resolves
+    against `<repo>` from every workspace. An empty value means the default.
+20. An override creates no `.gitman` directory, and a root outside `<repo>` skips the
+    base-file check.
 
 The tests cover the supported colocated layout. They do not simulate a version
 control state machine or test a remote.

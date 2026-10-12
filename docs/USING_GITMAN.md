@@ -4,7 +4,8 @@
 
 Add Gitman to the repository's development dependencies. Pin jj 0.46.0 or
 later. Gitman needs no path setting. It puts each workspace in `.gitman/workspaces/`
-inside the repository:
+inside the repository. A project can override the directory with `GITMAN_WORKSPACE_ROOT`
+(see "Open a workspace"):
 
 ```nix
 # devenv.nix
@@ -63,6 +64,13 @@ cd .gitman/workspaces/api && direnv allow
 checkout. The path is the same from any workspace. `--path` is gone and exits with code 2.
 `work` creates `.gitman/.gitignore` (`*`) when it is missing, so you edit no `.gitignore`.
 Run `direnv allow` once in each new workspace.
+
+To use another directory for one project, set `GITMAN_WORKSPACE_ROOT` once for that project,
+for example in `devenv.nix`. Workspaces then go to `$GITMAN_WORKSPACE_ROOT/NAME`. A relative
+value resolves against the main checkout, so it gives the same path from any workspace. An
+empty value means the default. Use one value for every workspace of the project. With an
+override, `work` creates no `.gitman/.gitignore`: ignore the directory yourself when it is
+inside the repository.
 
 `work` recreates these links from the main checkout when they are symlinks there:
 `.envrc`, `devenv.local.nix`, `.agents`, `.loci`, `.claude/skills`.

@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+Added:
+
+- `GITMAN_WORKSPACE_ROOT` returns as an optional per-project override. The default stays
+  `<repo>/.gitman/workspaces`. A relative value resolves against the main checkout, so every
+  workspace derives the same path. An empty value means the default.
+- With an override, `work` creates no `.gitman/.gitignore`, and it skips the `devenv.nix` and
+  `pyproject.toml` base check when the destination is outside the repository.
+
+`--path` stays removed and exits with code 2.
+
 ## 0.13.0 — breaking
 
 Workspaces move inside the repository, and Gitman gains `gitman done`.
