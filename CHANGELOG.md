@@ -1,5 +1,38 @@
 # Changelog
 
+## Unreleased
+
+Workspaces move inside the repository, and Gitman gains `gitman done`.
+
+Breaking:
+
+- `gitman work NAME` creates `<repo>/.gitman/workspaces/NAME`, where `<repo>` is the main
+  checkout. The path is the same from any workspace.
+- `--path` and `GITMAN_WORKSPACE_ROOT` are gone. `--path` exits with code 2. Remove
+  `env.GITMAN_WORKSPACE_ROOT` from `devenv.nix`.
+
+Added:
+
+- `gitman done NAME` closes a workspace. It snapshots NAME and refuses, with the revisions
+  listed, when `(::NAME@ ~ ::trunk()) ~ empty()` is not empty. Otherwise it runs
+  `jj workspace remove NAME`. It forgets a registration whose directory is missing. It
+  refuses an unknown name, `default`, and a call from inside NAME. It never deletes commits.
+  It has no force flag; native `jj workspace remove NAME` is the override.
+- `work` creates `.gitman/.gitignore` (`*`) when it is missing. The repository needs no
+  `.gitignore` edit.
+- `work` recreates `.envrc`, `devenv.local.nix`, `.agents`, `.loci`, and `.claude/skills`
+  from the main checkout when they are symlinks there. Run `direnv allow` once in each
+  new workspace.
+- `work` refuses a base revision that lacks `devenv.nix` or `pyproject.toml` when the main
+  checkout has that file.
+
+Limits of `done`: it refuses squash-merged work, because the commit ids differ. It always
+refuses in a repository with no `origin` or `upstream` remote, or with a default branch other
+than `main`, `master`, or `trunk`. See `docs/GITMAN_CONCEPT.md`, section 3.
+
+Migration: old workspaces outside `.gitman/workspaces` keep working. Nothing is moved.
+Close each one with `gitman done NAME` after its work lands. `done` reads the registered path.
+
 ## 0.12.1
 
 Packaging only. The command is unchanged.

@@ -5,13 +5,18 @@ A small helper that opens isolated [jujutsu](https://github.com/jj-vcs/jj)
 conflicts, remotes, and undo.
 
 ```
-gitman work NAME [--from REVSET] [--path DIRECTORY]   open a workspace
+gitman work NAME [--from REVSET]   open a workspace
+gitman done NAME                   close a workspace whose work has landed
 ```
 
-- `work` puts the workspace at `$GITMAN_WORKSPACE_ROOT/NAME`. The base is `trunk()` unless
-  you pass `--from`. It prints the resolved commit ID and the path.
-- `jj workspace remove NAME` deletes a workspace and its directory. `jj workspace forget NAME`
-  drops its registration and keeps its files. Gitman does not scan or warn about files before removal.
+- `work` puts the workspace at `<repo>/.gitman/workspaces/NAME`, where `<repo>` is the main
+  checkout. The base is `trunk()` unless you pass `--from`. It prints the resolved commit ID
+  and the path. It creates `.gitman/.gitignore` and links `.envrc` and similar files from the
+  main checkout. Run `direnv allow` once in the new workspace.
+- `done` runs `jj workspace remove NAME` only when every non-empty revision of the workspace
+  is on `trunk()`. Otherwise it prints those revisions and refuses. It never deletes commits.
+- `jj workspace remove NAME` and `jj workspace forget NAME` are the native overrides. They
+  do no check.
 - Gitman has no other command. Native `jj` and `gh` do the rest; the usage guide lists them.
 - Gitman stores no state. It creates no bookmark or branch.
 

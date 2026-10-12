@@ -1,7 +1,7 @@
 # Gitman examples
 
-- **[`workspace-loop.sh`](workspace-loop.sh)**: a runnable demo of `work` and native jj
-  workspace commands in a disposable colocated repository. It leaves real repositories alone:
+- **[`workspace-loop.sh`](workspace-loop.sh)**: a runnable demo of `work`, `done`, and the native jj
+  override in a disposable colocated repository. It leaves real repositories alone:
 
   ```bash
   devenv shell -- bash examples/workspace-loop.sh
