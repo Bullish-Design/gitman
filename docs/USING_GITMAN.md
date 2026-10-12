@@ -21,7 +21,7 @@ inside the repository. A project can override the directory with `GITMAN_WORKSPA
 dev = ["gitman"]
 
 [tool.uv.sources]
-gitman = { git = "https://github.com/Bullish-Design/gitman", tag = "v0.13.0" }
+gitman = { git = "https://github.com/Bullish-Design/gitman", tag = "v0.13.1" }
 ```
 
 Add `gitman` to an existing dev group instead of replacing its other entries.
@@ -37,7 +37,7 @@ The repository has a flake. It builds the command and the pinned jj that
 `gitman work` needs:
 
 ```nix
-inputs.gitman.url = "git+https://github.com/Bullish-Design/gitman?ref=refs/tags/v0.13.0";
+inputs.gitman.url = "git+https://github.com/Bullish-Design/gitman?ref=refs/tags/v0.13.1";
 # gitman.packages.${system}.default       the `gitman` command
 # gitman.packages.${system}.jujutsu-bin   jj 0.46.0, the one jj to install on the host
 ```
