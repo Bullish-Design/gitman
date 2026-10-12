@@ -61,9 +61,10 @@ python3Packages.buildPythonPackage {
     runHook preInstallCheck
     export HOME=$TMPDIR
 
-    # The only command is `work`. A retired v1 verb must be a usage error (exit 2).
-    $out/bin/gitman --help | grep -q "work"
+    # The commands are `work` and `done`. A retired v1 verb must be a usage error (exit 2).
+    $out/bin/gitman --help | grep -q "{work,done}"
     $out/bin/gitman work --help > /dev/null
+    $out/bin/gitman done --help > /dev/null
     set +e
     $out/bin/gitman status > /dev/null 2>&1
     code=$?
@@ -80,6 +81,9 @@ python3Packages.buildPythonPackage {
     $out/bin/gitman work smoke > /dev/null
     test -d "$TMPDIR/repo/.gitman/workspaces/smoke" || { echo "gitman work made no workspace" >&2; exit 1; }
     jj workspace list | grep -q smoke
+    # `done` removes the workspace: its empty commit is not unlanded work.
+    $out/bin/gitman done smoke > /dev/null
+    test ! -e "$TMPDIR/repo/.gitman/workspaces/smoke" || { echo "gitman done kept the workspace" >&2; exit 1; }
 
     runHook postInstallCheck
   '';

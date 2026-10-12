@@ -247,9 +247,9 @@ def test_retired_commands_exit_2(repo, monkeypatch, capsys, verb):
     assert code == 2 and not out and f"invalid choice: '{verb}'" in err
 
 
-def test_help_lists_work(repo, monkeypatch, capsys):
+def test_help_lists_work_and_done(repo, monkeypatch, capsys):
     code, out, _ = gitman(monkeypatch, capsys, repo.main, "--help")
-    assert code == 0 and "{work}" in out
+    assert code == 0 and "{work,done}" in out
 
 
 def test_partial_creation_reports_leftovers_and_deletes_nothing(repo, monkeypatch, capsys):

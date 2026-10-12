@@ -1,4 +1,4 @@
-"""The `work` operation. jj holds all workspace state."""
+"""The `work` and `done` operations. jj holds all workspace state."""
 
 import contextlib
 import fcntl
@@ -142,6 +142,45 @@ def work(name: str, revset: str, cwd: Path) -> str:
     report += link_tools(repo, dest)
     report.append(f"enter it with: cd {shlex.quote(str(dest))}")
     return "\n".join(report)
+
+
+def done(name: str, cwd: Path) -> str:
+    """Remove workspace `name` when its work is on `trunk()`. Return the report."""
+    if name == "default":
+        raise Refusal("the default workspace cannot be removed")
+    if name not in workspace_names(cwd):
+        raise Refusal(f"no workspace named {name!r}: see `jj workspace list`")
+    path = jj_path(["workspace", "root", "--name", name], cwd)
+    here = cwd.resolve()
+    there = path.resolve()
+    if here == there or there in here.parents:
+        raise Refusal(f"{path} holds the current directory: run gitman done from another workspace")
+    if not os.path.lexists(path):
+        jj(["workspace", "forget", name], cwd)
+        return f"workspace {name!r}: registration dropped because {path} was missing"
+    with _repo_lock(cwd):
+        # Snapshot first, so an edit that is not yet in a commit shows up in the check.
+        jj(["-R", str(path), "util", "snapshot"], cwd)
+        quoted = name.replace("\\", "\\\\").replace('"', '\\"')
+        unlanded = jj(
+            [
+                "--ignore-working-copy",
+                "log",
+                "--no-graph",
+                "-r",
+                f'(::"{quoted}"@ ~ ::trunk()) ~ empty()',
+                "-T",
+                'change_id.short() ++ " " ++ description.first_line() ++ "\\n"',
+            ],
+            cwd,
+        )
+        if unlanded:
+            raise Refusal(
+                f"workspace {name!r} has work that is not on trunk():\n{unlanded.rstrip()}\n"
+                f"land them, or remove the workspace with native `jj workspace remove {name}`"
+            )
+        jj(["workspace", "remove", name], cwd)
+    return f"workspace {name!r} removed: {path}"
 
 
 @contextlib.contextmanager

@@ -30,6 +30,11 @@ class Repo:
     def commit_id(self, revset: str, cwd: Path | None = None) -> str:
         return self.jj("log", "--no-graph", f"--revision={revset}", "-T", "commit_id", cwd=cwd).strip()
 
+    def land(self, revset: str) -> None:
+        """Move `main` to `revset` and push it, so `trunk()` follows."""
+        self.jj("bookmark", "set", "main", "-r", revset)
+        self.jj("git", "push", "--bookmark", "main")
+
     def workspaces(self) -> list[str]:
         return self.jj("workspace", "list", "-T", 'name ++ "\\n"').splitlines()
 
@@ -54,9 +59,7 @@ def fresh(tmp_path, env) -> Repo:
 
 @pytest.fixture
 def repo(fresh) -> Repo:
-    """A colocated repo whose `main` bookmark marks a base commit with an ignore file."""
-    config = Path(os.environ["JJ_CONFIG"])
-    config.write_text(config.read_text() + '[revset-aliases]\n"trunk()" = "main"\n')
+    """A colocated repo whose `main` bookmark, also pushed to `origin`, marks a base commit."""
     (fresh.main / ".gitignore").write_text(".devenv/\n*.log\n")
     # Real repos hide the devman symlinks through `.git/info/exclude`, not through a tracked file.
     exclude = fresh.main / ".git" / "info" / "exclude"
@@ -66,6 +69,11 @@ def repo(fresh) -> Repo:
     (fresh.main / "a.txt").write_text("a\n")
     fresh.jj("describe", "-m", "base")
     fresh.jj("bookmark", "create", "main", "-r", "@")
+    # A bare Git repository is `origin`, so `trunk()` is `main@origin`.
+    origin = fresh.main.parent / "origin.git"
+    run(["git", "init", "--bare", "--initial-branch=main", str(origin)], fresh.main.parent)
+    fresh.jj("git", "remote", "add", "origin", str(origin))
+    fresh.jj("git", "push", "--bookmark", "main")
     fresh.jj("new")
     return fresh
 
