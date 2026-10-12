@@ -18,7 +18,11 @@ def run(args: list[str], cwd: Path) -> str:
 @dataclass
 class Repo:
     main: Path
-    root: Path  # the GITMAN_WORKSPACE_ROOT of this test
+
+    @property
+    def root(self) -> Path:
+        """The directory that holds every workspace of this repo."""
+        return self.main / ".gitman" / "workspaces"
 
     def jj(self, *args: str, cwd: Path | None = None) -> str:
         return run(["jj", *args], cwd or self.main)
@@ -37,7 +41,6 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setenv("JJ_CONFIG", str(config))
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
     monkeypatch.setenv("GIT_CONFIG_SYSTEM", os.devnull)
-    monkeypatch.setenv("GITMAN_WORKSPACE_ROOT", str(tmp_path / "workspaces"))
 
 
 @pytest.fixture
@@ -46,7 +49,7 @@ def fresh(tmp_path, env) -> Repo:
     main = tmp_path / "main"
     main.mkdir()
     run(["jj", "git", "init", "--colocate"], main)
-    return Repo(main, tmp_path / "workspaces")
+    return Repo(main)
 
 
 @pytest.fixture
@@ -55,6 +58,11 @@ def repo(fresh) -> Repo:
     config = Path(os.environ["JJ_CONFIG"])
     config.write_text(config.read_text() + '[revset-aliases]\n"trunk()" = "main"\n')
     (fresh.main / ".gitignore").write_text(".devenv/\n*.log\n")
+    # Real repos hide the devman symlinks through `.git/info/exclude`, not through a tracked file.
+    exclude = fresh.main / ".git" / "info" / "exclude"
+    exclude.parent.mkdir(exist_ok=True)
+    with exclude.open("a") as handle:
+        handle.write("\n".join([".agents", ".claude/skills", ".envrc", ".loci", "devenv.local.nix"]) + "\n")
     (fresh.main / "a.txt").write_text("a\n")
     fresh.jj("describe", "-m", "base")
     fresh.jj("bookmark", "create", "main", "-r", "@")

@@ -8,7 +8,10 @@ import shlex
 import subprocess
 from pathlib import Path
 
-ROOT_VAR = "GITMAN_WORKSPACE_ROOT"
+# Files that devenv, uv and testee find by walking up. A workspace base must carry them.
+BASE_FILES = ("devenv.nix", "pyproject.toml")
+# Untracked symlinks of the main checkout that `work` recreates in the new workspace.
+LINKED = (".envrc", "devenv.local.nix", ".agents", ".loci", ".claude/skills")
 NAME_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]{0,63}")
 
 
@@ -26,15 +29,23 @@ def jj(args: list[str], cwd: Path) -> str:
         detail = done.stderr.strip()
         if args[:2] == ["workspace", "add"] and "--colocate" in detail:
             detail += "\nGitman needs jj 0.46.0 or later."
-        raise Refusal(f"jj {' '.join(args[:2])} failed:\n{detail}")
+        raise Refusal(f"jj {' '.join(_label(args))} failed:\n{detail}")
     return done.stdout
+
+
+def _label(args: list[str]) -> list[str]:
+    """Name a jj call by its subcommand: skip the leading global options."""
+    rest = list(args)
+    while rest and rest[0] in ("-R", "--ignore-working-copy"):
+        del rest[: 2 if rest[0] == "-R" else 1]
+    return rest[:2]
 
 
 def jj_path(args: list[str], cwd: Path) -> Path:
     """Read one path without removing valid spaces from its name."""
     output = jj(args, cwd)
     if not output.endswith("\n"):
-        raise Refusal(f"jj {' '.join(args[:2])} returned no path")
+        raise Refusal(f"jj {' '.join(_label(args))} returned no path")
     return Path(output[:-1])
 
 
@@ -56,27 +67,58 @@ def resolve_one(revset: str, cwd: Path) -> str:
     return ids[0]
 
 
-def destination(name: str, path: str | None, cwd: Path) -> Path:
-    if path is not None:
-        return Path(os.path.abspath(cwd / path))
-    root = os.environ.get(ROOT_VAR)
-    if not root:
-        raise Refusal(f"{ROOT_VAR} is not set: set it to an absolute directory in devenv, or pass --path")
-    if not os.path.isabs(root):
-        raise Refusal(f"{ROOT_VAR} must be an absolute path, got {root!r}")
-    return Path(os.path.abspath(root)) / name
+def repo_root(cwd: Path) -> Path:
+    """Return the main checkout: the parent of the Git directory. Refuse a repository that is not colocated."""
+    git_dir = jj_path(["git", "root"], cwd)
+    if git_dir.name != ".git":
+        raise Refusal("gitman needs a colocated repository: run `jj git init --colocate`")
+    return git_dir.parent
 
 
-def work(name: str, revset: str, path: str | None, cwd: Path) -> str:
+def check_base(repo: Path, revset: str, base: str, cwd: Path) -> None:
+    """Refuse a base that lacks a top-level file the main checkout has. Tools walk up to the main checkout."""
+    for file in BASE_FILES:
+        if not os.path.lexists(repo / file):
+            continue
+        listed = jj(["file", "list", f"--revision={base}", f'root-file:"{file}"'], cwd)
+        if not listed.strip():
+            raise Refusal(
+                f"base {revset} has no {file}; tools in the workspace would use the main checkout's. "
+                "Pick a base that has it."
+            )
+
+
+def link_tools(repo: Path, dest: Path) -> list[str]:
+    """Recreate the untracked symlinks of the main checkout in `dest`. Return the report lines."""
+    lines = []
+    linked = []
+    for rel in LINKED:
+        source = repo / rel
+        target = dest / rel
+        if not source.is_symlink() or os.path.lexists(target):
+            continue
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            os.symlink(os.path.realpath(source), target)
+        except OSError as err:
+            lines.append(f"could not link {rel}: {err}")
+            continue
+        linked.append(rel)
+    if ".envrc" in linked:
+        lines.append(f"run `direnv allow` in {shlex.quote(str(dest))} once")
+    return lines
+
+
+def work(name: str, revset: str, cwd: Path) -> str:
     """Create workspace `name` on the commit `revset` resolves to. Return the report."""
     check_name(name)
-    dest = destination(name, path, cwd)
+    repo = repo_root(cwd)
+    home = repo / ".gitman"
+    dest = home / "workspaces" / name
     if os.path.lexists(dest):
         raise Refusal(f"{dest} already exists: gitman does not adopt an existing path")
-    for parent in dest.parents:
-        if (parent / ".jj").exists():
-            raise Refusal(f"{dest} lies inside the jj working copy {parent}")
     base = resolve_one(revset, cwd)
+    check_base(repo, revset, base, cwd)
     # Two gitman processes in one repo take turns, so jj's name check and its write cannot interleave.
     with _repo_lock(cwd):
         if name in workspace_names(cwd):
@@ -84,6 +126,9 @@ def work(name: str, revset: str, path: str | None, cwd: Path) -> str:
         # An atomic mkdir claims the path: of two racing callers, only one succeeds.
         try:
             dest.parent.mkdir(parents=True, exist_ok=True)
+            ignore = home / ".gitignore"
+            if not ignore.exists():
+                ignore.write_text("*\n")
             dest.mkdir()
         except FileExistsError:
             raise Refusal(f"{dest} already exists: gitman does not adopt an existing path") from None
@@ -93,7 +138,10 @@ def work(name: str, revset: str, path: str | None, cwd: Path) -> str:
             jj(["workspace", "add", "--name", name, f"--revision={base}", "--colocate", str(dest)], cwd)
         except Refusal as err:
             raise Refusal(f"{err}\n{_leftovers(name, dest, cwd)}") from None
-    return f"workspace: {name}\npath: {dest}\nbase: {base} ({revset})\nenter it with: cd {shlex.quote(str(dest))}"
+    report = [f"workspace: {name}", f"path: {dest}", f"base: {base} ({revset})"]
+    report += link_tools(repo, dest)
+    report.append(f"enter it with: cd {shlex.quote(str(dest))}")
+    return "\n".join(report)
 
 
 @contextlib.contextmanager

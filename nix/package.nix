@@ -73,13 +73,12 @@ python3Packages.buildPythonPackage {
     # The real command: open a workspace in a throwaway colocated repository.
     export JJ_CONFIG=$TMPDIR/jj-config.toml
     printf '[user]\nname = "t"\nemail = "t@example.com"\n' > "$JJ_CONFIG"
-    export GITMAN_WORKSPACE_ROOT=$TMPDIR/workspaces
-    mkdir -p "$TMPDIR/repo" "$GITMAN_WORKSPACE_ROOT"
+    mkdir -p "$TMPDIR/repo"
     cd "$TMPDIR/repo"
     jj git init --colocate > /dev/null 2>&1
     jj describe -m base > /dev/null 2>&1
     $out/bin/gitman work smoke > /dev/null
-    test -d "$GITMAN_WORKSPACE_ROOT/smoke" || { echo "gitman work made no workspace" >&2; exit 1; }
+    test -d "$TMPDIR/repo/.gitman/workspaces/smoke" || { echo "gitman work made no workspace" >&2; exit 1; }
     jj workspace list | grep -q smoke
 
     runHook postInstallCheck
