@@ -1,6 +1,6 @@
 # Plan — nested workspaces, `gitman done`, release, and follow-up edits
 
-**Date:** 2026-10-12. **Status:** lanes A-D done or in review; E-G wait for owner approval.
+**Date:** 2026-10-12. **Status (2026-10-15):** lanes A-E done. Lane F is partly done. Lane G is open.
 Decisions: `PROPOSAL.md` section 1. Evidence: `RECORD.md`. File list: `MIGRATION.md`.
 
 ## 1. Lanes
@@ -10,9 +10,9 @@ Decisions: `PROPOSAL.md` section 1. Evidence: `RECORD.md`. File list: `MIGRATION
 | A. Records | agent | `workspace-location` | `.scratch/projects/70-workspace-location/*`, `66-gitman-v2-rewrite/PILOT_NOTES.md` | none | `ruff check src tests && pytest -q` | This lane. Commit `zypwxqpp`. |
 | B+C. Code | agent | merged | `src/gitman/{cli,workspace}.py`, `tests/` | none | `ruff check src tests && pytest -q` | LANDED. Ancestors of `be1622e4`: `uosrlmqu`, `ykzoruwo`. |
 | D. Docs | agent | merged | `docs/`, `README.md`, `AGENTS.md`, `CHANGELOG.md` (Unreleased), `examples/`, `skill/` drafts | B+C | Read against `workspace.py` | LANDED. `xyzrpotk`. |
-| E. Release 0.13.0 | owner approves | `release-0.13.0` | `CHANGELOG.md`, `pyproject.toml`, `uv.lock`, `docs/USING_GITMAN.md` | A | See section 2 | Waits for approval. |
-| F. External edits | owner approves each repo | one per repo | Section 3 list | E for pins; none for the urgent items | Each repo's own suite | Urgent items wait for approval. |
-| G. Migration | owner approves each repo | none | Old workspaces and `.worktrees/` dirs | E (for `done`) | `jj workspace list` per repo | Waits for F. |
+| E. Release 0.13.0 | owner approves | `release-0.13.0` | `CHANGELOG.md`, `pyproject.toml`, `uv.lock`, `docs/USING_GITMAN.md` | A | See section 2 | DONE. Tags `v0.13.0` and `v0.13.1` are on `main`. |
+| F. External edits | owner approves each repo | one per repo | Section 3 list | E for pins; none for the urgent items | Each repo's own suite | Partly done. See the status column in section 3. |
+| G. Migration | owner approves each repo | none | Old workspaces and `.worktrees/` dirs | E (for `done`) | `jj workspace list` per repo | Open. `gitman-workspaces/` is nearly drained. About 81 `.worktrees/` entries remain in other repos. |
 
 ## 2. Lane E — release 0.13.0
 
@@ -33,16 +33,16 @@ Needs owner approval. Steps:
 
 Owner approval per repository. Order: urgent items first, then required, then the rest.
 
-| # | Item | File | Why now |
-|---|---|---|---|
-| 1 | Vendomat kickoff | `vendomat/.scratch/projects/20-vendomat-front-door/KICKOFF-SLICE-1.md:79-80` | Fails today. Change it on 2026-10-12, before slice 1 starts. |
-| 2 | Vendomat script | `vendomat/devenv.nix:128-133` | Point at the store gitman. Stops live landings from changing the tool. |
-| 3 | RepoMan regex | `repoman/src/repoman/checks.py:172`, tests, `registry.py:72` | `repoman doctor` fails today for sessions that use the live checkout. |
-| 4 | Devman watcher | `devman/src/devman/watch.py:79-87` | Required before nested workspaces see edits. |
-| 5 | Skill | `~/.config/devman/skills/gitman/SKILL.md` | From `skill/SKILL.md`. |
-| 6 | Global instructions | `~/.claude/CLAUDE.md` | From `skill/CLAUDE-md-lanes.md`. |
-| 7 | Host pins | `nix-meta`, `nix-systems/vendomat.toml` | After lane E. |
-| 8 | The rest | `MIGRATION.md` section 3.2 | After slice 1 starts. Not blocking. |
+| # | Item | File | Why now | Status 2026-10-15 |
+|---|---|---|---|---|
+| 1 | Vendomat kickoff | `vendomat/.scratch/projects/20-vendomat-front-door/KICKOFF-SLICE-1.md:79-80` | Fails today. Change it on 2026-10-12, before slice 1 starts. | Done. The kickoff text uses `.gitman/workspaces/NAME`. |
+| 2 | Vendomat script | `vendomat/devenv.nix:128-133` | Point at the store gitman. Stops live landings from changing the tool. | Open. `vendomat/devenv.nix:32-33` still runs `../gitman/.venv`. |
+| 3 | RepoMan regex | `repoman/src/repoman/checks.py:172`, tests, `registry.py:72` | `repoman doctor` fails today for sessions that use the live checkout. | Done. `repoman` checks and router text use `gitman work` and `gitman done`. |
+| 4 | Devman watcher | `devman/src/devman/watch.py:79-87` | Required before nested workspaces see edits. | In progress 2026-10-15 (devman agent: add `.gitman` to the watcher ignores). |
+| 5 | Skill | `~/.config/devman/skills/gitman/SKILL.md` | From `skill/SKILL.md`. | Done. `~/.config/devman/skills/gitman/SKILL.md` is the 0.13 text. |
+| 6 | Global instructions | `~/.claude/CLAUDE.md` | From `skill/CLAUDE-md-lanes.md`. | Done. `~/.claude/CLAUDE.md` has the lanes section. |
+| 7 | Host pins | `nix-meta`, `nix-systems/vendomat.toml` | After lane E. | Half done. `nix-meta/flake.nix` pins `v0.13.1`. `nix-systems/vendomat.toml:21` still pins `v0.13.0`. `mancore/devenv.yaml` has no gitman pin. |
+| 8 | The rest | `MIGRATION.md` section 3.2 | After slice 1 starts. Not blocking. | Open. |
 
 The full row list with lines is in `phase1-refs/LIST.md`.
 

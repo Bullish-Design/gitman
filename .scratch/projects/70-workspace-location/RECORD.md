@@ -236,12 +236,12 @@ Evidence: `~/.local/state/gitman/2026-10-12/phase1-<name>/REPORT.md`.
 | Symlink set | NEW. Use an allowlist (`.envrc`, `devenv.local.nix`, `.agents`, `.loci`, `.claude/skills`), not every top-level link. | `phase1-hazards` (h1b, section 9) |
 | Walk-up from a base without `devenv.nix` or `pyproject.toml` | NEW. devenv, uv, and plain `testee` use the main checkout. Gitman refuses such a base. Testee should stop at the repo boundary. | `phase1-hazards` (h3, h5) |
 | uv workspace globs | NEW. `*` members do not reach the nested path; `**` does. No real repo uses `**`. | `phase1-hazards` (h3) |
-| devman watcher | NEW. `.gitman` is missing from `DEFAULT_IGNORES`; `deepest()` assigns nested edits to the outer project. Required fix. | `phase1-hazards` (h4) |
+| devman watcher | NEW. `.gitman` is missing from `DEFAULT_IGNORES`; `deepest()` assigns nested edits to the outer project. Required fix. **Fix in progress 2026-10-15** (devman agent). | `phase1-hazards` (h4) |
 | Testee slots and push gate | REPRODUCED. No slot collision; the gate finds the nested workspace. | `phase1-hazards` (h5) |
 | Memory and Hindsight | REPRODUCED. Nested matches the repo bank by prefix and honors `excludePaths` better than the flat root. | `phase1-hazards` (h6) |
 | `rm -rf`, move, archive | CORRECTED. `rm -rf` of a main checkout deletes the jj store in every layout; nested also loses uncommitted files. `mv` keeps nested workspaces working. | `phase1-hazards` (h7) |
 | Backup | NEW. `backup.nix:338-354` does not exclude `.gitman`: about 479 MB for 54 workspaces. Owner nix-meta decides. | `phase1-hazards` (section 8) |
-| mancore `devenv.nix:53` | REPRODUCED in a fixture (`builtins.path` copies the nested tree). uv2nix gets an unfiltered `src`. The mancore output was not evaluated. Owner mancore filters it. | `phase1-hazards` (h2) |
+| mancore `devenv.nix:53` | REPRODUCED in a fixture (`builtins.path` copies the nested tree). uv2nix gets an unfiltered `src`. The mancore output was not evaluated. Owner mancore filters it. **Fix in progress 2026-10-15** (mancore agent: filter the `src` at `devenv.nix:53`). | `phase1-hazards` (h2) |
 | `done`: path and snapshot | NEW. Use `jj workspace root --name NAME` and `jj -R P util snapshot`. | `phase1-done` (Q1, Q2) |
 | `done`: revset `(::NAME@ ~ ::trunk()) ~ empty()` | NEW. It catches committed work, a late edit, and mixed or evil merges. It misses description-only commits. It refuses falsely after a remote squash-merge. With no `origin` or `upstream`, or a non-main default branch, `trunk()` is `root()` and every non-empty ancestor refuses. | `phase1-done` (Q3) |
 | `done`: jj safety gaps | NEW. `remove` exits 0 on an unknown name and removes the current workspace while the cwd is inside it. Gitman checks both first. | `phase1-done` (Q4) |

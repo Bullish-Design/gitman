@@ -18,8 +18,11 @@ The RepoMan session owns this work. The full plan lives in
    One skill, `gitman`, describes the work-only tool. RepoMan's `repoman` skill
    owns lifecycle order.
 
-## Open item
+## Open item — closed 2026-10-15
 
-`projects/devman/workflows/gitman-commit-message.yaml` in the Devman pool mentions
-`gitman save` in comments only. The step runs `devenv tasks run gitman:commit-message`.
-Check that task. If it calls a retired verb, replace it with `jj describe -m`.
+`projects/devman/workflows/gitman-commit-message.yaml` in the Devman pool names
+`gitman save` in comments only (lines 17, 43, 45). The step runs
+`devenv tasks run -v gitman:commit-message`. That task, in `devman/devenv.nix:211`,
+runs `git diff --staged` and a GPU script. It calls no retired verb. No code change
+is needed. The two comment lines that show `gitman save -m "$(cat ...)"` are stale.
+The Devman owner replaces them with `jj describe -m "$(cat ...)"`.
