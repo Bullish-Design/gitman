@@ -76,7 +76,9 @@ inside the repository.
 `.envrc`, `devenv.local.nix`, `.agents`, `.loci`, `.claude/skills`.
 
 `--from` must resolve to exactly one revision. A fresh repository has no trunk, so `trunk()`
-resolves to `root()` and `work` accepts that. `work` refuses an existing name and an occupied
+resolves to `root()` and `work` accepts that. Once the repository has a commit and `trunk()` is
+still `root()`, `work` and `done` refuse. This happens in a repository with no remote. Run
+`jj config set --repo 'revset-aliases."trunk()"' main` once to fix it. `work` refuses an existing name and an occupied
 path. It never adopts a directory. It refuses a base revision that lacks `devenv.nix` or
 `pyproject.toml` when the main checkout has that file.
 
@@ -154,8 +156,9 @@ stale registration.
   do not take that lock.
 - `done` refuses work that the remote squash-merged, because the commit ids differ.
   Check the landed content, then use native `jj workspace remove NAME`.
-- A repository with no `origin` or `upstream` remote, or with a default branch other than
-  `main`, `master`, or `trunk`, always refuses `done`. There `trunk()` is `root()`.
+- A repository with no remote, or with a default branch other than `main`, `master`, or
+  `trunk`, has `trunk()` at `root()`. `work` and `done` then refuse with a one-line error.
+  Run `jj config set --repo 'revset-aliases."trunk()"' main` once to fix it.
 - The snapshot in `done` can make a workspace stacked on NAME stale. Run
   `jj workspace update-stale` in it.
 - `rm -rf` of the repository deletes its workspaces and their uncommitted files.

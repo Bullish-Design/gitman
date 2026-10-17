@@ -125,3 +125,22 @@ def test_refuses_a_stale_workspace(repo, ws, monkeypatch, capsys):
 def test_usage_errors_exit_2(repo, monkeypatch, capsys):
     assert done(monkeypatch, capsys, repo.main)[0] == 2
     assert done(monkeypatch, capsys, repo.main, "a", "b")[0] == 2
+
+
+def test_no_remote_refuses_with_the_trunk_error_and_keeps_the_workspace(fresh, monkeypatch, capsys):
+    (fresh.main / "devenv.nix").write_text("{}\n")
+    fresh.jj("describe", "-m", "base")
+    fresh.jj("bookmark", "create", "main", "-r", "@")
+    fresh.jj("new")
+    code, _, err = gitman(monkeypatch, capsys, fresh.main, "work", "v", "--from", "main")
+    assert code == 0, err
+    (fresh.root / "v" / "f.txt").write_text("x\n")
+    fresh.jj("commit", "-m", "work", cwd=fresh.root / "v")
+    code, _, err = done(monkeypatch, capsys, fresh.main, "v")
+    assert code == 1
+    assert err.count("\n") == 1 and err.startswith("gitman: trunk() is the root commit")
+    assert "v" in fresh.workspaces()
+    fresh.jj("config", "set", "--repo", 'revset-aliases."trunk()"', "main")
+    fresh.jj("bookmark", "set", "main", "-r", "v@-")
+    code, _, err = done(monkeypatch, capsys, fresh.main, "v")
+    assert code == 0, err

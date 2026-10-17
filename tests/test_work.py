@@ -34,6 +34,41 @@ def test_fresh_repo_falls_back_to_root(fresh, monkeypatch, capsys):
     assert parent_of_workspace(fresh, "t1") == "0" * 40
 
 
+def make_local_only(fresh):
+    """A repo with one committed file on `main` and no remote: `trunk()` is `root()`."""
+    (fresh.main / "devenv.nix").write_text("{}\n")
+    fresh.jj("describe", "-m", "base")
+    fresh.jj("bookmark", "create", "main", "-r", "@")
+    fresh.jj("new")
+
+
+TRUNK_ALIAS = 'revset-aliases."trunk()"'
+
+
+def test_no_remote_refuses_with_the_trunk_error(fresh, monkeypatch, capsys):
+    make_local_only(fresh)
+    code, _, err = work(monkeypatch, capsys, fresh.main, "t1")
+    assert code == 1
+    assert err.count("\n") == 1 and err.startswith("gitman: trunk() is the root commit")
+    assert "jj config set --repo 'revset-aliases.\"trunk()\"' main" in err
+    assert not (fresh.root / "t1").exists()
+
+
+def test_no_remote_from_main_still_works(fresh, monkeypatch, capsys):
+    make_local_only(fresh)
+    code, _, err = work(monkeypatch, capsys, fresh.main, "t1", "--from", "main")
+    assert code == 0, err
+    assert (fresh.root / "t1" / "devenv.nix").exists()
+
+
+def test_no_remote_works_once_the_repository_sets_the_alias(fresh, monkeypatch, capsys):
+    make_local_only(fresh)
+    fresh.jj("config", "set", "--repo", TRUNK_ALIAS, "main")
+    code, out, err = work(monkeypatch, capsys, fresh.main, "t1")
+    assert code == 0, err
+    assert parent_of_workspace(fresh, "t1") == fresh.commit_id("main")
+
+
 def test_path_is_derived_from_main_and_from_a_secondary_workspace(repo, monkeypatch, capsys):
     work(monkeypatch, capsys, repo.main, "one")
     code, out, _ = work(monkeypatch, capsys, repo.root / "one", "two")
@@ -320,9 +355,7 @@ def attempts(repo, names):
 
     def attempt(name):
         barrier.wait()
-        done = subprocess.run(
-            [sys.executable, "-c", CALL, "work", name], cwd=repo.main, capture_output=True, text=True
-        )
+        done = subprocess.run([sys.executable, "-c", CALL, "work", name], cwd=repo.main, capture_output=True, text=True)
         results.append(done.returncode)
 
     threads = [threading.Thread(target=attempt, args=(name,)) for name in names]

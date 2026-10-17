@@ -82,8 +82,15 @@ checkout. `done` is unchanged: it reads the registered path.
 
 The default base is `trunk()`. `--from REVSET` selects another base, including a
 change in a native jj stack. Gitman resolves the revset to exactly one commit
-ID. It accepts `root()` when `trunk()` resolves to root in a fresh repository.
-An empty or ambiguous revset causes refusal.
+ID. An empty or ambiguous revset causes refusal.
+
+Gitman reads no trunk setting of its own. The repository defines `trunk()` through jj. jj
+resolves `trunk()` to `root()` when no remote has a `main`, `master`, or `trunk` bookmark.
+In a fresh repository with no commits, `work` accepts that root base. Once the repository has
+a non-empty commit, `work` with the default base refuses when `trunk()` is `root()`. It prints
+one line that names the problem and the fix:
+`jj config set --repo 'revset-aliases."trunk()"' main`. A repository with no remote needs
+that setting. `--from REVSET` needs no setting.
 
 Gitman refuses a base revision that lacks `devenv.nix` or `pyproject.toml` when
 the main checkout has that file. Without it, tools in the workspace would walk
@@ -124,7 +131,8 @@ has landed. It does these steps in order:
 2. Snapshot NAME: run `jj status` with the registered path as the working directory.
    If that directory is missing, run `jj workspace forget NAME` and report it.
 3. Evaluate `(::NAME@ ~ ::trunk()) ~ empty()`. If the result is not empty,
-   refuse, print the revisions, and keep the workspace.
+   refuse, print the revisions, and keep the workspace. When `trunk()` is `root()`, print
+   the one-line trunk error from section 3.1 instead of the revisions.
 4. Run `jj workspace remove NAME`. Report the removed path.
 
 `done` never deletes commits; jj keeps them. Ignored files in a workspace are
@@ -137,8 +145,9 @@ Limits of the check:
 
 - Work that the remote squash-merged is refused, because the commit ids differ.
   Check the landed content, then use native `jj workspace remove NAME`.
-- A repository with no `origin` or `upstream` remote, or with a default branch
-  other than `main`, `master`, or `trunk`, always refuses. There `trunk()` is `root()`.
+- A repository with no remote, or with a default branch other than `main`, `master`, or
+  `trunk`, has `trunk()` at `root()`. `done` then refuses with the trunk error until the
+  repository sets the alias: `jj config set --repo 'revset-aliases."trunk()"' main`.
 - The snapshot in step 2 can make a workspace that is stacked on NAME stale.
   Run `jj workspace update-stale` in it.
 
@@ -182,7 +191,10 @@ configuration isolated. Check these cases:
 4. `work` recreates the main checkout's allowlisted symlinks that the workspace
    lacks, with absolute targets, and only when they are symlinks.
 5. `work` refuses a base that lacks `devenv.nix` or `pyproject.toml` when the main checkout has it.
-6. `work` starts from the resolved `trunk()` revision, including root fallback.
+6. `work` starts from the resolved `trunk()` revision, including root fallback in a fresh
+   repository.
+6a. `work` and `done` refuse with the one-line trunk error when `trunk()` is `root()` and the
+    repository has a non-empty commit. A repository-level `trunk()` alias removes the refusal.
 7. `--from` selects exactly one revision; missing and ambiguous results refuse.
 8. Existing names and occupied paths refuse without adopting or deleting files.
 9. Concurrent attempts yield at most one workspace for a name or path.

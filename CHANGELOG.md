@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+Changed:
+
+- `work` (default base) and `done` refuse with a one-line error when `trunk()` is `root()` and
+  the repository has a non-empty commit. This happens in a repository with no remote. The error
+  names the fix: `jj config set --repo 'revset-aliases."trunk()"' main`. Before, `work` failed
+  on the base-file check and `done` listed every commit.
+
 ## 0.13.1
 
 Added:

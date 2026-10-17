@@ -17,6 +17,13 @@ NAME_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]{0,63}")
 ROOT_VARIABLE = "GITMAN_WORKSPACE_ROOT"
 
 
+# One line: the problem, then the fix.
+TRUNK_IS_ROOT = (
+    "trunk() is the root commit (no remote main, master, or trunk bookmark); "
+    "set it with: jj config set --repo 'revset-aliases.\"trunk()\"' main"
+)
+
+
 class Refusal(Exception):
     """An operation or environment refusal. The CLI prints it and exits with code 1."""
 
@@ -67,6 +74,18 @@ def resolve_one(revset: str, cwd: Path) -> str:
     if len(ids) != 1:
         raise Refusal(f"revset {revset!r} must resolve to exactly one revision, found {len(ids)}")
     return ids[0]
+
+
+def check_trunk(cwd: Path) -> None:
+    """Refuse when `trunk()` is the root commit in a repository that has history.
+
+    jj resolves `trunk()` to `root()` when no remote has a `main`, `master`, or `trunk` bookmark.
+    Gitman reads no setting of its own for the trunk, so the repository must define the alias.
+    """
+    if resolve_one("trunk()", cwd) != resolve_one("root()", cwd):
+        return
+    if jj(["log", "--no-graph", "-r", "all() ~ root() ~ empty()", "-T", 'commit_id ++ "\\n"'], cwd).strip():
+        raise Refusal(TRUNK_IS_ROOT)
 
 
 def repo_root(cwd: Path) -> Path:
@@ -135,6 +154,8 @@ def work(name: str, revset: str, cwd: Path) -> str:
     dest = root / name
     if os.path.lexists(dest):
         raise Refusal(f"{dest} already exists: gitman does not adopt an existing path")
+    if revset == "trunk()":
+        check_trunk(cwd)
     base = resolve_one(revset, cwd)
     check_base(repo, dest, revset, base, cwd)
     # Two gitman processes in one repo take turns, so jj's name check and its write cannot interleave.
@@ -195,6 +216,8 @@ def done(name: str, cwd: Path) -> str:
             cwd,
         )
         if unlanded:
+            # With trunk() at the root commit, every commit looks unlanded: name the cause.
+            check_trunk(cwd)
             raise Refusal(
                 f"workspace {name!r} has work that is not on trunk():\n{unlanded.rstrip()}\n"
                 f"land them, or remove the workspace with native `jj workspace remove {name}`"
